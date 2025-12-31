@@ -182,6 +182,35 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['user_consents']['Row'], 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Database['public']['Tables']['user_consents']['Insert']>;
       };
+      search_feedback: {
+        Row: {
+          id: string;
+          user_id: string;
+          candidate_id: string;
+          search_query: string;
+          feedback_type: string;
+          result_position: number;
+          relevance_score: number;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['search_feedback']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['search_feedback']['Insert']>;
+      };
+      credit_transactions: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: string;
+          amount: number;
+          balance_after: number;
+          description: string | null;
+          candidate_id: string | null;
+          payment_id: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['credit_transactions']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['credit_transactions']['Insert']>;
+      };
     };
     Functions: {
       search_candidates: {

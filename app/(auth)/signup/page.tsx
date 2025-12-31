@@ -1,12 +1,74 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Loader2 } from "lucide-react";
 
 export default function SignupPage() {
+  const router = useRouter();
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const supabase = createClient();
+
+  const handleEmailSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    // 비밀번호 확인
+    if (password !== confirmPassword) {
+      setError("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("비밀번호는 8자 이상이어야 합니다.");
+      return;
+    }
+
+    setIsLoading(true);
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: name,
+        },
+        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=/consent`,
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+      setIsLoading(false);
+    } else {
+      // 회원가입 성공 시 consent 페이지로 이동
+      router.push("/consent");
+      router.refresh();
+    }
+  };
+
+  const handleGoogleSignup = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/api/auth/callback?next=/consent`,
+      },
+    });
+    if (error) setError(error.message);
+  };
+
   return (
     <div className="space-y-6">
       {/* Logo */}
@@ -21,13 +83,25 @@ export default function SignupPage() {
       </div>
 
       {/* Signup Form */}
-      <div className="p-6 rounded-2xl bg-[#0F0F24]/60 backdrop-blur-md border border-white/5 space-y-4">
+      <form
+        onSubmit={handleEmailSignup}
+        className="p-6 rounded-2xl bg-[#0F0F24]/60 backdrop-blur-md border border-white/5 space-y-4"
+      >
+        {error && (
+          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="name">이름</Label>
           <Input
             id="name"
             type="text"
             placeholder="홍길동"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
           />
         </div>
 
@@ -37,6 +111,9 @@ export default function SignupPage() {
             id="email"
             type="email"
             placeholder="name@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
           />
         </div>
 
@@ -46,6 +123,9 @@ export default function SignupPage() {
             id="password"
             type="password"
             placeholder="8자 이상"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
           />
         </div>
 
@@ -55,10 +135,14 @@ export default function SignupPage() {
             id="confirmPassword"
             type="password"
             placeholder="비밀번호를 다시 입력하세요"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
           />
         </div>
 
-        <Button className="w-full" size="lg">
+        <Button className="w-full" size="lg" disabled={isLoading}>
+          {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
           계속하기
         </Button>
 
@@ -71,7 +155,13 @@ export default function SignupPage() {
           </div>
         </div>
 
-        <Button variant="outline" className="w-full" size="lg">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          size="lg"
+          onClick={handleGoogleSignup}
+        >
           <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
             <path
               fill="currentColor"
@@ -92,7 +182,7 @@ export default function SignupPage() {
           </svg>
           Google로 시작하기
         </Button>
-      </div>
+      </form>
 
       {/* Footer */}
       <p className="text-center text-sm text-slate-500">

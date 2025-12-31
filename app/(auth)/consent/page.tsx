@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -11,7 +12,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertCircle, FileText, Shield, Users } from "lucide-react";
+import { AlertCircle, Shield, Loader2 } from "lucide-react";
 
 export default function ConsentPage() {
   const router = useRouter();
@@ -25,6 +26,7 @@ export default function ConsentPage() {
 
   const [viewingDoc, setViewingDoc] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const allRequiredChecked =
     consents.terms && consents.privacy && consents.thirdParty;
@@ -41,13 +43,59 @@ export default function ConsentPage() {
 
   const handleSubmit = async () => {
     if (!allRequiredChecked) return;
-
     setIsSubmitting(true);
+    setError(null);
 
     try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const version = "2025.01.01";
+
+      // 동의 기록 저장
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: consentError } = await (supabase as any)
+        .from("user_consents")
+        .insert({
+          user_id: user.id,
+          terms_of_service: true,
+          terms_of_service_version: version,
+          terms_of_service_agreed_at: now,
+          privacy_policy: true,
+          privacy_policy_version: version,
+          privacy_policy_agreed_at: now,
+          third_party_data_guarantee: true,
+          third_party_data_guarantee_version: version,
+          third_party_data_guarantee_agreed_at: now,
+          marketing_consent: consents.marketing,
+          marketing_consent_agreed_at: consents.marketing ? now : null,
+        });
+
+      if (consentError) throw consentError;
+
+      // 사용자 프로필 업데이트
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: userError } = await (supabase as any)
+        .from("users")
+        .update({
+          consents_completed: true,
+          consents_completed_at: now,
+        })
+        .eq("id", user.id);
+
+      if (userError) throw userError;
+
       router.push("/dashboard");
-    } catch (error) {
-      console.error("Consent submission error:", error);
+      router.refresh();
+    } catch (err) {
+      console.error("Consent error:", err);
+      setError("동의 저장에 실패했습니다. 다시 시도해주세요.");
     } finally {
       setIsSubmitting(false);
     }
@@ -64,6 +112,12 @@ export default function ConsentPage() {
       </div>
 
       <div className="p-6 rounded-2xl bg-[#0F0F24]/60 backdrop-blur-md border border-white/5 space-y-4">
+        {error && (
+          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
         {/* 전체 동의 */}
         <div className="p-4 bg-white/5 rounded-lg">
           <label className="flex items-center gap-3 cursor-pointer">
@@ -78,7 +132,6 @@ export default function ConsentPage() {
         <div className="space-y-3">
           {/* 이용약관 */}
           <ConsentItem
-            // icon={<FileText className="w-5 h-5" />}
             label="서비스 이용약관"
             required
             checked={consents.terms}
@@ -88,7 +141,6 @@ export default function ConsentPage() {
 
           {/* 개인정보처리방침 */}
           <ConsentItem
-            // icon={<Shield className="w-5 h-5" />}
             label="개인정보 처리방침"
             required
             checked={consents.privacy}
@@ -97,33 +149,28 @@ export default function ConsentPage() {
           />
 
           <ConsentItem
-              // icon={<Users className="w-5 h-5" />}
-              label="제3자 개인정보 처리 보증"
-              required
-              checked={consents.thirdParty}
-              onCheckedChange={(v) => setConsents({ ...consents, thirdParty: v })}
-              onViewClick={() => setViewingDoc("thirdParty")}
-            />
+            label="제3자 개인정보 처리 보증"
+            required
+            checked={consents.thirdParty}
+            onCheckedChange={(v) => setConsents({ ...consents, thirdParty: v })}
+            onViewClick={() => setViewingDoc("thirdParty")}
+          />
 
           {/* 제3자 정보 보증 (핵심) */}
-          {/* <div className="border-2 border-primary/30 rounded-lg p-4 space-y-3"> */}
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-md p-3 text-sm">
-              <div className="flex gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                <div className="text-amber-200">
-                  <p className="font-medium">중요 안내</p>
-                  <p className="mt-1 text-amber-300/80">
-                    업로드하는 이력서의 정보주체(후보자)로부터 개인정보 수집·이용 동의를 받았음을 보증합니다.
-                    {/* <strong className="text-amber-200"> 개인정보 수집·이용 동의</strong>를 받았음을 보증합니다. */}
-                  </p>
-                </div>
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-md p-3 text-sm">
+            <div className="flex gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="text-amber-200">
+                <p className="font-medium">중요 안내</p>
+                <p className="mt-1 text-amber-300/80">
+                  업로드하는 이력서의 정보주체(후보자)로부터 개인정보 수집·이용 동의를 받았음을 보증합니다.
+                </p>
               </div>
             </div>
-          {/* </div> */}
+          </div>
 
           {/* 마케팅 동의 (선택) */}
           {/* <ConsentItem
-            icon={<FileText className="w-5 h-5" />}
             label="마케팅 정보 수신"
             required={false}
             checked={consents.marketing}
@@ -137,6 +184,7 @@ export default function ConsentPage() {
           disabled={!allRequiredChecked || isSubmitting}
           onClick={handleSubmit}
         >
+          {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
           {isSubmitting ? "처리 중..." : "동의하고 시작하기"}
         </Button>
       </div>
@@ -172,7 +220,7 @@ function ConsentItem({
         <span className="flex items-center gap-2 text-slate-300">
           {icon}
           <span>
-            {required && <span className="text-risk">[필수] </span>}
+            {required && <span className="text-rose-400">[필수] </span>}
             {!required && <span className="text-slate-500">[선택] </span>}
             {label}
           </span>

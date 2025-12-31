@@ -1,22 +1,101 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Sparkles } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { Search, Sparkles, Loader2 } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { MAGNETIC_SPRING } from "@/lib/physics";
+import { useSearch } from "@/hooks";
+import type { CandidateSearchResult } from "@/types";
 
 interface SpotlightSearchProps {
     query: string;
     onQueryChange: (query: string) => void;
+    onSearchResults?: (results: CandidateSearchResult[], isSearching: boolean) => void;
+    onSearchModeChange?: (isSearchMode: boolean) => void;
 }
 
-export default function SpotlightSearch({ query, onQueryChange }: SpotlightSearchProps) {
+export default function SpotlightSearch({
+    query,
+    onQueryChange,
+    onSearchResults,
+    onSearchModeChange,
+}: SpotlightSearchProps) {
     const [isFocused, setIsFocused] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+    const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Semantic Mode trigger
+    // React Query mutation
+    const searchMutation = useSearch();
+
+    // Semantic Mode trigger (10자 이상)
     const isSemantic = query.length > 10;
+
+    // 검색 실행
+    const executeSearch = useCallback(
+        async (searchQuery: string) => {
+            if (!searchQuery.trim()) {
+                onSearchResults?.([], false);
+                onSearchModeChange?.(false);
+                return;
+            }
+
+            onSearchModeChange?.(true);
+            onSearchResults?.([], true); // 로딩 시작
+
+            try {
+                const response = await searchMutation.mutateAsync({
+                    query: searchQuery,
+                    limit: 20,
+                });
+                onSearchResults?.(response.results, false);
+            } catch (error) {
+                console.error("Search error:", error);
+                onSearchResults?.([], false);
+            }
+        },
+        [searchMutation, onSearchResults, onSearchModeChange]
+    );
+
+    // 디바운스된 검색
+    const debouncedSearch = useCallback(
+        (searchQuery: string) => {
+            if (debounceRef.current) {
+                clearTimeout(debounceRef.current);
+            }
+
+            debounceRef.current = setTimeout(() => {
+                executeSearch(searchQuery);
+            }, 500); // 500ms 디바운스
+        },
+        [executeSearch]
+    );
+
+    // 쿼리 변경 핸들러
+    const handleQueryChange = (newQuery: string) => {
+        onQueryChange(newQuery);
+
+        if (newQuery.trim()) {
+            debouncedSearch(newQuery);
+        } else {
+            // 쿼리가 비면 검색 모드 해제
+            if (debounceRef.current) {
+                clearTimeout(debounceRef.current);
+            }
+            onSearchResults?.([], false);
+            onSearchModeChange?.(false);
+        }
+    };
+
+    // Enter 키로 즉시 검색
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter" && query.trim()) {
+            if (debounceRef.current) {
+                clearTimeout(debounceRef.current);
+            }
+            executeSearch(query);
+        }
+    };
 
     // Keyboard shortcut (/) to focus
     useEffect(() => {
@@ -32,6 +111,15 @@ export default function SpotlightSearch({ query, onQueryChange }: SpotlightSearc
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [isFocused]);
+
+    // 클린업
+    useEffect(() => {
+        return () => {
+            if (debounceRef.current) {
+                clearTimeout(debounceRef.current);
+            }
+        };
+    }, []);
 
     return (
         <div className="relative z-50 flex justify-center mb-12">
@@ -65,25 +153,45 @@ export default function SpotlightSearch({ query, onQueryChange }: SpotlightSearc
                     animate={{ scale: isSemantic ? 1.1 : 1, rotate: isSemantic ? 15 : 0 }}
                     className={cn("transition-colors", isSemantic ? "text-ai" : "text-slate-400")}
                 >
-                    {isSemantic ? <Sparkles size={24} /> : <Search size={24} />}
+                    {searchMutation.isPending ? (
+                        <Loader2 size={24} className="animate-spin text-primary" />
+                    ) : isSemantic ? (
+                        <Sparkles size={24} />
+                    ) : (
+                        <Search size={24} />
+                    )}
                 </motion.div>
 
                 <input
                     ref={inputRef}
                     type="text"
                     value={query}
-                    onChange={(e) => onQueryChange(e.target.value)}
+                    onChange={(e) => handleQueryChange(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     onFocus={() => setIsFocused(true)}
                     onBlur={() => setIsFocused(false)}
-                    placeholder={isSemantic ? "Semantic Vector Search Active..." : "Search candidates by name, skills, or role..."}
+                    placeholder={
+                        isSemantic
+                            ? "Semantic Vector Search Active..."
+                            : "Search candidates by name, skills, or role..."
+                    }
                     className="flex-1 bg-transparent border-none outline-none text-lg text-white placeholder:text-slate-500 font-medium"
                 />
 
                 <div className="flex items-center gap-2">
+                    {isSemantic && (
+                        <span className="text-xs text-ai bg-ai/10 px-2 py-1 rounded border border-ai/20">
+                            AI
+                        </span>
+                    )}
                     {isFocused ? (
-                        <span className="text-xs text-slate-500 bg-white/10 px-2 py-1 rounded">ESC</span>
+                        <span className="text-xs text-slate-500 bg-white/10 px-2 py-1 rounded">
+                            ESC
+                        </span>
                     ) : (
-                        <span className="text-xs text-slate-500 bg-white/10 px-2 py-1 rounded">/</span>
+                        <span className="text-xs text-slate-500 bg-white/10 px-2 py-1 rounded">
+                            /
+                        </span>
                     )}
                 </div>
             </motion.div>

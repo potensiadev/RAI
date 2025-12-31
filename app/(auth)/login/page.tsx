@@ -1,12 +1,55 @@
 "use client";
 
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Loader2 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") || "/dashboard";
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const supabase = createClient();
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError(error.message);
+      setIsLoading(false);
+    } else {
+      router.push(next);
+      router.refresh();
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/api/auth/callback?next=${next}`,
+      },
+    });
+    if (error) setError(error.message);
+  };
+
   return (
     <div className="space-y-6">
       {/* Logo */}
@@ -21,13 +64,25 @@ export default function LoginPage() {
       </div>
 
       {/* Login Form */}
-      <div className="p-6 rounded-2xl bg-[#0F0F24]/60 backdrop-blur-md border border-white/5 space-y-4">
+      <form
+        onSubmit={handleEmailLogin}
+        className="p-6 rounded-2xl bg-[#0F0F24]/60 backdrop-blur-md border border-white/5 space-y-4"
+      >
+        {error && (
+          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="email">이메일</Label>
           <Input
             id="email"
             type="email"
             placeholder="name@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
           />
         </div>
 
@@ -37,10 +92,14 @@ export default function LoginPage() {
             id="password"
             type="password"
             placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
           />
         </div>
 
-        <Button className="w-full" size="lg">
+        <Button className="w-full" size="lg" disabled={isLoading}>
+          {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
           로그인
         </Button>
 
@@ -53,7 +112,13 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <Button variant="outline" className="w-full" size="lg">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          size="lg"
+          onClick={handleGoogleLogin}
+        >
           <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
             <path
               fill="currentColor"
@@ -74,7 +139,7 @@ export default function LoginPage() {
           </svg>
           Google로 계속하기
         </Button>
-      </div>
+      </form>
 
       {/* Footer */}
       <p className="text-center text-sm text-slate-500">
@@ -84,5 +149,21 @@ export default function LoginPage() {
         </Link>
       </p>
     </div>
+  );
+}
+
+function LoginLoading() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginLoading />}>
+      <LoginForm />
+    </Suspense>
   );
 }

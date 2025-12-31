@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import Sidebar from "@/components/layout/Sidebar";
+import { QueryProvider } from "@/providers/QueryProvider";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
@@ -33,10 +33,9 @@ export default function RootLayout({
           "antialiased bg-deep-space text-foreground min-h-screen font-sans"
         )}
       >
-        <Sidebar />
-        <main className="ml-64 relative z-10 p-8 min-h-screen">
+        <QueryProvider>
           {children}
-        </main>
+        </QueryProvider>
       </body>
     </html>
   );

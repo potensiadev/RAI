@@ -4,11 +4,31 @@ import SpotlightSearch from "@/components/dashboard/SpotlightSearch";
 import GravityGrid from "@/components/dashboard/GravityGrid";
 import PrivacyShield from "@/components/detail/PrivacyShield";
 import { Mail, Phone } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import type { CandidateSearchResult } from "@/types";
 
 export default function Home() {
   const [query, setQuery] = useState("");
-  const isSearchMode = query.length > 0;
+  const [isSearchMode, setIsSearchMode] = useState(false);
+  const [searchResults, setSearchResults] = useState<CandidateSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  // 검색 결과 핸들러
+  const handleSearchResults = useCallback(
+    (results: CandidateSearchResult[], searching: boolean) => {
+      setSearchResults(results);
+      setIsSearching(searching);
+    },
+    []
+  );
+
+  // 검색 모드 변경 핸들러
+  const handleSearchModeChange = useCallback((mode: boolean) => {
+    setIsSearchMode(mode);
+    if (!mode) {
+      setSearchResults([]);
+    }
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto pt-10">
@@ -17,17 +37,37 @@ export default function Home() {
         <p className="text-slate-400">AI-Powered Screening & Risk Analysis</p>
       </div>
 
-      <SpotlightSearch query={query} onQueryChange={setQuery} />
+      <SpotlightSearch
+        query={query}
+        onQueryChange={setQuery}
+        onSearchResults={handleSearchResults}
+        onSearchModeChange={handleSearchModeChange}
+      />
 
       <div className="mt-20">
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-xl font-semibold text-white">Recent Candidates</h2>
+          <h2 className="text-xl font-semibold text-white">
+            {isSearchMode ? "Search Results" : "Recent Candidates"}
+          </h2>
           <div className="flex items-center gap-2 text-sm text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-green-500"></span>
-            Live Updates
+            {isSearchMode ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                {searchResults.length} results
+              </>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                Live Updates
+              </>
+            )}
           </div>
         </div>
-        <GravityGrid isSearchMode={isSearchMode} />
+        <GravityGrid
+          isSearchMode={isSearchMode}
+          searchResults={searchResults}
+          isSearching={isSearching}
+        />
       </div>
 
       {/* Privacy Shield Demo */}

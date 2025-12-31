@@ -14,10 +14,12 @@ from pydantic import BaseModel
 from config import settings, AnalysisMode
 from agents.router_agent import RouterAgent, FileType, RouterResult
 from agents.analyst_agent import AnalystAgent, get_analyst_agent, AnalysisResult
+from agents.privacy_agent import PrivacyAgent, get_privacy_agent, PrivacyResult
 from utils.hwp_parser import HWPParser, ParseMethod
 from utils.pdf_parser import PDFParser
 from utils.docx_parser import DOCXParser
 from services.llm_manager import get_llm_manager
+from services.embedding_service import EmbeddingService, get_embedding_service, EmbeddingResult
 
 # 로깅 설정
 logging.basicConfig(
@@ -306,6 +308,172 @@ async def analyze_resume(request: AnalyzeRequest):
         return AnalyzeResponse(
             success=False,
             error=f"분석 중 오류 발생: {str(e)}"
+        )
+
+
+class ProcessRequest(BaseModel):
+    """전체 처리 요청 모델"""
+    text: str
+    user_id: str
+    job_id: Optional[str] = None
+    mode: Optional[str] = None
+    generate_embeddings: bool = True
+    mask_pii: bool = True
+
+
+class ProcessResponse(BaseModel):
+    """전체 처리 응답 모델"""
+    success: bool
+    # 분석 결과
+    data: Optional[dict] = None
+    confidence_score: float = 0.0
+    field_confidence: dict = {}
+    analysis_warnings: list = []
+    # PII 처리 결과
+    pii_count: int = 0
+    pii_types: list = []
+    privacy_warnings: list = []
+    encrypted_fields: list = []
+    # 청킹/임베딩 결과
+    chunk_count: int = 0
+    chunks_summary: list = []
+    embedding_tokens: int = 0
+    # 메타
+    processing_time_ms: int = 0
+    mode: str = "phase_1"
+    error: Optional[str] = None
+
+
+@app.post("/process", response_model=ProcessResponse)
+async def process_resume(request: ProcessRequest):
+    """
+    이력서 전체 처리 파이프라인
+
+    1. 분석 (Analyst Agent) - GPT-4o + Gemini Cross-Check
+    2. PII 마스킹 (Privacy Agent)
+    3. 청킹 + 임베딩 (Embedding Service)
+
+    Args:
+        request: 처리 요청
+
+    Returns:
+        ProcessResponse with all results
+    """
+    import time
+    start_time = time.time()
+
+    logger.info(f"Processing resume for user: {request.user_id}, job: {request.job_id}")
+
+    try:
+        # 텍스트 길이 검증
+        if len(request.text.strip()) < settings.MIN_TEXT_LENGTH:
+            return ProcessResponse(
+                success=False,
+                error=f"텍스트가 너무 짧습니다 ({len(request.text.strip())}자)"
+            )
+
+        # 분석 모드 결정
+        analysis_mode = AnalysisMode.PHASE_1
+        if request.mode == "phase_2":
+            analysis_mode = AnalysisMode.PHASE_2
+
+        # ─────────────────────────────────────────────────
+        # Step 1: 분석 (Analyst Agent)
+        # ─────────────────────────────────────────────────
+        analyst = get_analyst_agent()
+        analysis_result: AnalysisResult = await analyst.analyze(
+            resume_text=request.text,
+            mode=analysis_mode
+        )
+
+        if not analysis_result.success or not analysis_result.data:
+            return ProcessResponse(
+                success=False,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+                mode=analysis_mode.value,
+                error=analysis_result.error or "분석 실패"
+            )
+
+        analyzed_data = analysis_result.data
+
+        # ─────────────────────────────────────────────────
+        # Step 2: PII 마스킹 (Privacy Agent)
+        # ─────────────────────────────────────────────────
+        pii_count = 0
+        pii_types = []
+        privacy_warnings = []
+        encrypted_fields = []
+
+        if request.mask_pii:
+            privacy_agent = get_privacy_agent()
+            privacy_result: PrivacyResult = privacy_agent.process(analyzed_data)
+
+            if privacy_result.success:
+                analyzed_data = privacy_result.masked_data
+                pii_count = len(privacy_result.pii_found)
+                pii_types = list(set(p.pii_type.value for p in privacy_result.pii_found))
+                privacy_warnings = privacy_result.warnings
+                encrypted_fields = list(privacy_result.encrypted_store.keys())
+
+        # ─────────────────────────────────────────────────
+        # Step 3: 청킹 + 임베딩 (Embedding Service)
+        # ─────────────────────────────────────────────────
+        chunk_count = 0
+        chunks_summary = []
+        embedding_tokens = 0
+
+        if request.generate_embeddings:
+            embedding_service = get_embedding_service()
+            embedding_result: EmbeddingResult = await embedding_service.process_candidate(
+                data=analyzed_data,
+                generate_embeddings=True
+            )
+
+            if embedding_result.success:
+                chunk_count = len(embedding_result.chunks)
+                embedding_tokens = embedding_result.total_tokens
+
+                # 청크 요약 (임베딩 제외)
+                chunks_summary = [
+                    {
+                        "type": c.chunk_type.value,
+                        "index": c.chunk_index,
+                        "content_preview": c.content[:100] + "..." if len(c.content) > 100 else c.content,
+                        "has_embedding": c.embedding is not None
+                    }
+                    for c in embedding_result.chunks
+                ]
+
+        processing_time = int((time.time() - start_time) * 1000)
+
+        logger.info(
+            f"Processing complete: confidence={analysis_result.confidence_score:.2f}, "
+            f"pii={pii_count}, chunks={chunk_count}, time={processing_time}ms"
+        )
+
+        return ProcessResponse(
+            success=True,
+            data=analyzed_data,
+            confidence_score=analysis_result.confidence_score,
+            field_confidence=analysis_result.field_confidence,
+            analysis_warnings=[w.to_dict() for w in analysis_result.warnings],
+            pii_count=pii_count,
+            pii_types=pii_types,
+            privacy_warnings=privacy_warnings,
+            encrypted_fields=encrypted_fields,
+            chunk_count=chunk_count,
+            chunks_summary=chunks_summary,
+            embedding_tokens=embedding_tokens,
+            processing_time_ms=processing_time,
+            mode=analysis_mode.value
+        )
+
+    except Exception as e:
+        logger.error(f"Processing error: {e}", exc_info=True)
+        return ProcessResponse(
+            success=False,
+            processing_time_ms=int((time.time() - start_time) * 1000),
+            error=f"처리 중 오류 발생: {str(e)}"
         )
 
 

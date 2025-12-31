@@ -38,5 +38,8 @@ pydantic==2.6.0
 pydantic-settings==2.1.0
 python-dotenv==1.0.1
 
+# Security
+cryptography==42.0.2
+
 # Utils
 python-magic==0.4.27

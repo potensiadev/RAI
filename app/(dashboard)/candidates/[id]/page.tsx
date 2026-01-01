@@ -4,12 +4,12 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  ExternalLink,
   Github,
   Linkedin,
   Globe,
   Loader2,
   AlertCircle,
+  FileDown,
 } from "lucide-react";
 import { CandidateReviewPanel } from "@/components/review";
 import type { CandidateDetail, ConfidenceLevel } from "@/types";
@@ -67,6 +67,11 @@ export default function CandidateDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportUsage, setExportUsage] = useState<{
+    limit: number | "unlimited";
+    used: number;
+  } | null>(null);
 
   // Fetch candidate data
   const fetchCandidate = useCallback(async () => {
@@ -127,6 +132,77 @@ export default function CandidateDetailPage() {
     }
   };
 
+  // Fetch export usage
+  const fetchExportUsage = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/candidates/${candidateId}/export`);
+      if (response.ok) {
+        const data = await response.json();
+        setExportUsage({
+          limit: data.limit,
+          used: data.used,
+        });
+      }
+    } catch (err) {
+      console.error("Export usage fetch error:", err);
+    }
+  }, [candidateId]);
+
+  useEffect(() => {
+    if (candidateId) {
+      fetchExportUsage();
+    }
+  }, [candidateId, fetchExportUsage]);
+
+  // Blind export handler
+  const handleBlindExport = async () => {
+    if (isExporting) return;
+
+    setIsExporting(true);
+    try {
+      const response = await fetch(`/api/candidates/${candidateId}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          format: "pdf",
+          includePhoto: false,
+          includePortfolio: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        if (response.status === 429) {
+          alert(`월 내보내기 한도를 초과했습니다.\n사용: ${data.used}/${data.limit}회`);
+          return;
+        }
+        throw new Error(data.error || "내보내기 실패");
+      }
+
+      const data = await response.json();
+
+      // Open print window with HTML
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(data.data.html);
+        printWindow.document.close();
+        printWindow.focus();
+        // Auto print after load
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      }
+
+      // Refresh usage count
+      await fetchExportUsage();
+    } catch (err) {
+      console.error("Export error:", err);
+      alert(err instanceof Error ? err.message : "내보내기 중 오류가 발생했습니다");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -181,8 +257,31 @@ export default function CandidateDetailPage() {
           </div>
         </div>
 
-        {/* External Links */}
+        {/* Actions */}
         <div className="flex items-center gap-2">
+          {/* Blind Export Button */}
+          <button
+            onClick={handleBlindExport}
+            disabled={isExporting}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg
+                     bg-neon-cyan/10 hover:bg-neon-cyan/20 border border-neon-cyan/30
+                     text-neon-cyan transition-colors disabled:opacity-50"
+            title={exportUsage ? `블라인드 내보내기 (${exportUsage.used}/${exportUsage.limit === "unlimited" ? "∞" : exportUsage.limit})` : "블라인드 내보내기"}
+          >
+            {isExporting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileDown className="w-4 h-4" />
+            )}
+            <span className="text-sm">블라인드 내보내기</span>
+            {exportUsage && exportUsage.limit !== "unlimited" && (
+              <span className="text-xs text-slate-400">
+                ({exportUsage.used}/{exportUsage.limit})
+              </span>
+            )}
+          </button>
+
+          {/* External Links */}
           {candidate.portfolioThumbnailUrl && (
             <a
               href="#"

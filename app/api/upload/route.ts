@@ -181,7 +181,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       .from("processing_jobs")
       .insert({
         user_id: user.id,
-        filename: file.name,
+        file_name: file.name,
         file_size: file.size,
         file_type: ext.replace(".", ""),
         status: "queued",
@@ -244,10 +244,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       const parseResult = await workerResponse.json();
 
       // 파싱 성공 시 job 상태 업데이트
+      // processing_status enum: queued, processing, completed, failed, rejected
       await supabaseAny
         .from("processing_jobs")
         .update({
-          status: parseResult.success ? "parsed" : "failed",
+          status: parseResult.success ? "processing" : "failed",
           raw_text: parseResult.text || null,
           page_count: parseResult.page_count || 0,
           parse_method: parseResult.parse_method || null,
@@ -313,11 +314,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       } catch (processError) {
         console.error("Processing failed:", processError);
 
-        // 분석 실패해도 파싱은 성공했으므로 parsed 상태 유지
+        // 분석 실패해도 파싱은 성공했으므로 processing 상태 유지 (나중에 재시도)
         await supabaseAny
           .from("processing_jobs")
           .update({
-            status: "parsed",
+            status: "processing",
             error_message: "Analysis pending - will retry",
           })
           .eq("id", jobData.id);

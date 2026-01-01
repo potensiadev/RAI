@@ -89,7 +89,8 @@ class DatabaseService:
             candidate_record = {
                 "user_id": user_id,
                 # 기본 정보 (마스킹된 값)
-                "name": analyzed_data.get("name"),
+                # name은 DB에서 NULL 허용하도록 마이그레이션됨
+                "name": analyzed_data.get("name") or "이름 미확인",
                 "birth_year": analyzed_data.get("birth_year"),
                 "gender": analyzed_data.get("gender"),
                 "location_city": analyzed_data.get("location_city"),
@@ -130,8 +131,8 @@ class DatabaseService:
                 # 파일 정보
                 "source_file": source_file,
                 "file_type": file_type,
-                # 상태
-                "status": "analyzed",
+                # 상태 (candidate_status enum: processing, completed, failed, rejected)
+                "status": "completed",
                 "analysis_mode": analysis_mode,
             }
 

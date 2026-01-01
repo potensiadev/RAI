@@ -1,0 +1,239 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  ExternalLink,
+  Github,
+  Linkedin,
+  Globe,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
+import { CandidateReviewPanel } from "@/components/review";
+import type { CandidateDetail, ConfidenceLevel } from "@/types";
+
+// Transform DB row to CandidateDetail
+function transformCandidate(row: Record<string, unknown>): CandidateDetail {
+  const confidence = (row.confidence_score as number) ?? 0;
+  const confidencePercent = Math.round(confidence * 100);
+
+  let confidenceLevel: ConfidenceLevel = "low";
+  if (confidencePercent >= 95) confidenceLevel = "high";
+  else if (confidencePercent >= 80) confidenceLevel = "medium";
+
+  return {
+    id: row.id as string,
+    name: (row.name as string) || "이름 미확인",
+    role: (row.last_position as string) || "",
+    company: (row.last_company as string) || "",
+    expYears: (row.exp_years as number) || 0,
+    skills: (row.skills as string[]) || [],
+    photoUrl: row.photo_url as string | undefined,
+    summary: row.summary as string | undefined,
+    aiConfidence: confidencePercent,
+    confidenceLevel,
+    riskLevel: confidencePercent >= 80 ? "low" : confidencePercent >= 60 ? "medium" : "high",
+    requiresReview: (row.requires_review as boolean) ?? confidencePercent < 95,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+
+    // Detail fields
+    birthYear: row.birth_year as number | undefined,
+    gender: row.gender as "male" | "female" | "other" | undefined,
+    phone: row.phone_masked as string | undefined,
+    email: row.email_masked as string | undefined,
+    careers: (row.careers as CandidateDetail["careers"]) || [],
+    projects: (row.projects as CandidateDetail["projects"]) || [],
+    education: (row.education as CandidateDetail["education"]) || [],
+    strengths: (row.strengths as string[]) || [],
+    portfolioThumbnailUrl: row.portfolio_thumbnail_url as string | undefined,
+    version: (row.version as number) || 1,
+    parentId: row.parent_id as string | undefined,
+    isLatest: (row.is_latest as boolean) ?? true,
+    analysisMode: (row.analysis_mode as "phase_1" | "phase_2") || "phase_1",
+    warnings: (row.warnings as string[]) || [],
+  };
+}
+
+export default function CandidateDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const candidateId = params.id as string;
+
+  const [candidate, setCandidate] = useState<CandidateDetail | null>(null);
+  const [fieldConfidence, setFieldConfidence] = useState<Record<string, number>>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Fetch candidate data
+  const fetchCandidate = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const response = await fetch(`/api/candidates/${candidateId}`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("후보자를 찾을 수 없습니다");
+        }
+        throw new Error("데이터를 불러오는 중 오류가 발생했습니다");
+      }
+
+      const data = await response.json();
+      setCandidate(transformCandidate(data.data));
+
+      // Set field confidence if available (at root level of response)
+      if (data.field_confidence) {
+        setFieldConfidence(data.field_confidence);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "알 수 없는 오류");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [candidateId]);
+
+  useEffect(() => {
+    fetchCandidate();
+  }, [fetchCandidate]);
+
+  // Save changes
+  const handleSave = async (updates: Partial<CandidateDetail>) => {
+    if (!candidate) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/candidates/${candidateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        throw new Error("저장 중 오류가 발생했습니다");
+      }
+
+      // Refresh data
+      await fetchCandidate();
+    } catch (err) {
+      console.error("Save error:", err);
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 text-neon-cyan animate-spin" />
+          <p className="text-slate-400">후보자 정보를 불러오는 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !candidate) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <AlertCircle className="w-12 h-12 text-red-400" />
+          <h2 className="text-xl font-semibold text-white">
+            {error || "후보자를 찾을 수 없습니다"}
+          </h2>
+          <button
+            onClick={() => router.back()}
+            className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600
+                     text-slate-300 transition-colors flex items-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            돌아가기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => router.back()}
+            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
+                     text-slate-400 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+
+          <div>
+            <h1 className="text-2xl font-bold text-white">{candidate.name}</h1>
+            <p className="text-slate-400">
+              {candidate.role}
+              {candidate.company && ` @ ${candidate.company}`}
+            </p>
+          </div>
+        </div>
+
+        {/* External Links */}
+        <div className="flex items-center gap-2">
+          {candidate.portfolioThumbnailUrl && (
+            <a
+              href="#"
+              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
+                       text-slate-400 hover:text-neon-cyan transition-colors"
+              title="포트폴리오"
+            >
+              <Globe className="w-5 h-5" />
+            </a>
+          )}
+          <a
+            href="#"
+            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
+                     text-slate-400 hover:text-white transition-colors"
+            title="GitHub"
+          >
+            <Github className="w-5 h-5" />
+          </a>
+          <a
+            href="#"
+            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
+                     text-slate-400 hover:text-blue-400 transition-colors"
+            title="LinkedIn"
+          >
+            <Linkedin className="w-5 h-5" />
+          </a>
+        </div>
+      </div>
+
+      {/* Meta Info */}
+      <div className="flex items-center gap-4 text-sm text-slate-500">
+        <span>버전 {candidate.version}</span>
+        <span>•</span>
+        <span>
+          등록일:{" "}
+          {new Date(candidate.createdAt).toLocaleDateString("ko-KR")}
+        </span>
+        <span>•</span>
+        <span>
+          수정일:{" "}
+          {new Date(candidate.updatedAt).toLocaleDateString("ko-KR")}
+        </span>
+      </div>
+
+      {/* Review Panel */}
+      <CandidateReviewPanel
+        candidate={candidate}
+        fieldConfidence={fieldConfidence}
+        onSave={handleSave}
+        isLoading={isSaving}
+      />
+    </div>
+  );
+}

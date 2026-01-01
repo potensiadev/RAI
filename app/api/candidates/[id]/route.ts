@@ -48,6 +48,8 @@ function toCandidateDetail(row: Record<string, unknown>): CandidateDetail {
     // Detail specific fields
     birthYear: row.birth_year as number | undefined,
     gender: row.gender as "male" | "female" | "other" | undefined,
+    phone: row.phone_masked as string | undefined,
+    email: row.email_masked as string | undefined,
     careers: (row.careers as Career[]) ?? [],
     projects: (row.projects as Project[]) ?? [],
     education: (row.education as Education[]) ?? [],
@@ -96,11 +98,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const candidate = toCandidateDetail(data as Record<string, unknown>);
+    const row = data as Record<string, unknown>;
+    const candidate = toCandidateDetail(row);
 
-    return NextResponse.json<ApiResponse<CandidateDetail>>({
+    // field_confidence 포함 (있는 경우)
+    const response: ApiResponse<CandidateDetail> & { field_confidence?: Record<string, number> } = {
       data: candidate,
-    });
+    };
+
+    if (row.field_confidence) {
+      response.field_confidence = row.field_confidence as Record<string, number>;
+    }
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Candidate detail API error:", error);
     return NextResponse.json<ApiResponse<null>>(
@@ -127,26 +137,51 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // 요청 바디 파싱
     const body = await request.json();
 
-    // 허용된 필드만 업데이트 (보안)
+    // 허용된 필드 (snake_case)
     const allowedFields = [
       "name",
+      "birth_year",
+      "gender",
       "skills",
       "exp_years",
       "last_company",
       "last_position",
       "education_level",
+      "education_school",
+      "education_major",
       "location_city",
       "summary",
       "strengths",
       "careers",
       "projects",
+      "education",
       "requires_review",
+      "portfolio_url",
+      "github_url",
+      "linkedin_url",
     ];
 
+    // camelCase → snake_case 변환 맵
+    const fieldMap: Record<string, string> = {
+      birthYear: "birth_year",
+      expYears: "exp_years",
+      lastCompany: "last_company",
+      lastPosition: "last_position",
+      educationLevel: "education_level",
+      educationSchool: "education_school",
+      educationMajor: "education_major",
+      locationCity: "location_city",
+      requiresReview: "requires_review",
+      portfolioUrl: "portfolio_url",
+      githubUrl: "github_url",
+      linkedinUrl: "linkedin_url",
+    };
+
     const updateData: Record<string, unknown> = {};
-    for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        updateData[field] = body[field];
+    for (const [key, value] of Object.entries(body)) {
+      const dbKey = fieldMap[key] || key;
+      if (allowedFields.includes(dbKey) && value !== undefined) {
+        updateData[dbKey] = value;
       }
     }
 

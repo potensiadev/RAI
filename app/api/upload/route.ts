@@ -112,19 +112,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       );
     }
 
-    // 크레딧 확인
+    // 크레딧 확인 (email로 조회 - auth.users.id와 public.users.id가 다를 수 있음)
     const { data: userData, error: userError } = await supabase
       .from("users")
-      .select("credits, credits_used_this_month, plan")
-      .eq("id", user.id)
+      .select("id, credits, credits_used_this_month, plan")
+      .eq("email", user.email)
       .single();
 
     if (userError || !userData) {
+      console.error("[Upload] User not found:", userError, "email:", user.email);
       return NextResponse.json(
         { success: false, error: "User not found" },
         { status: 404 }
       );
     }
+
+    // public.users의 ID 사용 (auth.users.id와 다를 수 있음)
+    const publicUserId = (userData as { id: string }).id;
 
     // 크레딧 계산
     const baseCredits: Record<string, number> = {
@@ -176,11 +180,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       );
     }
 
-    // processing_jobs 레코드 생성
+    // processing_jobs 레코드 생성 (publicUserId 사용)
     const { data: job, error: jobError } = await supabaseAny
       .from("processing_jobs")
       .insert({
-        user_id: user.id,
+        user_id: publicUserId,
         file_name: file.name,
         file_size: file.size,
         file_type: ext.replace(".", ""),
@@ -230,7 +234,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
     try {
       const workerFormData = new FormData();
       workerFormData.append("file", new Blob([fileBuffer]), file.name);
-      workerFormData.append("user_id", user.id);
+      workerFormData.append("user_id", publicUserId);
       workerFormData.append("job_id", jobData.id);
 
       const workerResponse = await fetch(`${WORKER_URL}/parse`, {
@@ -279,7 +283,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             text: parseResult.text,
-            user_id: user.id,
+            user_id: publicUserId,
             job_id: jobData.id,
             mode: userInfo.plan === "enterprise" ? "phase_2" : "phase_1",
             generate_embeddings: true,

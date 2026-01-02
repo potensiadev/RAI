@@ -181,7 +181,7 @@ export default function LandingPage() {
     {
       icon: Brain,
       title: "2-Way AI Cross-Check",
-      description: "GPT-4o와 Gemini의 이중 검증으로 99.2% 정확도의 이력서 분석을 제공합니다.",
+      description: "자체 AI엔진으로 99.2% 정확도의 이력서 분석을 제공합니다.",
     },
     {
       icon: Shield,

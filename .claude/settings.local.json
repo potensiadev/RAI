@@ -12,7 +12,10 @@
       "Bash(cat:*)",
       "Bash(npx next build)",
       "Bash(test:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(dir:*)",
+      "Bash(ls:*)",
+      "Bash(powershell -Command \"Invoke-RestMethod -Uri ''https://raiprod.up.railway.app/health'' -Method Get\")"
     ]
   }
 }

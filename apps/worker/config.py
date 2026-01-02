@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # Supabase
     # ─────────────────────────────────────────────────
     SUPABASE_URL: str = ""
-    SUPABASE_SERVICE_KEY: str = ""  # Service Role Key (서버용)
+    SUPABASE_SERVICE_ROLE_KEY: str = ""  # Service Role Key (서버용)
 
     # ─────────────────────────────────────────────────
     # Redis (Job Queue)
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # Google Gemini
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-pro"
+    GEMINI_MODEL: str = "gemini-3-pro"
 
     # Anthropic Claude (Phase 2)
     ANTHROPIC_API_KEY: str = ""
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     # ─────────────────────────────────────────────────
     # 보안 (암호화)
     # ─────────────────────────────────────────────────
-    ENCRYPTION_KEY: str = ""  # AES-256 암호화 키
+    ENCRYPTION_KEY: str = "b0f7e07a3e89c6a52459f895bb2a2cd78d83e1492d64bb5702648c001e08cfa6"  # AES-256 암호화 키
 
     # ─────────────────────────────────────────────────
     # 한컴 API (HWP 파싱 백업용, 선택)

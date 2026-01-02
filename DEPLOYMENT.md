@@ -90,7 +90,7 @@ Railway Dashboard > Variables에서 설정:
 ENV=production
 DEBUG=false
 SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_SERVICE_KEY=eyJxxx
+SUPABASE_SERVICE_ROLE_KEY=eyJxxx
 REDIS_URL=rediss://default:xxx@xxx.upstash.io:6379
 OPENAI_API_KEY=sk-xxx
 GEMINI_API_KEY=AIzaSyxxx
@@ -188,7 +188,7 @@ curl -X POST https://your-app.vercel.app/api/webhooks/worker \
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SUPABASE_URL` | Yes | Supabase URL |
-| `SUPABASE_SERVICE_KEY` | Yes | Service Role Key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service Role Key |
 | `REDIS_URL` | Yes | Upstash Redis URL |
 | `OPENAI_API_KEY` | Yes | OpenAI API Key |
 | `GEMINI_API_KEY` | Yes | Google AI API Key |

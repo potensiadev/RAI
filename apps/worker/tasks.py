@@ -79,7 +79,7 @@ def download_file_from_storage(file_path: str) -> bytes:
     """
     from supabase import create_client
 
-    supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+    supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
     # Storage 버킷에서 파일 다운로드
     bucket_name = "resumes"

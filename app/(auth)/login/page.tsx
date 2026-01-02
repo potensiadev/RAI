@@ -38,7 +38,7 @@ function LoginForm() {
     }
 
     // 이메일 마스킹: test@example.com -> te**@example.com
-    const [localPart, domain] = user.email.split("@");
+    const [localPart, domain] = emailToCheck.split("@");
     const maskedLocal = localPart.length > 2
       ? localPart.slice(0, 2) + "***"
       : localPart + "***";
@@ -46,7 +46,7 @@ function LoginForm() {
 
     return {
       exists: true,
-      provider: user.signup_provider || "email",
+      provider: (user as { signup_provider?: string }).signup_provider || "email",
       maskedEmail,
     };
   };

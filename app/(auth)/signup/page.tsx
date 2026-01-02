@@ -35,7 +35,7 @@ export default function SignupPage() {
     if (!data) {
       return { exists: false, provider: null };
     }
-    return { exists: true, provider: data.signup_provider || "email" };
+    return { exists: true, provider: (data as { signup_provider?: string }).signup_provider || "email" };
   };
 
   const handleEmailSignup = async (e: React.FormEvent) => {

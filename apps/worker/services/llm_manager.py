@@ -8,10 +8,12 @@ Structured Outputs 및 JSON 응답 지원
 import json
 import re
 import asyncio
+import traceback
 from typing import Dict, Any, Optional, List, Type
 from enum import Enum
 from dataclasses import dataclass
 import logging
+from datetime import datetime
 
 from openai import AsyncOpenAI
 from google import genai
@@ -20,6 +22,8 @@ from anthropic import AsyncAnthropic
 
 from config import get_settings
 
+# 로깅 설정 - 상세 출력
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
@@ -58,20 +62,48 @@ class LLMManager:
     """
 
     def __init__(self):
+        logger.info("=" * 60)
+        logger.info("[LLMManager] 초기화 시작")
+        logger.info("=" * 60)
+
         # OpenAI 클라이언트
         self.openai_client: Optional[AsyncOpenAI] = None
-        if settings.OPENAI_API_KEY:
-            self.openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        openai_key = settings.OPENAI_API_KEY
+        if openai_key:
+            try:
+                self.openai_client = AsyncOpenAI(api_key=openai_key)
+                logger.info(f"[LLMManager] ✅ OpenAI 클라이언트 초기화 성공 (key: {openai_key[:8]}...)")
+            except Exception as e:
+                logger.error(f"[LLMManager] ❌ OpenAI 클라이언트 초기화 실패: {e}")
+                logger.error(traceback.format_exc())
+        else:
+            logger.warning("[LLMManager] ⚠️ OPENAI_API_KEY 없음")
 
         # Gemini 클라이언트 (새 google-genai 패키지)
         self.gemini_client: Optional[genai.Client] = None
-        if settings.GEMINI_API_KEY:
-            self.gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        gemini_key = settings.GEMINI_API_KEY
+        if gemini_key:
+            try:
+                self.gemini_client = genai.Client(api_key=gemini_key)
+                logger.info(f"[LLMManager] ✅ Gemini 클라이언트 초기화 성공 (key: {gemini_key[:8]}...)")
+            except Exception as e:
+                logger.error(f"[LLMManager] ❌ Gemini 클라이언트 초기화 실패: {e}")
+                logger.error(traceback.format_exc())
+        else:
+            logger.warning("[LLMManager] ⚠️ GEMINI_API_KEY 없음")
 
         # Claude 클라이언트
         self.anthropic_client: Optional[AsyncAnthropic] = None
-        if settings.ANTHROPIC_API_KEY:
-            self.anthropic_client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        anthropic_key = settings.ANTHROPIC_API_KEY
+        if anthropic_key:
+            try:
+                self.anthropic_client = AsyncAnthropic(api_key=anthropic_key)
+                logger.info(f"[LLMManager] ✅ Claude 클라이언트 초기화 성공 (key: {anthropic_key[:8]}...)")
+            except Exception as e:
+                logger.error(f"[LLMManager] ❌ Claude 클라이언트 초기화 실패: {e}")
+                logger.error(traceback.format_exc())
+        else:
+            logger.warning("[LLMManager] ⚠️ ANTHROPIC_API_KEY 없음")
 
         # 기본 모델 설정
         self.models = {
@@ -79,6 +111,10 @@ class LLMManager:
             LLMProvider.GEMINI: "gemini-1.5-pro",
             LLMProvider.CLAUDE: "claude-3-5-sonnet-20241022",
         }
+
+        available = self.get_available_providers()
+        logger.info(f"[LLMManager] 사용 가능한 프로바이더: {[p.value for p in available]}")
+        logger.info("=" * 60)
 
     async def call_with_structured_output(
         self,
@@ -103,8 +139,11 @@ class LLMManager:
         Returns:
             LLMResponse with parsed JSON content
         """
+        start_time = datetime.now()
+        logger.info(f"[LLMManager] call_with_structured_output 시작 - provider: {provider.value}")
+
         if provider != LLMProvider.OPENAI:
-            # Gemini/Claude는 call_json 사용
+            logger.info(f"[LLMManager] {provider.value}은 structured output 미지원, call_json으로 전환")
             return await self.call_json(
                 provider=provider,
                 messages=messages,
@@ -115,6 +154,7 @@ class LLMManager:
             )
 
         if not self.openai_client:
+            logger.error("[LLMManager] ❌ OpenAI 클라이언트 없음 - API 키 미설정")
             return LLMResponse(
                 provider=provider,
                 content=None,
@@ -125,6 +165,8 @@ class LLMManager:
 
         try:
             model_name = model or self.models[provider]
+            logger.info(f"[LLMManager] OpenAI API 호출 시작 - model: {model_name}")
+            logger.debug(f"[LLMManager] 메시지 길이: {sum(len(m.get('content', '')) for m in messages)} chars")
 
             response = await self.openai_client.chat.completions.create(
                 model=model_name,
@@ -137,8 +179,13 @@ class LLMManager:
                 }
             )
 
+            elapsed = (datetime.now() - start_time).total_seconds()
             raw_content = response.choices[0].message.content or ""
+            logger.info(f"[LLMManager] ✅ OpenAI API 응답 수신 - {elapsed:.2f}초, {len(raw_content)} chars")
+            logger.debug(f"[LLMManager] OpenAI 응답 미리보기: {raw_content[:500]}...")
+
             parsed_content = json.loads(raw_content)
+            logger.info(f"[LLMManager] ✅ OpenAI JSON 파싱 성공 - 필드 수: {len(parsed_content) if isinstance(parsed_content, dict) else 'N/A'}")
 
             return LLMResponse(
                 provider=provider,
@@ -153,7 +200,9 @@ class LLMManager:
             )
 
         except json.JSONDecodeError as e:
-            logger.error(f"OpenAI JSON parse error: {e}")
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.error(f"[LLMManager] ❌ OpenAI JSON 파싱 실패 ({elapsed:.2f}초): {e}")
+            logger.error(f"[LLMManager] 원본 응답: {raw_content[:1000] if 'raw_content' in locals() else 'N/A'}")
             return LLMResponse(
                 provider=provider,
                 content=None,
@@ -162,7 +211,9 @@ class LLMManager:
                 error=f"JSON parse error: {str(e)}"
             )
         except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.error(f"[LLMManager] ❌ OpenAI API 오류 ({elapsed:.2f}초): {type(e).__name__}: {e}")
+            logger.error(f"[LLMManager] 상세 오류:\n{traceback.format_exc()}")
             return LLMResponse(
                 provider=provider,
                 content=None,
@@ -185,6 +236,8 @@ class LLMManager:
 
         스키마를 프롬프트에 포함시켜 JSON 응답 유도
         """
+        logger.info(f"[LLMManager] call_json 시작 - provider: {provider.value}")
+
         if provider == LLMProvider.OPENAI:
             return await self._call_openai_json(
                 messages, json_schema, model, temperature, max_tokens
@@ -198,6 +251,7 @@ class LLMManager:
                 messages, json_schema, model, temperature, max_tokens
             )
         else:
+            logger.error(f"[LLMManager] ❌ 알 수 없는 프로바이더: {provider}")
             return LLMResponse(
                 provider=provider,
                 content=None,
@@ -269,7 +323,11 @@ class LLMManager:
         max_tokens: int,
     ) -> LLMResponse:
         """Gemini JSON 모드 호출 (새 google-genai 패키지)"""
+        start_time = datetime.now()
+        logger.info("[LLMManager] Gemini JSON 호출 시작")
+
         if not self.gemini_client:
+            logger.error("[LLMManager] ❌ Gemini 클라이언트 없음 - API 키 미설정")
             return LLMResponse(
                 provider=LLMProvider.GEMINI,
                 content=None,
@@ -280,9 +338,11 @@ class LLMManager:
 
         try:
             model_name = model or self.models[LLMProvider.GEMINI]
+            logger.info(f"[LLMManager] Gemini API 호출 - model: {model_name}")
 
             # OpenAI 메시지 형식을 Gemini 형식으로 변환
             prompt = self._convert_messages_to_prompt(messages)
+            logger.debug(f"[LLMManager] Gemini 프롬프트 길이: {len(prompt)} chars")
 
             # 새 google-genai API 사용
             config = genai_types.GenerateContentConfig(
@@ -290,6 +350,8 @@ class LLMManager:
                 max_output_tokens=max_tokens,
                 response_mime_type="application/json",
             )
+
+            logger.info("[LLMManager] Gemini generate_content 호출 중...")
 
             # google-genai는 동기 API이므로 asyncio.to_thread 사용
             response = await asyncio.to_thread(
@@ -299,8 +361,13 @@ class LLMManager:
                 config=config
             )
 
+            elapsed = (datetime.now() - start_time).total_seconds()
             raw_content = response.text
+            logger.info(f"[LLMManager] ✅ Gemini API 응답 수신 - {elapsed:.2f}초, {len(raw_content)} chars")
+            logger.debug(f"[LLMManager] Gemini 응답 미리보기: {raw_content[:500]}...")
+
             parsed_content = json.loads(raw_content)
+            logger.info(f"[LLMManager] ✅ Gemini JSON 파싱 성공 - 필드 수: {len(parsed_content) if isinstance(parsed_content, dict) else 'N/A'}")
 
             # usage_metadata 접근
             usage = {}
@@ -310,6 +377,7 @@ class LLMManager:
                     "completion_tokens": getattr(response.usage_metadata, 'candidates_token_count', 0),
                     "total_tokens": getattr(response.usage_metadata, 'total_token_count', 0),
                 }
+                logger.debug(f"[LLMManager] Gemini 토큰 사용: {usage}")
 
             return LLMResponse(
                 provider=LLMProvider.GEMINI,
@@ -319,8 +387,21 @@ class LLMManager:
                 usage=usage if usage else None
             )
 
+        except json.JSONDecodeError as e:
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.error(f"[LLMManager] ❌ Gemini JSON 파싱 실패 ({elapsed:.2f}초): {e}")
+            logger.error(f"[LLMManager] 원본 응답: {raw_content[:1000] if 'raw_content' in locals() else 'N/A'}")
+            return LLMResponse(
+                provider=LLMProvider.GEMINI,
+                content=None,
+                raw_response=raw_content if 'raw_content' in locals() else "",
+                model=model or self.models[LLMProvider.GEMINI],
+                error=f"JSON parse error: {str(e)}"
+            )
         except Exception as e:
-            logger.error(f"Gemini JSON error: {e}")
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.error(f"[LLMManager] ❌ Gemini API 오류 ({elapsed:.2f}초): {type(e).__name__}: {e}")
+            logger.error(f"[LLMManager] 상세 오류:\n{traceback.format_exc()}")
             return LLMResponse(
                 provider=LLMProvider.GEMINI,
                 content=None,

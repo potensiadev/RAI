@@ -7,6 +7,7 @@ GPT-4o + Gemini (Phase 1) 또는 + Claude (Phase 2) 교차 검증
 
 import asyncio
 import logging
+import traceback
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -21,6 +22,8 @@ from services.llm_manager import (
 )
 from schemas.resume_schema import RESUME_JSON_SCHEMA, RESUME_SCHEMA_PROMPT
 
+# 로깅 설정 - 상세 출력
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
@@ -142,27 +145,68 @@ class AnalystAgent:
         start_time = datetime.now()
         analysis_mode = mode or self.mode
 
+        logger.info("=" * 70)
+        logger.info("[AnalystAgent] 이력서 분석 시작")
+        logger.info(f"[AnalystAgent] 분석 모드: {analysis_mode.value}")
+        logger.info(f"[AnalystAgent] 입력 텍스트 길이: {len(resume_text)} chars")
+        logger.info(f"[AnalystAgent] 입력 텍스트 미리보기: {resume_text[:300]}...")
+        logger.info("=" * 70)
+
         try:
-            # LLM 호출 준비
-            providers = self._get_providers_for_mode(analysis_mode)
+            # Step 1: LLM 호출 준비
+            logger.info("[AnalystAgent] Step 1: 사용 가능한 프로바이더 확인")
+            try:
+                providers = self._get_providers_for_mode(analysis_mode)
+                logger.info(f"[AnalystAgent] ✅ 선택된 프로바이더: {[p.value for p in providers]}")
+            except ValueError as e:
+                logger.error(f"[AnalystAgent] ❌ 프로바이더 선택 실패: {e}")
+                # 단일 프로바이더로 폴백 시도
+                available = self.llm_manager.get_available_providers()
+                if available:
+                    providers = available[:1]  # 사용 가능한 첫 번째 프로바이더만 사용
+                    logger.warning(f"[AnalystAgent] ⚠️ 폴백: 단일 프로바이더 사용 - {providers[0].value}")
+                else:
+                    raise ValueError("사용 가능한 LLM 프로바이더가 없습니다. API 키를 확인하세요.")
+
+            # Step 2: 메시지 생성
+            logger.info("[AnalystAgent] Step 2: LLM 프롬프트 메시지 생성")
             messages = self._create_extraction_messages(resume_text)
+            logger.debug(f"[AnalystAgent] 시스템 프롬프트 길이: {len(messages[0]['content'])} chars")
+            logger.debug(f"[AnalystAgent] 유저 프롬프트 길이: {len(messages[1]['content'])} chars")
 
-            # 병렬로 LLM 호출
+            # Step 3: 병렬 LLM 호출
+            logger.info("[AnalystAgent] Step 3: LLM 병렬 호출 시작")
             responses = await self._call_llms_parallel(providers, messages)
+            logger.info(f"[AnalystAgent] LLM 호출 완료 - 응답 수: {len(responses)}")
 
-            # 결과 병합 및 신뢰도 계산
+            # 응답 상세 로깅
+            for provider, response in responses.items():
+                if response.success:
+                    logger.info(f"[AnalystAgent] ✅ {provider.value}: 성공 (필드 수: {len(response.content) if isinstance(response.content, dict) else 'N/A'})")
+                else:
+                    logger.error(f"[AnalystAgent] ❌ {provider.value}: 실패 - {response.error}")
+
+            # Step 4: 결과 병합
+            logger.info("[AnalystAgent] Step 4: 응답 병합 및 신뢰도 계산")
             merged_data, field_confidence, warnings = self._merge_responses(
                 responses, providers
             )
+            logger.info(f"[AnalystAgent] ✅ 병합된 필드 수: {len(merged_data)}")
+            logger.debug(f"[AnalystAgent] 병합된 데이터: {merged_data}")
 
-            # 전체 신뢰도 계산
+            # Step 5: 전체 신뢰도 계산
             overall_confidence = self._calculate_overall_confidence(field_confidence)
+            logger.info(f"[AnalystAgent] ✅ 전체 신뢰도: {overall_confidence:.2%}")
 
-            # 추가 검증 경고
+            # Step 6: 추가 검증
+            logger.info("[AnalystAgent] Step 5: 데이터 유효성 검증")
             additional_warnings = self._validate_data(merged_data)
             warnings.extend(additional_warnings)
+            logger.info(f"[AnalystAgent] 경고 수: {len(warnings)}")
 
             processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            logger.info(f"[AnalystAgent] ✅ 분석 완료 - {processing_time}ms")
+            logger.info("=" * 70)
 
             return AnalysisResult(
                 success=True,
@@ -176,8 +220,10 @@ class AnalystAgent:
             )
 
         except Exception as e:
-            logger.error(f"Analysis failed: {e}")
             processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            logger.error(f"[AnalystAgent] ❌ 분석 실패 ({processing_time}ms): {type(e).__name__}: {e}")
+            logger.error(f"[AnalystAgent] 상세 오류:\n{traceback.format_exc()}")
+            logger.info("=" * 70)
             return AnalysisResult(
                 success=False,
                 processing_time_ms=processing_time,
@@ -188,6 +234,7 @@ class AnalystAgent:
     def _get_providers_for_mode(self, mode: AnalysisMode) -> List[LLMProvider]:
         """분석 모드에 따른 프로바이더 선택"""
         available = self.llm_manager.get_available_providers()
+        logger.info(f"[AnalystAgent] 사용 가능한 프로바이더: {[p.value for p in available]}")
 
         if mode == AnalysisMode.PHASE_1:
             # 2-Way: GPT-4o + Gemini
@@ -196,13 +243,21 @@ class AnalystAgent:
             # 3-Way: GPT-4o + Gemini + Claude
             required = [LLMProvider.OPENAI, LLMProvider.GEMINI, LLMProvider.CLAUDE]
 
+        logger.info(f"[AnalystAgent] 모드 {mode.value}에 필요한 프로바이더: {[p.value for p in required]}")
+
         # 사용 가능한 프로바이더만 필터링
         providers = [p for p in required if p in available]
+        logger.info(f"[AnalystAgent] 최종 선택된 프로바이더: {[p.value for p in providers]}")
+
+        # 최소 1개 프로바이더가 있으면 진행 (기존: 2개 필수 → 1개로 완화)
+        if len(providers) < 1:
+            logger.error(f"[AnalystAgent] ❌ 사용 가능한 프로바이더 없음!")
+            raise ValueError(
+                f"사용 가능한 LLM 프로바이더가 없습니다. Available: {[p.value for p in available]}"
+            )
 
         if len(providers) < 2:
-            raise ValueError(
-                f"At least 2 LLM providers required. Available: {[p.value for p in available]}"
-            )
+            logger.warning(f"[AnalystAgent] ⚠️ 단일 프로바이더만 사용 가능 - cross-check 불가")
 
         return providers
 
@@ -234,35 +289,73 @@ class AnalystAgent:
         messages: List[Dict[str, str]]
     ) -> Dict[LLMProvider, LLMResponse]:
         """병렬로 여러 LLM 호출"""
+        logger.info(f"[AnalystAgent] {len(providers)}개 LLM 병렬 호출 시작")
+
         async def call_provider(provider: LLMProvider) -> Tuple[LLMProvider, LLMResponse]:
-            if provider == LLMProvider.OPENAI:
-                # OpenAI는 Structured Outputs 사용
-                response = await self.llm_manager.call_with_structured_output(
+            start = datetime.now()
+            logger.info(f"[AnalystAgent] → {provider.value} 호출 시작")
+            try:
+                if provider == LLMProvider.OPENAI:
+                    # OpenAI는 Structured Outputs 사용
+                    response = await self.llm_manager.call_with_structured_output(
+                        provider=provider,
+                        messages=messages,
+                        json_schema=RESUME_JSON_SCHEMA,
+                        temperature=0.1
+                    )
+                else:
+                    # Gemini, Claude는 JSON 모드 사용
+                    response = await self.llm_manager.call_json(
+                        provider=provider,
+                        messages=messages,
+                        json_schema=RESUME_JSON_SCHEMA,
+                        temperature=0.1
+                    )
+
+                elapsed = (datetime.now() - start).total_seconds()
+                if response.success:
+                    logger.info(f"[AnalystAgent] ← {provider.value} 완료 ({elapsed:.2f}초) ✅")
+                else:
+                    logger.error(f"[AnalystAgent] ← {provider.value} 실패 ({elapsed:.2f}초): {response.error}")
+
+                return provider, response
+
+            except Exception as e:
+                elapsed = (datetime.now() - start).total_seconds()
+                logger.error(f"[AnalystAgent] ← {provider.value} 예외 발생 ({elapsed:.2f}초): {type(e).__name__}: {e}")
+                logger.error(traceback.format_exc())
+                # 예외 발생 시 에러 응답 반환
+                return provider, LLMResponse(
                     provider=provider,
-                    messages=messages,
-                    json_schema=RESUME_JSON_SCHEMA,
-                    temperature=0.1
+                    content=None,
+                    raw_response="",
+                    model="unknown",
+                    error=str(e)
                 )
-            else:
-                # Gemini, Claude는 JSON 모드 사용
-                response = await self.llm_manager.call_json(
-                    provider=provider,
-                    messages=messages,
-                    json_schema=RESUME_JSON_SCHEMA,
-                    temperature=0.1
-                )
-            return provider, response
 
         tasks = [call_provider(p) for p in providers]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         responses = {}
-        for result in results:
+        for i, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.error(f"LLM call failed: {result}")
+                provider = providers[i]
+                logger.error(f"[AnalystAgent] ❌ {provider.value} gather 예외: {result}")
+                logger.error(traceback.format_exc())
+                responses[provider] = LLMResponse(
+                    provider=provider,
+                    content=None,
+                    raw_response="",
+                    model="unknown",
+                    error=str(result)
+                )
             else:
                 provider, response = result
                 responses[provider] = response
+
+        # 결과 요약 로깅
+        success_count = sum(1 for r in responses.values() if r.success)
+        logger.info(f"[AnalystAgent] LLM 호출 결과: {success_count}/{len(providers)} 성공")
 
         return responses
 
@@ -278,10 +371,13 @@ class AnalystAgent:
         1. 모든 LLM이 동의하면 높은 신뢰도
         2. 다수결로 최종 값 결정
         3. 불일치 시 경고 생성
+        4. 모든 LLM 실패 시 빈 데이터 반환 (에러 발생 X)
         """
         merged_data = {}
         field_confidence_list = []
         warnings = []
+
+        logger.info("[AnalystAgent] 응답 병합 시작")
 
         # 성공한 응답만 필터
         valid_responses = {
@@ -289,8 +385,59 @@ class AnalystAgent:
             if r.success and r.content is not None
         }
 
+        logger.info(f"[AnalystAgent] 유효한 응답: {len(valid_responses)}/{len(responses)}")
+
+        # 모든 LLM 실패 시 - 빈 데이터 반환 (에러 발생 대신)
         if not valid_responses:
-            raise ValueError("No valid LLM responses")
+            logger.error("[AnalystAgent] ❌ 모든 LLM 응답 실패!")
+            for p, r in responses.items():
+                logger.error(f"[AnalystAgent]   - {p.value}: {r.error}")
+
+            # 에러 메시지 대신 빈 데이터 + 경고 반환
+            warnings.append(Warning(
+                type=WarningType.LOW_CONFIDENCE,
+                field="*",
+                message="모든 LLM 분석 실패 - AI 분석 없이 기본 데이터만 사용",
+                severity="high"
+            ))
+
+            # 기본 빈 데이터 구조 반환
+            default_data = {
+                "name": None,
+                "birth_year": None,
+                "gender": None,
+                "phone": None,
+                "email": None,
+                "address": None,
+                "exp_years": 0,
+                "last_company": None,
+                "last_position": None,
+                "careers": [],
+                "skills": [],
+                "education_level": None,
+                "education_school": None,
+                "education_major": None,
+                "educations": [],
+                "projects": [],
+                "summary": "AI 분석 실패로 요약을 생성하지 못했습니다.",
+                "strengths": [],
+                "portfolio_url": None,
+                "github_url": None,
+                "linkedin_url": None,
+            }
+
+            fc = FieldConfidence(
+                field="*",
+                confidence=0.0,
+                sources=[],
+                values={},
+                final_value=None,
+                has_mismatch=False
+            )
+            field_confidence_list.append(fc)
+
+            logger.warning("[AnalystAgent] ⚠️ 빈 데이터로 폴백 반환")
+            return default_data, field_confidence_list, warnings
 
         # 모든 필드 수집
         all_fields = set()

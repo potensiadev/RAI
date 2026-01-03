@@ -8,10 +8,11 @@ import {
   Filter,
   Users,
   Loader2,
-  ChevronRight,
   Building2,
   Calendar,
   Star,
+  Briefcase,
+  Code,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ interface Candidate {
   skills: string[];
   confidence_score: number;
   created_at: string;
+  summary: string | null;
 }
 
 export default function CandidatesPage() {
@@ -47,7 +49,7 @@ export default function CandidatesPage() {
     try {
       const { data, error } = await supabase
         .from("candidates")
-        .select("id, name, last_position, last_company, exp_years, skills, confidence_score, created_at")
+        .select("id, name, last_position, last_company, exp_years, skills, confidence_score, created_at, summary")
         .eq("status", "completed")
         .eq("is_latest", true)
         .order("created_at", { ascending: false });
@@ -93,9 +95,9 @@ export default function CandidatesPage() {
 
   const getConfidenceColor = (score: number) => {
     const percent = score * 100;
-    if (percent >= 95) return "text-emerald-400";
-    if (percent >= 80) return "text-yellow-400";
-    return "text-red-400";
+    if (percent >= 95) return "text-emerald-400 bg-emerald-500/20 border-emerald-500/30";
+    if (percent >= 80) return "text-yellow-400 bg-yellow-500/20 border-yellow-500/30";
+    return "text-red-400 bg-red-500/20 border-red-500/30";
   };
 
   return (
@@ -182,64 +184,106 @@ export default function CandidatesPage() {
         </div>
       </div>
 
-      {/* Candidate List */}
-      <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          </div>
-        ) : filteredCandidates.length === 0 ? (
-          <div className="text-center py-20 text-slate-400">
-            {searchQuery ? "검색 결과가 없습니다" : "등록된 후보자가 없습니다"}
-          </div>
-        ) : (
-          <div className="divide-y divide-white/5">
-            {filteredCandidates.map((candidate) => (
-              <Link
-                key={candidate.id}
-                href={`/candidates/${candidate.id}`}
-                className="flex items-center justify-between p-4 hover:bg-white/5 transition-colors group"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-purple-500/30 flex items-center justify-center text-white font-semibold">
+      {/* Candidate Cards - Issue #9: 카드 UI로 변환 */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      ) : filteredCandidates.length === 0 ? (
+        <div className="text-center py-20 text-slate-400">
+          {searchQuery ? "검색 결과가 없습니다" : "등록된 후보자가 없습니다"}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredCandidates.map((candidate) => (
+            <Link
+              key={candidate.id}
+              href={`/candidates/${candidate.id}`}
+              className="group p-5 rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900/80 
+                       border border-white/10 hover:border-primary/30
+                       transition-all duration-300 hover:shadow-lg hover:shadow-primary/10
+                       hover:-translate-y-1"
+            >
+              {/* Card Header */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-purple-500/30 
+                                flex items-center justify-center text-white font-semibold text-lg
+                                group-hover:from-primary/50 group-hover:to-purple-500/50 transition-all">
                     {candidate.name?.charAt(0) || "?"}
                   </div>
                   <div>
-                    <h3 className="font-medium text-white group-hover:text-primary transition-colors">
+                    <h3 className="font-semibold text-white group-hover:text-primary transition-colors">
                       {candidate.name || "이름 미확인"}
                     </h3>
-                    <div className="flex items-center gap-3 text-sm text-slate-400">
-                      {candidate.last_position && (
-                        <span>{candidate.last_position}</span>
-                      )}
-                      {candidate.last_company && (
-                        <span className="flex items-center gap-1">
-                          <Building2 className="w-3 h-3" />
-                          {candidate.last_company}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-6">
-                  <div className="text-right">
-                    <p className="text-sm text-slate-400">경력</p>
-                    <p className="font-medium text-white">{candidate.exp_years || 0}년</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-slate-400">신뢰도</p>
-                    <p className={cn("font-medium", getConfidenceColor(candidate.confidence_score || 0))}>
-                      {Math.round((candidate.confidence_score || 0) * 100)}%
+                    <p className="text-sm text-slate-400">
+                      {candidate.last_position || "직책 미확인"}
                     </p>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-primary transition-colors" />
                 </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
+                {/* Confidence Badge */}
+                <span className={cn(
+                  "px-2 py-1 rounded-full text-xs font-medium border",
+                  getConfidenceColor(candidate.confidence_score || 0)
+                )}>
+                  {Math.round((candidate.confidence_score || 0) * 100)}%
+                </span>
+              </div>
+
+              {/* Company & Experience */}
+              <div className="flex items-center gap-4 mb-3 text-sm">
+                {candidate.last_company && (
+                  <span className="flex items-center gap-1.5 text-slate-300">
+                    <Building2 className="w-4 h-4 text-slate-500" />
+                    {candidate.last_company}
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5 text-slate-300">
+                  <Briefcase className="w-4 h-4 text-slate-500" />
+                  {candidate.exp_years || 0}년
+                </span>
+              </div>
+
+              {/* Summary */}
+              {candidate.summary && (
+                <p className="text-sm text-slate-400 line-clamp-2 mb-3">
+                  {candidate.summary}
+                </p>
+              )}
+
+              {/* Skills */}
+              {candidate.skills && candidate.skills.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Code className="w-4 h-4 text-slate-500" />
+                  {candidate.skills.slice(0, 3).map((skill, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2 py-0.5 rounded-md bg-slate-700/50 text-xs text-slate-300"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                  {candidate.skills.length > 3 && (
+                    <span className="text-xs text-slate-500">
+                      +{candidate.skills.length - 3}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Date */}
+              <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-slate-500">
+                <span>
+                  {new Date(candidate.created_at).toLocaleDateString("ko-KR")}
+                </span>
+                <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                  상세 보기 →
+                </span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

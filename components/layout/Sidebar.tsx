@@ -25,8 +25,8 @@ export default function Sidebar() {
 
     return (
         <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-white/5 bg-white/[0.02] backdrop-blur-xl flex flex-col justify-between p-6">
-            {/* Brand */}
-            <div className="flex items-center gap-3 mb-10">
+            {/* Brand - Issue #8: 클릭시 홈으로 이동 */}
+            <Link href="/candidates" className="flex items-center gap-3 mb-10 hover:opacity-80 transition-opacity">
                 <motion.div
                     animate={FLOATING_PHYSICS.y}
                     className="p-2 bg-primary/20 rounded-lg border border-primary/50 text-primary box-shadow-glow"
@@ -37,7 +37,7 @@ export default function Sidebar() {
                     <h1 className="font-bold text-lg tracking-tight text-white">RAI</h1>
                     <p className="text-[10px] text-slate-400 tracking-widest uppercase">Recruitment AI</p>
                 </div>
-            </div>
+            </Link>
 
             {/* Navigation */}
             <nav className="flex-1 space-y-1">

@@ -1,15 +1,10 @@
 """
-Analyst Agent - Orchestrator for Multi-Agent Resume Analysis
+Analyst Agent - Optimized Resume Analysis
 
-Coordinates:
-- ProfileAgent
-- CareerAgent
-- SpecAgent
-- SummaryAgent
-
-Now includes:
-- SectionSeparator preprocessing for semantic normalization
-- Passes pre-separated sections to each agent
+Performance Optimized:
+- 2 LLM calls only (OpenAI + Gemini) instead of 8
+- Single unified schema
+- Cross-check for critical fields
 """
 
 import asyncio
@@ -20,13 +15,10 @@ from datetime import datetime
 from dataclasses import dataclass, field
 
 from config import get_settings, AnalysisMode
+from schemas.resume_schema import RESUME_JSON_SCHEMA, RESUME_SCHEMA_PROMPT
 from schemas.canonical_labels import CanonicalLabel
 from utils.section_separator import get_section_separator, SemanticIR
-from .profile_agent import ProfileAgent
-from .career_agent import CareerAgent
-from .spec_agent import SpecAgent
-from .summary_agent import SummaryAgent
-from .base_section_agent import SectionResult
+from services.llm_manager import get_llm_manager, LLMProvider, LLMResponse
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -50,7 +42,7 @@ class Warning:
 
 @dataclass
 class AnalysisResult:
-    """Aggregated Analysis Result"""
+    """Analysis Result"""
     success: bool
     data: Optional[Dict[str, Any]] = None
     confidence_score: float = 0.0
@@ -59,7 +51,6 @@ class AnalysisResult:
     processing_time_ms: int = 0
     mode: AnalysisMode = AnalysisMode.PHASE_1
     error: Optional[str] = None
-    semantic_ir: Optional[Dict[str, Any]] = None  # For debugging
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -76,31 +67,19 @@ class AnalysisResult:
 
 class AnalystAgent:
     """
-    Orchestrator Agent with Semantic Normalization
-
-    Pipeline:
-    1. SectionSeparator → Semantic IR
-    2. Route IR blocks to appropriate agents
-    3. Aggregate results
+    Optimized Analyst Agent
+    
+    - Uses unified schema (1 call per provider)
+    - Parallel OpenAI + Gemini calls
+    - Cross-check and merge
     """
 
-    # Mapping: CanonicalLabel → Agent
-    LABEL_TO_AGENT = {
-        CanonicalLabel.PROFILE: "profile",
-        CanonicalLabel.CAREER: "career",
-        CanonicalLabel.EDUCATION: "spec",
-        CanonicalLabel.SKILLS: "spec",
-        CanonicalLabel.PROJECTS: "spec",
-        CanonicalLabel.SUMMARY: "summary",
-        CanonicalLabel.STRENGTHS: "summary",
-    }
+    # Critical fields for cross-check
+    CRITICAL_FIELDS = ["name", "phone", "email"]
 
     def __init__(self):
         self.section_separator = get_section_separator()
-        self.profile_agent = ProfileAgent()
-        self.career_agent = CareerAgent()
-        self.spec_agent = SpecAgent()
-        self.summary_agent = SummaryAgent()
+        self.llm_manager = get_llm_manager()
         self.mode = settings.ANALYSIS_MODE
 
     async def analyze(
@@ -110,136 +89,61 @@ class AnalystAgent:
         filename: Optional[str] = None
     ) -> AnalysisResult:
         """
-        Run analysis with semantic preprocessing.
+        Analyze resume with optimized 2-call strategy.
         """
         start_time = datetime.now()
         analysis_mode = mode or self.mode
 
         logger.info("=" * 70)
-        logger.info(f"[Orchestrator] Starting Multi-Agent Analysis (Mode: {analysis_mode.value})")
-        logger.info(f"[Orchestrator] Text Length: {len(resume_text)} chars")
+        logger.info(f"[AnalystAgent] Starting Optimized Analysis (Mode: {analysis_mode.value})")
+        logger.info(f"[AnalystAgent] Text Length: {len(resume_text)} chars")
 
         try:
             # ─────────────────────────────────────────────────────────────────
-            # Step 1: Semantic IR Generation
+            # Step 1: Preprocess with Section Separator (for context)
             # ─────────────────────────────────────────────────────────────────
             ir = self.section_separator.separate(resume_text, filename)
-            logger.info(f"[Orchestrator] IR Generated: {len(ir.blocks)} blocks")
-            
-            for block in ir.blocks:
-                logger.debug(f"  → {block.normalized_label}: {block.raw_title[:30]}...")
+            logger.info(f"[AnalystAgent] IR: {len(ir.blocks)} sections detected")
 
             # ─────────────────────────────────────────────────────────────────
-            # Step 2: Prepare section-specific text
+            # Step 2: Prepare prompt
             # ─────────────────────────────────────────────────────────────────
-            profile_text = self._get_section_text(ir, [CanonicalLabel.PROFILE])
-            career_text = self._get_section_text(ir, [CanonicalLabel.CAREER])
-            spec_text = self._get_section_text(ir, [
-                CanonicalLabel.EDUCATION, 
-                CanonicalLabel.SKILLS, 
-                CanonicalLabel.PROJECTS,
-                CanonicalLabel.CERTIFICATIONS,
-                CanonicalLabel.LANGUAGES,
-            ])
-            summary_text = self._get_section_text(ir, [
-                CanonicalLabel.SUMMARY, 
-                CanonicalLabel.STRENGTHS
-            ])
-
-            # If no sections detected, fall back to full text
-            if not any([profile_text, career_text, spec_text]):
-                logger.warning("[Orchestrator] No sections detected, using full text")
-                profile_text = resume_text
-                career_text = resume_text
-                spec_text = resume_text
-                summary_text = resume_text
+            messages = self._create_messages(resume_text, filename)
 
             # ─────────────────────────────────────────────────────────────────
-            # Step 3: Run agents in parallel with targeted text
+            # Step 3: Parallel LLM calls (OpenAI + Gemini only = 2 calls)
             # ─────────────────────────────────────────────────────────────────
-            results = await asyncio.gather(
-                self.profile_agent.process(profile_text or resume_text, filename, analysis_mode),
-                self.career_agent.process(career_text or resume_text, filename, analysis_mode),
-                self.spec_agent.process(spec_text or resume_text, filename, analysis_mode),
-                self.summary_agent.process(summary_text or resume_text, filename, analysis_mode),
-                return_exceptions=True
-            )
+            providers = self._get_providers(analysis_mode)
+            logger.info(f"[AnalystAgent] Calling {len(providers)} providers: {[p.value for p in providers]}")
 
-            profile_res, career_res, spec_res, summary_res = results
+            call_start = datetime.now()
+            responses = await self._call_llms_parallel(providers, messages)
+            call_time = (datetime.now() - call_start).total_seconds()
+            logger.info(f"[AnalystAgent] LLM calls completed in {call_time:.2f}s")
 
             # ─────────────────────────────────────────────────────────────────
-            # Step 4: Aggregate results (same as before)
+            # Step 4: Merge and Cross-Check
             # ─────────────────────────────────────────────────────────────────
-            merged_data = {}
-            warnings = []
-            total_confidence = 0.0
-            agent_count = 0
-
-            # Profile (Critical)
-            if isinstance(profile_res, SectionResult) and profile_res.success and profile_res.data:
-                merged_data.update(profile_res.data)
-                total_confidence += profile_res.confidence_score
-                agent_count += 1
-                for w in profile_res.warnings:
-                    warnings.append(Warning("profile", "profile", w))
-            else:
-                logger.error("[Orchestrator] Profile extraction failed!")
-                warnings.append(Warning("critical", "profile", "Failed to extract profile"))
-
-            # Career
-            if isinstance(career_res, SectionResult) and career_res.success and career_res.data:
-                merged_data.update(career_res.data)
-                total_confidence += career_res.confidence_score
-                agent_count += 1
-                for w in career_res.warnings:
-                    warnings.append(Warning("career", "career", w))
-            else:
-                logger.warning("[Orchestrator] Career extraction failed (Non-critical)")
-                warnings.append(Warning("partial_fail", "career", "Failed to extract career"))
-
-            # Spec
-            if isinstance(spec_res, SectionResult) and spec_res.success and spec_res.data:
-                merged_data.update(spec_res.data)
-                total_confidence += spec_res.confidence_score
-                agent_count += 1
-                for w in spec_res.warnings:
-                    warnings.append(Warning("spec", "spec", w))
-            else:
-                logger.warning("[Orchestrator] Spec extraction failed (Non-critical)")
-                warnings.append(Warning("partial_fail", "spec", "Failed to extract specs"))
-
-            # Summary
-            if isinstance(summary_res, SectionResult) and summary_res.success and summary_res.data:
-                merged_data.update(summary_res.data)
-                total_confidence += summary_res.confidence_score
-                agent_count += 1
-                for w in summary_res.warnings:
-                    warnings.append(Warning("summary", "summary", w))
-            else:
-                logger.warning("[Orchestrator] Summary generation failed (Non-critical)")
-
-            # Finalize
-            overall_confidence = total_confidence / max(1, agent_count) if agent_count > 0 else 0.0
-            processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
-
-            logger.info(f"[Orchestrator] Completed in {processing_time}ms. Success: {agent_count}/4")
+            merged_data, confidence, warnings = self._merge_responses(responses)
 
             if not merged_data:
-                raise Exception("All agents failed to extract data")
+                raise Exception("All LLM providers failed to extract data")
+
+            processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            logger.info(f"[AnalystAgent] Completed in {processing_time}ms. Confidence: {confidence:.2f}")
 
             return AnalysisResult(
                 success=True,
                 data=merged_data,
-                confidence_score=overall_confidence,
+                confidence_score=confidence,
                 warnings=warnings,
                 processing_time_ms=processing_time,
-                mode=analysis_mode,
-                semantic_ir=ir.to_dict()  # Include IR for debugging
+                mode=analysis_mode
             )
 
         except Exception as e:
             processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
-            logger.error(f"[Orchestrator] Fatal Error: {e}")
+            logger.error(f"[AnalystAgent] Fatal Error: {e}")
             logger.error(traceback.format_exc())
             return AnalysisResult(
                 success=False,
@@ -248,14 +152,147 @@ class AnalystAgent:
                 mode=analysis_mode
             )
 
-    def _get_section_text(self, ir: SemanticIR, labels: List[str]) -> str:
-        """Extract text for given canonical labels from IR"""
-        texts = []
-        for block in ir.blocks:
-            if block.normalized_label in labels:
-                # Include header for context
-                texts.append(f"[{block.raw_title}]\n{block.text}")
-        return "\n\n".join(texts)
+    def _create_messages(self, text: str, filename: Optional[str]) -> List[Dict[str, str]]:
+        """Create optimized prompt"""
+        system_prompt = f"""You are an expert Resume Parser. Extract ALL information from the resume.
+
+{RESUME_SCHEMA_PROMPT}
+
+Return a single JSON object with all extracted fields. If a field is not found, omit it.
+"""
+        user_prompt = f"""Extract all information from this resume:
+
+Filename: {filename or 'Unknown'}
+
+---
+{text}
+---
+
+Return valid JSON only."""
+
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+    def _get_providers(self, mode: AnalysisMode) -> List[LLMProvider]:
+        """Get providers for analysis"""
+        available = self.llm_manager.get_available_providers()
+        
+        # Always use OpenAI + Gemini for cross-check (2 calls)
+        required = [LLMProvider.OPENAI, LLMProvider.GEMINI]
+        
+        providers = [p for p in required if p in available]
+        
+        if not providers:
+            # Fallback to any available
+            if available:
+                return available[:1]
+            raise ValueError("No LLM providers available")
+        
+        return providers
+
+    async def _call_llms_parallel(
+        self,
+        providers: List[LLMProvider],
+        messages: List[Dict[str, str]]
+    ) -> Dict[LLMProvider, LLMResponse]:
+        """Call LLMs in parallel"""
+        
+        async def call_single(provider: LLMProvider) -> LLMResponse:
+            try:
+                # Use unified schema
+                return await self.llm_manager.call_with_structured_output(
+                    provider=provider,
+                    messages=messages,
+                    json_schema=RESUME_JSON_SCHEMA,
+                    temperature=0.1
+                )
+            except Exception as e:
+                logger.error(f"[AnalystAgent] {provider.value} failed: {e}")
+                return LLMResponse(
+                    provider=provider,
+                    content=None,
+                    raw_response="",
+                    model="unknown",
+                    error=str(e)
+                )
+
+        tasks = [call_single(p) for p in providers]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        responses = {}
+        for i, res in enumerate(results):
+            if isinstance(res, LLMResponse):
+                responses[providers[i]] = res
+                if res.success:
+                    logger.info(f"[AnalystAgent] {providers[i].value}: Success")
+                else:
+                    logger.warning(f"[AnalystAgent] {providers[i].value}: Failed - {res.error}")
+
+        return responses
+
+    def _merge_responses(
+        self,
+        responses: Dict[LLMProvider, LLMResponse]
+    ) -> tuple[Dict[str, Any], float, List[Warning]]:
+        """
+        Merge responses with cross-check on critical fields.
+        """
+        valid_responses = [r for r in responses.values() if r.success and r.content]
+        
+        if not valid_responses:
+            return {}, 0.0, [Warning("critical", "all", "All LLM providers failed")]
+
+        # If only one response, use it
+        if len(valid_responses) == 1:
+            return valid_responses[0].content, 0.7, [Warning("info", "cross_check", "Only one provider available")]
+
+        # Multiple responses - merge with cross-check
+        openai_data = responses.get(LLMProvider.OPENAI)
+        gemini_data = responses.get(LLMProvider.GEMINI)
+
+        # Use OpenAI as base (usually more structured)
+        if openai_data and openai_data.success:
+            base_data = openai_data.content.copy()
+        elif gemini_data and gemini_data.success:
+            base_data = gemini_data.content.copy()
+        else:
+            return {}, 0.0, [Warning("critical", "all", "No valid responses")]
+
+        warnings = []
+        confidence_sum = 0
+        field_count = 0
+
+        # Cross-check critical fields
+        for field in self.CRITICAL_FIELDS:
+            openai_val = openai_data.content.get(field) if openai_data and openai_data.success else None
+            gemini_val = gemini_data.content.get(field) if gemini_data and gemini_data.success else None
+
+            if openai_val and gemini_val:
+                if str(openai_val).lower().strip() == str(gemini_val).lower().strip():
+                    confidence_sum += 1.0
+                else:
+                    confidence_sum += 0.5
+                    warnings.append(Warning(
+                        "mismatch", field,
+                        f"Values differ: '{openai_val}' vs '{gemini_val}'",
+                        "medium"
+                    ))
+                field_count += 1
+            elif openai_val or gemini_val:
+                confidence_sum += 0.7
+                field_count += 1
+
+        # For non-critical fields, just take whatever is available
+        if gemini_data and gemini_data.success:
+            for key, value in gemini_data.content.items():
+                if key not in base_data or base_data[key] is None:
+                    base_data[key] = value
+
+        avg_confidence = confidence_sum / max(1, field_count) if field_count > 0 else 0.8
+
+        return base_data, avg_confidence, warnings
 
 
 # Singleton

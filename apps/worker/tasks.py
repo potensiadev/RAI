@@ -350,22 +350,7 @@ def process_resume(
                 hash_store["email"] = privacy_agent.hash_for_dedup(original_data["email"])
 
         # ─────────────────────────────────────────────────
-        # Step 3: 청킹 + 임베딩 (Embedding Service)
-        # ─────────────────────────────────────────────────
-        embedding_service = get_embedding_service()
-        embedding_result: EmbeddingResult = asyncio.run(
-            embedding_service.process_candidate(data=analyzed_data, generate_embeddings=True)
-        )
-
-        chunk_count = 0
-        embedding_chunks = []
-
-        if embedding_result.success:
-            chunk_count = len(embedding_result.chunks)
-            embedding_chunks = embedding_result.chunks
-
-        # ─────────────────────────────────────────────────
-        # Step 4: DB 저장 (candidates + candidate_chunks)
+        # Step 3: DB 저장 (먼저 저장하여 UI에 빠르게 반영)
         # ─────────────────────────────────────────────────
         save_result: SaveResult = db_service.save_candidate(
             user_id=user_id,
@@ -394,14 +379,29 @@ def process_resume(
             return {"success": False, "error": error_msg}
 
         candidate_id = save_result.candidate_id
+        logger.info(f"[Task] Candidate saved: {candidate_id} (now generating embeddings...)")
 
-        # candidate_chunks + embedding 저장
+        # ─────────────────────────────────────────────────
+        # Step 4: 청킹 + 임베딩 (DB 저장 후 처리)
+        # ─────────────────────────────────────────────────
+        embedding_service = get_embedding_service()
+        chunk_count = 0
         chunks_saved = 0
-        if embedding_chunks:
-            chunks_saved = db_service.save_chunks_with_embeddings(
-                candidate_id=candidate_id,
-                chunks=embedding_chunks
+
+        try:
+            embedding_result: EmbeddingResult = asyncio.run(
+                embedding_service.process_candidate(data=analyzed_data, generate_embeddings=True)
             )
+
+            if embedding_result.success:
+                chunk_count = len(embedding_result.chunks)
+                chunks_saved = db_service.save_chunks_with_embeddings(
+                    candidate_id=candidate_id,
+                    chunks=embedding_result.chunks
+                )
+        except Exception as emb_error:
+            logger.warning(f"[Task] Embedding generation failed (non-critical): {emb_error}")
+            # 임베딩 실패해도 계속 진행 (데이터는 이미 저장됨)
 
         # processing_jobs 상태 업데이트
         db_service.update_job_status(

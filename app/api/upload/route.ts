@@ -237,129 +237,37 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       );
     }
 
-    // Worker에 파싱 요청 전송
-    try {
-      const workerFormData = new FormData();
-      workerFormData.append("file", new Blob([fileBuffer]), file.name);
-      workerFormData.append("user_id", publicUserId);
-      workerFormData.append("job_id", jobData.id);
+    // ─────────────────────────────────────────────────
+    // Worker에 비동기 처리 요청 (fire-and-forget)
+    // Vercel 타임아웃 방지를 위해 응답을 기다리지 않음
+    // Worker가 백그라운드에서 파싱 → 분석 → DB 저장 → 크레딧 차감
+    // ─────────────────────────────────────────────────
 
-      const workerResponse = await fetch(`${WORKER_URL}/parse`, {
-        method: "POST",
-        body: workerFormData,
-      });
+    // Worker 전체 파이프라인 호출 (비동기, 응답 대기 안함)
+    const workerPayload = {
+      file_url: storagePath,
+      file_name: file.name,
+      user_id: publicUserId,
+      job_id: jobData.id,
+      mode: userInfo.plan === "enterprise" ? "phase_2" : "phase_1",
+    };
 
-      if (!workerResponse.ok) {
-        const errorData = await workerResponse.json();
-        throw new Error(errorData.detail || "Worker parsing failed");
-      }
+    // Fire-and-forget: Worker에 요청 보내고 응답 기다리지 않음
+    fetch(`${WORKER_URL}/pipeline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(workerPayload),
+    }).catch((error) => {
+      // 연결 실패 시 로그만 남김 (이미 사용자에게 응답함)
+      console.error("Worker pipeline request failed:", error);
+    });
 
-      const parseResult = await workerResponse.json();
-
-      // 파싱 성공 시 job 상태 업데이트
-      // processing_status enum: queued, processing, completed, failed, rejected
-      await supabaseAny
-        .from("processing_jobs")
-        .update({
-          status: parseResult.success ? "processing" : "failed",
-          raw_text: parseResult.text || null,
-          page_count: parseResult.page_count || 0,
-          parse_method: parseResult.parse_method || null,
-          error_message: parseResult.error_message || null,
-        })
-        .eq("id", jobData.id);
-
-      if (!parseResult.success) {
-        return NextResponse.json(
-          {
-            success: false,
-            jobId: jobData.id,
-            error: parseResult.error_message || "Parsing failed",
-          },
-          { status: 422 }
-        );
-      }
-
-      // ─────────────────────────────────────────────────
-      // Step 2: /process 호출 (분석 + PII + 임베딩 + DB 저장)
-      // Worker가 직접 DB 저장, 크레딧 차감까지 처리
-      // ─────────────────────────────────────────────────
-      try {
-        const processResponse = await fetch(`${WORKER_URL}/process`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: parseResult.text,
-            user_id: publicUserId,
-            job_id: jobData.id,
-            mode: userInfo.plan === "enterprise" ? "phase_2" : "phase_1",
-            generate_embeddings: true,
-            mask_pii: true,
-            save_to_db: true,
-            source_file: storagePath,
-            file_type: ext.replace(".", ""),
-          }),
-        });
-
-        if (!processResponse.ok) {
-          throw new Error("Worker processing failed");
-        }
-
-        const processResult: ProcessResult = await processResponse.json();
-
-        if (!processResult.success) {
-          // 분석 실패
-          return NextResponse.json({
-            success: false,
-            jobId: jobData.id,
-            error: processResult.error || "Analysis failed",
-          }, { status: 422 });
-        }
-
-        // Worker가 이미 DB 저장, 크레딧 차감을 완료함
-        return NextResponse.json({
-          success: true,
-          jobId: jobData.id,
-          candidateId: processResult.candidate_id || undefined,
-          message: `Resume processed successfully (confidence: ${Math.round((processResult.confidence_score || 0) * 100)}%, chunks: ${processResult.chunks_saved || 0})`,
-        });
-
-      } catch (processError) {
-        console.error("Processing failed:", processError);
-
-        // 분석 실패해도 파싱은 성공했으므로 processing 상태 유지 (나중에 재시도)
-        await supabaseAny
-          .from("processing_jobs")
-          .update({
-            status: "processing",
-            error_message: "Analysis pending - will retry",
-          })
-          .eq("id", jobData.id);
-
-        return NextResponse.json({
-          success: true,
-          jobId: jobData.id,
-          message: `File parsed successfully - analysis pending (${parseResult.page_count} pages)`,
-        });
-      }
-    } catch (workerError) {
-      // Worker 연결 실패 시 job을 queued 상태로 유지 (나중에 처리)
-      console.error("Worker request failed:", workerError);
-
-      await supabaseAny
-        .from("processing_jobs")
-        .update({
-          status: "queued",
-          error_message: "Worker temporarily unavailable - queued for retry",
-        })
-        .eq("id", jobData.id);
-
-      return NextResponse.json({
-        success: true,
-        jobId: jobData.id,
-        message: "File uploaded - processing queued",
-      });
-    }
+    // 즉시 응답 반환 - Worker가 백그라운드에서 처리
+    return NextResponse.json({
+      success: true,
+      jobId: jobData.id,
+      message: "파일이 업로드되었습니다. 백그라운드에서 분석 중입니다.",
+    });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(

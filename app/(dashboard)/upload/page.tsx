@@ -103,7 +103,17 @@ export default function UploadPage() {
         body: formData,
       });
 
-      const result = await response.json();
+      // Handle non-JSON responses (e.g., Vercel "Request Entity Too Large")
+      const contentType = response.headers.get("content-type");
+      let result;
+
+      if (contentType && contentType.includes("application/json")) {
+        result = await response.json();
+      } else {
+        // Non-JSON response - likely an error message
+        const text = await response.text();
+        throw new Error(text || `서버 오류 (${response.status})`);
+      }
 
       if (!response.ok || !result.success) {
         throw new Error(result.error || "업로드 실패");

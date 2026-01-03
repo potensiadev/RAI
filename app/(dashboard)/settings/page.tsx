@@ -56,29 +56,30 @@ export default function SettingsPage() {
         return;
       }
 
-      // Query by email since auth.users.id and public.users.id may differ
-      if (!user.email) {
-        console.error("User email not found");
-        return;
-      }
-
+      // users.id directly references auth.users.id, so we can query by user.id
+      // Also select email column explicitly in case RLS is hiding it
       const { data, error } = await supabase
         .from("users")
-        .select("id, name, company, plan, created_at")
-        .eq("email", user.email)
+        .select("id, email, name, company, plan, created_at")
+        .eq("id", user.id)
         .single();
 
       if (error) {
         console.error("Failed to fetch user profile:", error);
-        // If user doesn't exist in public.users, they may need to complete registration
+        // If user doesn't exist in public.users, show a helpful message
+        setProfile(null);
         return;
       }
-      if (!data) return;
+      if (!data) {
+        console.error("No user data found");
+        setProfile(null);
+        return;
+      }
 
-      const userData = data as { id: string; name: string | null; company: string | null; plan: string; created_at: string };
+      const userData = data as { id: string; email: string; name: string | null; company: string | null; plan: string; created_at: string };
       setProfile({
         id: userData.id,
-        email: user.email || "",
+        email: userData.email || user.email || "",
         name: userData.name,
         company: userData.company,
         plan: userData.plan,
@@ -88,6 +89,7 @@ export default function SettingsPage() {
       setCompany(userData.company || "");
     } catch (error) {
       console.error("Failed to fetch profile:", error);
+      setProfile(null);
     } finally {
       setIsLoading(false);
     }

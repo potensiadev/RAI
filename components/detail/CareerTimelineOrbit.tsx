@@ -162,22 +162,15 @@ export default function CareerTimelineOrbit({ careers }: CareerTimelineOrbitProp
                                 </div>
 
                                 {career.description && (
-                                    <motion.p
-                                        initial={{ height: 0, opacity: 0 }}
-                                        animate={{
-                                            height: isHovered ? "auto" : 0,
-                                            opacity: isHovered ? 1 : 0,
-                                        }}
-                                        className="text-sm text-slate-400 mt-2 overflow-hidden"
-                                    >
+                                    <p className="text-sm text-slate-400 mt-2 whitespace-pre-wrap">
                                         {career.description}
-                                    </motion.p>
+                                    </p>
                                 )}
 
-                                {/* Skill Tags (shown when not hovered) */}
-                                {!isHovered && skills.length > 0 && (
+                                {/* Skill Tags (always shown) */}
+                                {skills.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-2">
-                                        {skills.slice(0, 3).map((skill, i) => (
+                                        {skills.map((skill, i) => (
                                             <span
                                                 key={i}
                                                 className="text-xs px-2 py-0.5 rounded bg-slate-700/50 text-slate-400"
@@ -185,11 +178,6 @@ export default function CareerTimelineOrbit({ careers }: CareerTimelineOrbitProp
                                                 {skill}
                                             </span>
                                         ))}
-                                        {skills.length > 3 && (
-                                            <span className="text-xs px-2 py-0.5 rounded bg-slate-700/50 text-slate-500">
-                                                +{skills.length - 3}
-                                            </span>
-                                        )}
                                     </div>
                                 )}
                             </motion.div>

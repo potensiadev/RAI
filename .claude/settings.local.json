@@ -22,7 +22,8 @@
       "Bash(/c/Users/prohu/AppData/Local/Programs/Python/Python313/python -c \"\nimport sys\nsys.path.insert\\(0, ''.''\\)\ntry:\n    from agents.analyst_agent import AnalystAgent\n    from schemas.resume_schema import RESUME_SCHEMA_PROMPT\n    print\\(''Schema prompt preview:''\\)\n    print\\(RESUME_SCHEMA_PROMPT[:500]\\)\n    print\\(''...''\\)\n    print\\(''\\\\n✅ Imports successful''\\)\nexcept Exception as e:\n    print\\(f''❌ Error: {e}''\\)\n\")",
       "Bash(python:*)",
       "Bash(pip install:*)",
-      "Bash(set:*)"
+      "Bash(set:*)",
+      "Bash(grep:*)"
     ]
   }
 }

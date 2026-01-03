@@ -13,6 +13,7 @@ import traceback
 from typing import Dict, Any, List, Optional, Tuple, Type
 from datetime import datetime
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 
 from config import get_settings, AnalysisMode
 from services.llm_manager import (
@@ -260,6 +261,3 @@ Filename: {filename or 'Unknown'}
             else:
                 normalized.append(str(v).lower().strip())
         return list(set(normalized))
-
-
-from dataclasses import dataclass, field

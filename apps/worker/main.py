@@ -91,6 +91,46 @@ async def health_check():
     )
 
 
+@app.get("/debug")
+async def debug_status():
+    """
+    디버그 엔드포인트 - LLM 및 서비스 설정 상태 확인
+    """
+    llm_manager = get_llm_manager()
+    available_providers = llm_manager.get_available_providers()
+
+    return {
+        "status": "healthy",
+        "mode": settings.ANALYSIS_MODE.value,
+        "version": "1.0.0",
+        "llm_providers": [p.value for p in available_providers],
+        "llm_status": {
+            "openai": {
+                "configured": bool(settings.OPENAI_API_KEY),
+                "key_prefix": settings.OPENAI_API_KEY[:10] + "..." if settings.OPENAI_API_KEY else None,
+                "client_ready": llm_manager.openai_client is not None,
+                "model": settings.OPENAI_MODEL,
+            },
+            "gemini": {
+                "configured": bool(settings.GEMINI_API_KEY),
+                "key_prefix": settings.GEMINI_API_KEY[:10] + "..." if settings.GEMINI_API_KEY else None,
+                "client_ready": llm_manager.gemini_client is not None,
+                "model": settings.GEMINI_MODEL,
+            },
+            "anthropic": {
+                "configured": bool(settings.ANTHROPIC_API_KEY),
+                "key_prefix": settings.ANTHROPIC_API_KEY[:10] + "..." if settings.ANTHROPIC_API_KEY else None,
+                "client_ready": llm_manager.anthropic_client is not None,
+                "model": settings.ANTHROPIC_MODEL,
+            },
+        },
+        "supabase_configured": bool(settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY),
+        "redis_configured": bool(settings.REDIS_URL),
+        "env": settings.ENV,
+        "debug": settings.DEBUG,
+    }
+
+
 @app.post("/parse", response_model=ParseResponse)
 async def parse_file(
     file: UploadFile = File(...),

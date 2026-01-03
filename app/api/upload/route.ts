@@ -238,6 +238,38 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
     }
 
     // ─────────────────────────────────────────────────
+    // 3. candidates 테이블에 초기 레코드 생성 (즉시 조회용)
+    // ─────────────────────────────────────────────────
+    const { data: candidate, error: candidateError } = await supabaseAny
+      .from("candidates")
+      .insert({
+        user_id: publicUserId,
+        name: file.name, // 임시 이름 (파일명)
+        status: "processing", // 처리 중 상태
+        is_latest: true,
+        version: 1,
+        source_file: storagePath, // Add source file path
+        file_type: ext.replace(".", ""), // Add file type
+      })
+      .select()
+      .single();
+
+    if (candidateError || !candidate) {
+      console.error("Failed to create candidate:", candidateError);
+      // 실패해도 진행은 가능하지만, UI 즉시 반영은 안됨. 로그만 남김.
+    }
+
+    const candidateId = candidate?.id;
+
+    // processing_jobs에 candidate_id 업데이트
+    if (candidateId) {
+      await supabaseAny
+        .from("processing_jobs")
+        .update({ candidate_id: candidateId })
+        .eq("id", jobData.id);
+    }
+
+    // ─────────────────────────────────────────────────
     // Worker에 비동기 처리 요청 (fire-and-forget)
     // Vercel 타임아웃 방지를 위해 응답을 기다리지 않음
     // Worker가 백그라운드에서 파싱 → 분석 → DB 저장 → 크레딧 차감
@@ -249,6 +281,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       file_name: file.name,
       user_id: publicUserId,
       job_id: jobData.id,
+      candidate_id: candidateId, // 생성된 candidate ID 전달
       mode: userInfo.plan === "enterprise" ? "phase_2" : "phase_1",
     };
 

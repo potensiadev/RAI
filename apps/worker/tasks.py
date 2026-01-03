@@ -236,6 +236,7 @@ def process_resume(
     source_file: str = "",
     file_type: str = "",
     file_name: str = "",
+    candidate_id: Optional[str] = None,
 ) -> dict:
     """
     이력서 분석 작업 (RQ Task)
@@ -378,6 +379,7 @@ def process_resume(
             source_file=source_file,
             file_type=file_type,
             analysis_mode=analysis_mode.value,
+            candidate_id=candidate_id,
         )
 
         if not save_result.success or not save_result.candidate_id:
@@ -457,6 +459,7 @@ def full_pipeline(
     file_path: str,
     file_name: str,
     mode: str = "phase_1",
+    candidate_id: Optional[str] = None,
 ) -> dict:
     """
     전체 파이프라인 작업 (RQ Task)
@@ -512,6 +515,7 @@ def full_pipeline(
             source_file=file_path,
             file_type=parse_result.get("file_type", ""),
             file_name=file_name,
+            candidate_id=candidate_id,
         )
 
         return process_result

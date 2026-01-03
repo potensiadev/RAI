@@ -1,0 +1,48 @@
+{
+  "tests": [
+    {
+      "file": "김경민_이력서_20251201.pdf",
+      "steps": {
+        "pdf_parsing": {
+          "success": true,
+          "method": "pdfplumber",
+          "page_count": 9,
+          "text_length": 10843,
+          "text_preview": "김경민 이력서\n_\n인적사항\n생년월일: 1989년 03월 28일\n성별: 남자\n주소: 서울시 영등포구 선유로11길 12\n병역사항: 군필 (2010.11~2012.09)\n휴대폰: 010-4816-7776\n이메일: kayemkim23@gmail.com\n학력사항\n대학교 2008.08 ~ 2015.05 Indiana University  Bloomington\n(Bachelor of Science in Informatics)\n고등학교 2005.08 ~ 2008.05 Chaminade College Preparatory School\n경력사항\nProduct Manager - 전북은행 (2025.09 - 현재)\n외국인 플랫폼 제품 전략 및 로드맵 수립\n사업 추진 > 상위 기획 > 상세 기획 > 제품 출시 및 운영까지 프로젝트 A to Z 리딩\n외국인 대상 모바일 앱 서비스 구축, 기획 및 운영\n외국인 관련 제휴 사업 및 서비스 총괄 기획\n그룹 계열사 외국인 상품 광고 플랫폼 기획 및 운영 총괄\n제휴",
+          "error": null
+        },
+        "env_check": {
+          "openai_key": false,
+          "gemini_key": false,
+          "anthropic_key": false
+        },
+        "llm_providers": [],
+        "llm_analysis": {
+          "error": "No LLM providers available"
+        }
+      }
+    },
+    {
+      "file": "김애녹_이력서_경력기술서_251111_132032.pdf",
+      "steps": {
+        "pdf_parsing": {
+          "success": true,
+          "method": "pdfplumber",
+          "page_count": 6,
+          "text_length": 7906,
+          "text_preview": "김\u0000 애\u0000 녹(Ehnok\u0000Kim)\u0000\n\u0000\n휴대폰\u0000:\u0000010-9450-8726\u0000\n이메일\u0000:\u0000ehnok.zero2hero@gmail.com\u0000\n생년월일\u0000:\u00001987년\u00001월\u000025일(양력)\u0000/\u0000기혼\u0000\n\u0000\n“프로덕트PM/\u0000복잡한\u0000아이디어를\u0000빠르게\u0000실행\u0000가능한\u0000서비스로\u0000전환하는\u0000실행중심PM입니다.\u000010년이상\u0000광고,\u0000플랫폼,\u0000\n신규서비스\u0000기획\u0000및\u0000팀\u0000리딩을\u0000경험했습니다.”\u0000\n경력사항\u0000 2023.11\u0000~\u0000현재\u0000[뮤직카우]\u0000PM팀\u0000/\u0000팀장\u0000\n\u0000\u0000-\u0000PM팀\u0000팀장\u0000(2024.08~현재),\u0000QA팀\u0000팀장(겸)\u0000\n\u0000 \u0000\u0000-\u0000Internal\u0000Platform팀/Platform\u0000PO\u0000(2023.11~2024.08)\u0000\n2023.06\u0000~\u00002023.09\u0000[하이퍼커넥트]\u0000하쿠나\u0000PM팀\u0000/\u0000PM\u0000\n2022.04\u0000~\u00002023.06\u0000[우아한형제들]\u0000광고플랫폼팀\u0000/\u0000PO\u0000\n\u0000\u0000-\u0000Food\u0000CPC\u0000&\u0000Display\u0000AD\u0000광고플랫폼\u0000대표PO\u0000\n2017.12\u0000~\u00002022.04\u0000[이베이코리아]\u0000Search\u0000&\u0000AD\u0000POD\u0000/\u0000과장\u0000\n\u0000\u0000",
+          "error": null
+        },
+        "env_check": {
+          "openai_key": false,
+          "gemini_key": false,
+          "anthropic_key": false
+        },
+        "llm_providers": [],
+        "llm_analysis": {
+          "error": "No LLM providers available"
+        }
+      }
+    }
+  ]
+}

@@ -695,6 +695,7 @@ class PipelineRequest(BaseModel):
     file_name: str
     user_id: str
     job_id: str
+    candidate_id: Optional[str] = None
     mode: Optional[str] = "phase_1"
 
 
@@ -711,6 +712,7 @@ async def run_pipeline(
     user_id: str,
     job_id: str,
     mode: str,
+    candidate_id: Optional[str] = None,
 ):
     """
     전체 처리 파이프라인 (백그라운드 실행)
@@ -863,6 +865,7 @@ async def run_pipeline(
             source_file=file_url,
             file_type=router_result.file_type.value if router_result.file_type else "unknown",
             analysis_mode=analysis_mode.value,
+            candidate_id=candidate_id,  # Pass existing candidate_id for update
         )
 
         if not save_result.success:
@@ -931,6 +934,7 @@ async def pipeline_endpoint(
         file_name=request.file_name,
         user_id=request.user_id,
         job_id=request.job_id,
+        candidate_id=request.candidate_id,
         mode=request.mode or "phase_1",
     )
 

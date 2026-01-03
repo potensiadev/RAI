@@ -15,7 +15,14 @@
       "Bash(curl:*)",
       "Bash(dir:*)",
       "Bash(ls:*)",
-      "Bash(powershell -Command \"Invoke-RestMethod -Uri ''https://raiprod.up.railway.app/health'' -Method Get\")"
+      "Bash(powershell -Command \"Invoke-RestMethod -Uri ''https://raiprod.up.railway.app/health'' -Method Get\")",
+      "Bash(powershell -Command \"\\(Get-Content ''c:\\\\Users\\\\prohu\\\\Downloads\\\\logs.1767407117838.log'' | Measure-Object -Line\\).Lines\")",
+      "Bash(npx supabase:*)",
+      "Bash(python3:*)",
+      "Bash(/c/Users/prohu/AppData/Local/Programs/Python/Python313/python -c \"\nimport sys\nsys.path.insert\\(0, ''.''\\)\ntry:\n    from agents.analyst_agent import AnalystAgent\n    from schemas.resume_schema import RESUME_SCHEMA_PROMPT\n    print\\(''Schema prompt preview:''\\)\n    print\\(RESUME_SCHEMA_PROMPT[:500]\\)\n    print\\(''...''\\)\n    print\\(''\\\\n✅ Imports successful''\\)\nexcept Exception as e:\n    print\\(f''❌ Error: {e}''\\)\n\")",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(set:*)"
     ]
   }
 }

@@ -58,6 +58,7 @@ class DatabaseService:
         source_file: str,
         file_type: str,
         analysis_mode: str,
+        candidate_id: Optional[str] = None,
     ) -> SaveResult:
         """
         candidates 테이블에 저장
@@ -74,6 +75,7 @@ class DatabaseService:
             source_file: 원본 파일 경로
             file_type: 파일 타입
             analysis_mode: 분석 모드 (phase_1/phase_2)
+            candidate_id: (Optional) 기존 후보자 ID (업데이트 시)
 
         Returns:
             SaveResult with candidate_id
@@ -147,20 +149,37 @@ class DatabaseService:
                 if v is not None
             }
 
-            result = self.client.table("candidates").insert(candidate_record).execute()
-
-            if result.data and len(result.data) > 0:
-                candidate_id = result.data[0].get("id")
-                logger.info(f"Saved candidate: {candidate_id}")
-                return SaveResult(
-                    success=True,
-                    candidate_id=candidate_id
-                )
+            if candidate_id:
+                # 기존 레코드 업데이트
+                logger.info(f"Updating existing candidate: {candidate_id}")
+                result = self.client.table("candidates").update(candidate_record).eq("id", candidate_id).execute()
+                
+                if result.data and len(result.data) > 0:
+                    return SaveResult(
+                        success=True,
+                        candidate_id=candidate_id
+                    )
+                else:
+                    return SaveResult(
+                        success=False,
+                        error="No data returned from update"
+                    )
             else:
-                return SaveResult(
-                    success=False,
-                    error="No data returned from insert"
-                )
+                # 신규 생성
+                result = self.client.table("candidates").insert(candidate_record).execute()
+
+                if result.data and len(result.data) > 0:
+                    candidate_id = result.data[0].get("id")
+                    logger.info(f"Saved candidate: {candidate_id}")
+                    return SaveResult(
+                        success=True,
+                        candidate_id=candidate_id
+                    )
+                else:
+                    return SaveResult(
+                        success=False,
+                        error="No data returned from insert"
+                    )
 
         except Exception as e:
             logger.error(f"Failed to save candidate: {e}")
@@ -253,6 +272,35 @@ class DatabaseService:
                 update_data["error_message"] = error_message
 
             self.client.table("processing_jobs").update(update_data).eq("id", job_id).execute()
+
+            # candidates 테이블 상태도 동기화
+            # status가 completed, failed, rejected 인 경우
+            if status in ["completed", "failed", "rejected"]:
+                target_candidate_id = candidate_id
+                
+                # candidate_id가 인자로 전달되지 않았으면 job에서 조회
+                if not target_candidate_id:
+                    job_res = self.client.table("processing_jobs").select("candidate_id").eq("id", job_id).single().execute()
+                    if job_res.data:
+                        target_candidate_id = job_res.data.get("candidate_id")
+
+                if target_candidate_id:
+                    candidate_status = status
+                    
+                    # 에러 메시지가 있으면 warnings에 추가 여부? 
+                    # 일단 상태만 업데이트
+                    candidate_update = {"status": candidate_status}
+                    
+                    # 실패 시엔 requires_review=True 설정
+                    if status == "failed":
+                        candidate_update["requires_review"] = True
+                        if error_message:
+                            # 기존 warnings 가져오기 (복잡하므로 생략하거나 단순 append 시도)
+                            # Supabase array_append 사용? 
+                            pass
+
+                    self.client.table("candidates").update(candidate_update).eq("id", target_candidate_id).execute()
+
             return True
 
         except Exception as e:

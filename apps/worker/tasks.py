@@ -16,6 +16,7 @@ from config import get_settings, AnalysisMode
 from agents.router_agent import RouterAgent, FileType, RouterResult
 from agents.analyst_agent import get_analyst_agent, AnalysisResult
 from agents.privacy_agent import get_privacy_agent, PrivacyResult
+from agents.validation_agent import get_validation_agent, ValidationResult
 from utils.hwp_parser import HWPParser, ParseMethod
 from utils.pdf_parser import PDFParser
 from utils.docx_parser import DOCXParser
@@ -301,6 +302,30 @@ def process_resume(
 
         original_data = analysis_result.data.copy()
         analyzed_data = analysis_result.data
+
+        # ─────────────────────────────────────────────────
+        # Step 1.5: 검증 및 보정 (Validation Agent)
+        # ─────────────────────────────────────────────────
+        validation_agent = get_validation_agent()
+        validation_result: ValidationResult = validation_agent.validate(
+            analyzed_data=analyzed_data,
+            original_text=text,
+            filename=file_name
+        )
+
+        if validation_result.success:
+            analyzed_data = validation_result.validated_data
+            # 신뢰도 점수 보정
+            for field_name, boost in validation_result.confidence_adjustments.items():
+                if field_name in analysis_result.field_confidence:
+                    analysis_result.field_confidence[field_name] = min(
+                        1.0, analysis_result.field_confidence[field_name] + boost
+                    )
+            # 보정 사항 로깅
+            if validation_result.corrections:
+                logger.info(f"[Task] ValidationAgent 보정: {len(validation_result.corrections)}건")
+                for corr in validation_result.corrections:
+                    logger.info(f"  - {corr['field']}: {corr['original']} → {corr['corrected']}")
 
         # ─────────────────────────────────────────────────
         # Step 2: PII 마스킹 + 암호화 (Privacy Agent)

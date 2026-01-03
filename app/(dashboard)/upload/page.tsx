@@ -71,7 +71,7 @@ export default function UploadPage() {
     setFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
-  // 단일 파일 업로드
+  // 단일 파일 업로드 - Direct-to-Storage 패턴 (Vercel 4.5MB 제한 우회)
   const uploadFile = async (uploadFile: UploadFile): Promise<boolean> => {
     // 상태 업데이트: uploading
     setFiles((prev) =>
@@ -82,43 +82,87 @@ export default function UploadPage() {
     setActiveProcessingFile({ ...uploadFile, phase: "routing" });
 
     try {
-      const formData = new FormData();
-      formData.append("file", uploadFile.file);
+      // Phase 1: Presign - 서버에서 job/candidate 생성
+      setActiveProcessingFile((prev) => prev ? { ...prev, phase: "routing" } : null);
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === uploadFile.id ? { ...f, phase: "routing" } : f
+        )
+      );
 
-      // Phase 시뮬레이션 (실제로는 서버에서 SSE로 받아야 함)
-      const phases: ProcessingPhase[] = ["routing", "analyzing", "extracting", "embedding"];
-
-      for (const phase of phases) {
-        setActiveProcessingFile((prev) => prev ? { ...prev, phase } : null);
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === uploadFile.id ? { ...f, phase } : f
-          )
-        );
-        await new Promise((r) => setTimeout(r, 800)); // 시뮬레이션 딜레이
-      }
-
-      const response = await fetch("/api/upload", {
+      const presignRes = await fetch("/api/upload/presign", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: uploadFile.file.name,
+          fileSize: uploadFile.file.size,
+          fileType: uploadFile.file.type,
+        }),
       });
 
-      // Handle non-JSON responses (e.g., Vercel "Request Entity Too Large")
-      const contentType = response.headers.get("content-type");
-      let result;
-
+      const contentType = presignRes.headers.get("content-type");
+      let presignData;
       if (contentType && contentType.includes("application/json")) {
-        result = await response.json();
+        presignData = await presignRes.json();
       } else {
-        // Non-JSON response - likely an error message
-        const text = await response.text();
-        throw new Error(text || `서버 오류 (${response.status})`);
+        const text = await presignRes.text();
+        throw new Error(text || `Presign 오류 (${presignRes.status})`);
       }
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "업로드 실패");
+      if (!presignRes.ok || !presignData.success) {
+        throw new Error(presignData.error || "업로드 준비 실패");
       }
 
+      // Phase 2: Direct Storage Upload - 클라이언트가 직접 Supabase Storage에 업로드
+      setActiveProcessingFile((prev) => prev ? { ...prev, phase: "uploading" } : null);
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === uploadFile.id ? { ...f, phase: "uploading" } : f
+        )
+      );
+
+      // Supabase 클라이언트로 직접 업로드
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+
+      const { error: uploadError } = await supabase.storage
+        .from("resumes")
+        .upload(presignData.storagePath, uploadFile.file, {
+          contentType: uploadFile.file.type || "application/octet-stream",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new Error(`Storage 업로드 실패: ${uploadError.message}`);
+      }
+
+      // Phase 3: Confirm - Worker 파이프라인 트리거
+      setActiveProcessingFile((prev) => prev ? { ...prev, phase: "analyzing" } : null);
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === uploadFile.id ? { ...f, phase: "analyzing" } : f
+        )
+      );
+
+      const confirmRes = await fetch("/api/upload/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId: presignData.jobId,
+          candidateId: presignData.candidateId,
+          storagePath: presignData.storagePath,
+          fileName: uploadFile.file.name,
+          userId: presignData.userId,
+          plan: presignData.plan,
+        }),
+      });
+
+      const confirmData = await confirmRes.json();
+      if (!confirmRes.ok || !confirmData.success) {
+        throw new Error(confirmData.error || "확인 요청 실패");
+      }
+
+      // 완료
       setFiles((prev) =>
         prev.map((f) =>
           f.id === uploadFile.id ? { ...f, status: "success", phase: "complete" } : f

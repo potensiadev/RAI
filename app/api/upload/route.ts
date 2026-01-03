@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+// App Router Route Segment Config: Allow large file uploads
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// Note: For Vercel body size limit, use vercel.json or check plan limits
+// The FUNCTION_PAYLOAD_TOO_LARGE error means file exceeds Vercel's 4.5MB limit
+// Solution: Use direct-to-storage upload pattern instead of server upload
+
 // Worker URL (환경 변수로 설정)
 const WORKER_URL = process.env.WORKER_URL || "http://localhost:8000";
 

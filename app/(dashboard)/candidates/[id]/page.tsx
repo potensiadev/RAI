@@ -99,11 +99,29 @@ export default function CandidateDetailPage() {
     used: number;
   } | null>(null);
   const [showSplitView, setShowSplitView] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [versions, setVersions] = useState<Array<{
     id: string;
     version: number;
     createdAt: string;
   }>>([]);
+
+  // Fetch PDF URL when split view is enabled
+  useEffect(() => {
+    if (showSplitView && candidateId && !pdfUrl) {
+      setPdfLoading(true);
+      fetch(`/api/candidates/${candidateId}/source`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.url) {
+            setPdfUrl(data.url);
+          }
+        })
+        .catch(err => console.error("Failed to fetch PDF URL:", err))
+        .finally(() => setPdfLoading(false));
+    }
+  }, [showSplitView, candidateId, pdfUrl]);
 
   // Fetch candidate data
   const fetchCandidate = useCallback(async () => {
@@ -380,8 +398,8 @@ export default function CandidateDetailPage() {
           <button
             onClick={() => setShowSplitView(!showSplitView)}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${showSplitView
-                ? "bg-primary/20 border-primary/30 text-primary"
-                : "bg-slate-800 border-slate-700 text-slate-400 hover:text-white"
+              ? "bg-primary/20 border-primary/30 text-primary"
+              : "bg-slate-800 border-slate-700 text-slate-400 hover:text-white"
               }`}
             title={showSplitView ? "분할 보기 끄기" : "분할 보기 켜기"}
           >
@@ -419,7 +437,7 @@ export default function CandidateDetailPage() {
 
       {/* Main Content - Split View or Regular */}
       {showSplitView ? (
-        <SplitViewer pdfUrl={candidate.sourceFile}>
+        <SplitViewer pdfUrl={pdfUrl || undefined}>
           <CandidateReviewPanel
             candidate={candidate}
             fieldConfidence={fieldConfidence}

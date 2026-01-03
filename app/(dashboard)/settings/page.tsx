@@ -56,13 +56,23 @@ export default function SettingsPage() {
         return;
       }
 
+      // Query by email since auth.users.id and public.users.id may differ
+      if (!user.email) {
+        console.error("User email not found");
+        return;
+      }
+
       const { data, error } = await supabase
         .from("users")
         .select("id, name, company, plan, created_at")
-        .eq("id", user.id)
+        .eq("email", user.email)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Failed to fetch user profile:", error);
+        // If user doesn't exist in public.users, they may need to complete registration
+        return;
+      }
       if (!data) return;
 
       const userData = data as { id: string; name: string | null; company: string | null; plan: string; created_at: string };

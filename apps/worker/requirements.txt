@@ -1,11 +1,11 @@
 # FastAPI + Server
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-python-multipart==0.0.6
-httpx==0.26.0
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+httpx>=0.28.0
 
 # Supabase
-supabase==2.3.4
+supabase>=2.10.0
 
 # File Parsing
 olefile==0.47
@@ -18,9 +18,9 @@ pdf2image==1.17.0
 Pillow==10.2.0
 
 # AI/ML
-openai==1.12.0
+openai>=1.50.0
 google-genai>=0.3.0
-anthropic==0.18.1
+anthropic>=0.40.0
 
 # Image Processing
 opencv-python-headless==4.9.0.80

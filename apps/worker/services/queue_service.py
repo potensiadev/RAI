@@ -183,6 +183,7 @@ class QueueService:
         file_path: str,
         file_name: str,
         mode: str = "phase_1",
+        candidate_id: Optional[str] = None,
     ) -> Optional[QueuedJob]:
         """
         전체 파이프라인(파싱 + 분석)을 Queue에 추가
@@ -201,6 +202,7 @@ class QueueService:
                     "file_path": file_path,
                     "file_name": file_name,
                     "mode": mode,
+                    "candidate_id": candidate_id,
                 },
                 job_id=f"pipeline-{job_id}",
                 retry=Retry(max=2, interval=[30, 60]),

@@ -31,7 +31,10 @@ export async function GET() {
 
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
+    console.log("[Credits API] User:", user?.id, user?.email);
+
     if (authError || !user) {
+      console.log("[Credits API] Auth error:", authError);
       return NextResponse.json<ApiResponse<null>>(
         { error: { code: "UNAUTHORIZED", message: "인증이 필요합니다." } },
         { status: 401 }
@@ -44,28 +47,31 @@ export async function GET() {
       "get_user_credits",
       { p_user_id: user.id }
     );
+    console.log("[Credits API] RPC result:", rpcData, "error:", rpcError);
 
-    // RPC 성공 시
-    if (!rpcError && rpcData) {
-      const creditInfo = rpcData as {
+    // RPC 성공 시 (배열로 반환됨)
+    if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+      const creditInfo = rpcData[0] as {
         plan: PlanType;
         base_credits: number;
-        additional_credits: number;
-        used_this_month: number;
-        remaining: number;
-        billing_cycle_start: string;
-        was_reset: boolean;
+        bonus_credits: number;      // additional credits
+        credits_used: number;       // used this month
+        remaining_credits: number;  // remaining total
+        billing_cycle_start?: string;
+        was_reset?: boolean;
       };
 
       const response: CreditsResponse = {
-        credits: creditInfo.additional_credits,
-        creditsUsedThisMonth: creditInfo.used_this_month,
+        credits: creditInfo.bonus_credits,
+        creditsUsedThisMonth: creditInfo.credits_used,
         plan: creditInfo.plan,
         planBaseCredits: creditInfo.base_credits,
-        remainingCredits: creditInfo.remaining,
+        remainingCredits: creditInfo.remaining_credits,
         billingCycleStart: creditInfo.billing_cycle_start,
         wasReset: creditInfo.was_reset,
       };
+
+      console.log("[Credits API] Response:", response);
 
       return NextResponse.json<ApiResponse<CreditsResponse>>({
         data: response,
@@ -73,19 +79,37 @@ export async function GET() {
     }
 
     // RPC 실패 시 fallback: 직접 조회 (자동 리셋 없음)
-    console.warn("get_user_credits RPC failed, using fallback:", rpcError);
+    console.warn("[Credits API] RPC failed, using fallback. Email:", user.email);
 
+    if (!user.email) {
+      return NextResponse.json<ApiResponse<null>>(
+        { error: { code: "BAD_REQUEST", message: "사용자 이메일을 찾을 수 없습니다." } },
+        { status: 400 }
+      );
+    }
+
+    // email로 조회 (auth.users.id와 public.users.id가 다를 수 있음)
     const { data, error } = await supabase
       .from("users")
       .select("credits, credits_used_this_month, plan")
-      .eq("id", user.id)
+      .eq("email", user.email)
       .single();
 
+    console.log("[Credits API] Fallback query result:", data, "error:", error);
+
     if (error) {
-      console.error("User credits fetch error:", error);
+      console.error("[Credits API] Fallback error:", error);
       return NextResponse.json<ApiResponse<null>>(
         { error: { code: "DB_ERROR", message: error.message } },
         { status: 500 }
+      );
+    }
+
+    if (!data) {
+      console.error("[Credits API] No user data found for email:", user.email);
+      return NextResponse.json<ApiResponse<null>>(
+        { error: { code: "NOT_FOUND", message: "사용자 정보를 찾을 수 없습니다." } },
+        { status: 404 }
       );
     }
 

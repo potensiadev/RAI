@@ -7,7 +7,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -89,6 +89,46 @@ async def health_check():
         mode=settings.ANALYSIS_MODE.value,
         version="1.0.0"
     )
+
+
+@app.get("/debug")
+async def debug_status():
+    """
+    디버그 엔드포인트 - LLM 및 서비스 설정 상태 확인
+    """
+    llm_manager = get_llm_manager()
+    available_providers = llm_manager.get_available_providers()
+
+    return {
+        "status": "healthy",
+        "mode": settings.ANALYSIS_MODE.value,
+        "version": "1.0.0",
+        "llm_providers": [p.value for p in available_providers],
+        "llm_status": {
+            "openai": {
+                "configured": bool(settings.OPENAI_API_KEY),
+                "key_prefix": settings.OPENAI_API_KEY[:10] + "..." if settings.OPENAI_API_KEY else None,
+                "client_ready": llm_manager.openai_client is not None,
+                "model": settings.OPENAI_MODEL,
+            },
+            "gemini": {
+                "configured": bool(settings.GEMINI_API_KEY),
+                "key_prefix": settings.GEMINI_API_KEY[:10] + "..." if settings.GEMINI_API_KEY else None,
+                "client_ready": llm_manager.gemini_client is not None,
+                "model": settings.GEMINI_MODEL,
+            },
+            "anthropic": {
+                "configured": bool(settings.ANTHROPIC_API_KEY),
+                "key_prefix": settings.ANTHROPIC_API_KEY[:10] + "..." if settings.ANTHROPIC_API_KEY else None,
+                "client_ready": llm_manager.anthropic_client is not None,
+                "model": settings.ANTHROPIC_MODEL,
+            },
+        },
+        "supabase_configured": bool(settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY),
+        "redis_configured": bool(settings.REDIS_URL),
+        "env": settings.ENV,
+        "debug": settings.DEBUG,
+    }
 
 
 @app.post("/parse", response_model=ParseResponse)
@@ -496,8 +536,8 @@ async def process_resume(request: ProcessRequest):
                     pii_count=pii_count,
                 )
 
-                # 크레딧 차감
-                db_service.deduct_credit(request.user_id)
+                # 크레딧 차감 (candidate_id 포함)
+                db_service.deduct_credit(request.user_id, candidate_id)
 
             else:
                 logger.error(f"Failed to save candidate: {save_result.error}")
@@ -645,11 +685,282 @@ async def get_job_status(rq_job_id: str):
         return {"error": "Job not found"}
 
 
+# ─────────────────────────────────────────────────
+# Pipeline Endpoint (전체 처리 - 비동기 백그라운드)
+# ─────────────────────────────────────────────────
+
+class PipelineRequest(BaseModel):
+    """파이프라인 요청 모델"""
+    file_url: str  # Supabase Storage 경로
+    file_name: str
+    user_id: str
+    job_id: str
+    candidate_id: Optional[str] = None
+    mode: Optional[str] = "phase_1"
+
+
+class PipelineResponse(BaseModel):
+    """파이프라인 응답 모델"""
+    success: bool
+    message: str
+    job_id: str
+
+
+async def run_pipeline(
+    file_url: str,
+    file_name: str,
+    user_id: str,
+    job_id: str,
+    mode: str,
+    candidate_id: Optional[str] = None,
+):
+    """
+    전체 처리 파이프라인 (백그라운드 실행)
+
+    1. Supabase Storage에서 파일 다운로드
+    2. 파일 파싱 (PDF/HWP/DOCX)
+    3. AI 분석 (GPT-4o + Gemini)
+    4. PII 마스킹 + 암호화
+    5. 임베딩 생성
+    6. DB 저장
+    7. 크레딧 차감
+    """
+    import time
+    start_time = time.time()
+
+    db_service = get_database_service()
+
+    logger.info(f"[Pipeline] Starting for job {job_id}, file: {file_name}")
+
+    try:
+        # Step 0: Job 상태 업데이트 (processing)
+        db_service.update_job_status(job_id, "processing")
+
+        # Step 1: Supabase Storage에서 파일 다운로드
+        logger.info(f"[Pipeline] Downloading file from storage: {file_url}")
+
+        if not db_service.client:
+            raise Exception("Supabase client not initialized")
+
+        file_response = db_service.client.storage.from_("resumes").download(file_url)
+
+        if not file_response:
+            raise Exception(f"Failed to download file: {file_url}")
+
+        file_bytes = file_response
+        logger.info(f"[Pipeline] Downloaded {len(file_bytes)} bytes")
+
+        # Step 2: 파일 파싱
+        logger.info(f"[Pipeline] Parsing file: {file_name}")
+
+        # 파일 타입 감지
+        router_result = router_agent.analyze(file_bytes, file_name)
+
+        if router_result.is_rejected:
+            raise Exception(f"File rejected: {router_result.reject_reason}")
+
+        # 파서 선택 및 파싱
+        text = ""
+        parse_method = "unknown"
+        page_count = 0
+
+        if router_result.file_type in [FileType.HWP, FileType.HWPX]:
+            result = hwp_parser.parse(file_bytes, file_name)
+            text = result.text
+            parse_method = result.method.value
+            page_count = result.page_count
+            if result.method == ParseMethod.FAILED:
+                raise Exception(f"HWP parsing failed: {result.error_message}")
+
+        elif router_result.file_type == FileType.PDF:
+            result = pdf_parser.parse(file_bytes)
+            text = result.text
+            parse_method = result.method
+            page_count = result.page_count
+            if not result.success:
+                raise Exception(f"PDF parsing failed: {result.error_message}")
+
+        elif router_result.file_type in [FileType.DOC, FileType.DOCX]:
+            result = docx_parser.parse(file_bytes, file_name)
+            text = result.text
+            parse_method = result.method
+            page_count = result.page_count
+            if not result.success:
+                raise Exception(f"DOCX parsing failed: {result.error_message}")
+        else:
+            raise Exception(f"Unsupported file type: {router_result.file_type}")
+
+        logger.info(f"[Pipeline] Parsed successfully: {len(text)} chars, {page_count} pages")
+
+        # 텍스트 길이 체크
+        if len(text.strip()) < settings.MIN_TEXT_LENGTH:
+            raise Exception(f"Extracted text too short ({len(text.strip())} chars)")
+
+        # Step 3: AI 분석
+        logger.info(f"[Pipeline] Analyzing resume...")
+
+        analysis_mode = AnalysisMode.PHASE_2 if mode == "phase_2" else AnalysisMode.PHASE_1
+        analyst = get_analyst_agent()
+        analysis_result = await analyst.analyze(
+            resume_text=text,
+            mode=analysis_mode,
+            filename=file_name
+        )
+
+        if not analysis_result.success or not analysis_result.data:
+            raise Exception(f"Analysis failed: {analysis_result.error}")
+
+        logger.info(f"[Pipeline] Analysis complete: confidence={analysis_result.confidence_score:.2f}")
+
+        # 원본 데이터 보관
+        original_data = analysis_result.data.copy()
+        analyzed_data = analysis_result.data
+
+        # Step 4: PII 마스킹 + 암호화
+        logger.info(f"[Pipeline] Processing PII...")
+
+        privacy_agent = get_privacy_agent()
+        privacy_result = privacy_agent.process(analyzed_data)
+
+        encrypted_store = {}
+        hash_store = {}
+        pii_count = 0
+
+        if privacy_result.success:
+            analyzed_data = privacy_result.masked_data
+            pii_count = len(privacy_result.pii_found)
+            encrypted_store = privacy_result.encrypted_store
+
+            if original_data.get("phone"):
+                hash_store["phone"] = privacy_agent.hash_for_dedup(original_data["phone"])
+            if original_data.get("email"):
+                hash_store["email"] = privacy_agent.hash_for_dedup(original_data["email"])
+
+        logger.info(f"[Pipeline] PII processed: {pii_count} items found")
+
+        # Step 5: 임베딩 생성 (실패해도 DB 저장은 진행)
+        logger.info(f"[Pipeline] Generating embeddings...")
+
+        embedding_result = None
+        chunk_count = 0
+        try:
+            embedding_service = get_embedding_service()
+            embedding_result = await embedding_service.process_candidate(
+                data=analyzed_data,
+                generate_embeddings=True
+            )
+            chunk_count = len(embedding_result.chunks) if embedding_result and embedding_result.success else 0
+            logger.info(f"[Pipeline] Embeddings generated: {chunk_count} chunks")
+        except Exception as embed_error:
+            logger.warning(f"[Pipeline] Embedding generation failed (continuing to DB save): {embed_error}")
+            embedding_result = None
+            chunk_count = 0
+
+        # Step 6: DB 저장
+        logger.info(f"[Pipeline] Saving to database...")
+
+        save_result = db_service.save_candidate(
+            user_id=user_id,
+            job_id=job_id,
+            analyzed_data=analyzed_data,
+            confidence_score=analysis_result.confidence_score,
+            field_confidence=analysis_result.field_confidence,
+            warnings=[w.to_dict() for w in analysis_result.warnings],
+            encrypted_store=encrypted_store,
+            hash_store=hash_store,
+            source_file=file_url,
+            file_type=router_result.file_type.value if router_result.file_type else "unknown",
+            analysis_mode=analysis_mode.value,
+            candidate_id=candidate_id,  # Pass existing candidate_id for update
+        )
+
+        if not save_result.success:
+            raise Exception(f"Failed to save candidate: {save_result.error}")
+
+        candidate_id = save_result.candidate_id
+        logger.info(f"[Pipeline] Saved candidate: {candidate_id}")
+
+        # 청크 저장 (임베딩 성공 시에만)
+        chunks_saved = 0
+        if embedding_result and embedding_result.success and embedding_result.chunks:
+            try:
+                chunks_saved = db_service.save_chunks_with_embeddings(
+                    candidate_id=candidate_id,
+                    chunks=embedding_result.chunks
+                )
+                logger.info(f"[Pipeline] Saved {chunks_saved} chunks")
+            except Exception as chunk_error:
+                logger.warning(f"[Pipeline] Chunk saving failed: {chunk_error}")
+        else:
+            logger.info(f"[Pipeline] Skipping chunk save (no embeddings)")
+
+        # Step 7: Job 상태 업데이트
+        db_service.update_job_status(
+            job_id=job_id,
+            status="completed",
+            candidate_id=candidate_id,
+            confidence_score=analysis_result.confidence_score,
+            chunk_count=chunks_saved,
+            pii_count=pii_count,
+        )
+
+        # Step 8: 크레딧 차감
+        db_service.deduct_credit(user_id, candidate_id)
+
+        processing_time = int((time.time() - start_time) * 1000)
+        logger.info(
+            f"[Pipeline] Complete! candidate={candidate_id}, "
+            f"confidence={analysis_result.confidence_score:.2f}, "
+            f"chunks={chunks_saved}, time={processing_time}ms"
+        )
+
+    except Exception as e:
+        logger.error(f"[Pipeline] Failed: {e}", exc_info=True)
+
+        # 실패 시 job 상태 업데이트
+        db_service.update_job_status(
+            job_id=job_id,
+            status="failed",
+            error_message=str(e)[:500],
+        )
+
+
+@app.post("/pipeline", response_model=PipelineResponse)
+async def pipeline_endpoint(
+    request: PipelineRequest,
+):
+    """
+    전체 파이프라인 엔드포인트 (동기 처리)
+
+    파이프라인 완료 후 응답 반환:
+    파일 다운로드 → 파싱 → 분석 → PII → 임베딩 → DB 저장 → 크레딧 차감
+    """
+    logger.info(f"[Pipeline] Received request for job {request.job_id}")
+
+    # 동기로 파이프라인 실행 (완료 보장)
+    await run_pipeline(
+        file_url=request.file_url,
+        file_name=request.file_name,
+        user_id=request.user_id,
+        job_id=request.job_id,
+        candidate_id=request.candidate_id,
+        mode=request.mode or "phase_1",
+    )
+
+    return PipelineResponse(
+        success=True,
+        message="Pipeline completed",
+        job_id=request.job_id,
+    )
+
+
 if __name__ == "__main__":
+    import os
     import uvicorn
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=settings.DEBUG
     )

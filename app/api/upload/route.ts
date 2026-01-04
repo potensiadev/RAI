@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+// App Router Route Segment Config: Allow large file uploads
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// Note: For Vercel body size limit, use vercel.json or check plan limits
+// The FUNCTION_PAYLOAD_TOO_LARGE error means file exceeds Vercel's 4.5MB limit
+// Solution: Use direct-to-storage upload pattern instead of server upload
+
 // Worker URL (환경 변수로 설정)
 const WORKER_URL = process.env.WORKER_URL || "http://localhost:8000";
 
@@ -112,19 +120,30 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       );
     }
 
-    // 크레딧 확인
+    // 크레딧 확인 (email로 조회 - auth.users.id와 public.users.id가 다를 수 있음)
+    if (!user.email) {
+      return NextResponse.json(
+        { success: false, error: "User email not found" },
+        { status: 400 }
+      );
+    }
+
     const { data: userData, error: userError } = await supabase
       .from("users")
-      .select("credits, credits_used_this_month, plan")
-      .eq("id", user.id)
+      .select("id, credits, credits_used_this_month, plan")
+      .eq("email", user.email)
       .single();
 
     if (userError || !userData) {
+      console.error("[Upload] User not found:", userError, "email:", user.email);
       return NextResponse.json(
         { success: false, error: "User not found" },
         { status: 404 }
       );
     }
+
+    // public.users의 ID 사용 (auth.users.id와 다를 수 있음)
+    const publicUserId = (userData as { id: string }).id;
 
     // 크레딧 계산
     const baseCredits: Record<string, number> = {
@@ -176,11 +195,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       );
     }
 
-    // processing_jobs 레코드 생성
+    // processing_jobs 레코드 생성 (publicUserId 사용)
     const { data: job, error: jobError } = await supabaseAny
       .from("processing_jobs")
       .insert({
-        user_id: user.id,
+        user_id: publicUserId,
         file_name: file.name,
         file_size: file.size,
         file_type: ext.replace(".", ""),
@@ -200,7 +219,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
     const jobData = job as { id: string };
 
     // Supabase Storage에 파일 업로드
-    const storagePath = `uploads/${user.id}/${jobData.id}/${file.name}`;
+    // 한글 파일명 문제 방지: UUID + 확장자로 저장
+    const safeFileName = `${jobData.id}${ext}`;
+    const storagePath = `uploads/${user.id}/${safeFileName}`;
     const fileBuffer = await file.arrayBuffer();
 
     const { error: uploadError } = await supabase.storage
@@ -224,129 +245,70 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       );
     }
 
-    // Worker에 파싱 요청 전송
-    try {
-      const workerFormData = new FormData();
-      workerFormData.append("file", new Blob([fileBuffer]), file.name);
-      workerFormData.append("user_id", user.id);
-      workerFormData.append("job_id", jobData.id);
+    // ─────────────────────────────────────────────────
+    // 3. candidates 테이블에 초기 레코드 생성 (즉시 조회용)
+    // ─────────────────────────────────────────────────
+    const { data: candidate, error: candidateError } = await supabaseAny
+      .from("candidates")
+      .insert({
+        user_id: publicUserId,
+        name: file.name, // 임시 이름 (파일명)
+        status: "processing", // 처리 중 상태
+        is_latest: true,
+        version: 1,
+        source_file: storagePath, // Add source file path
+        file_type: ext.replace(".", ""), // Add file type
+      })
+      .select()
+      .single();
 
-      const workerResponse = await fetch(`${WORKER_URL}/parse`, {
-        method: "POST",
-        body: workerFormData,
-      });
-
-      if (!workerResponse.ok) {
-        const errorData = await workerResponse.json();
-        throw new Error(errorData.detail || "Worker parsing failed");
-      }
-
-      const parseResult = await workerResponse.json();
-
-      // 파싱 성공 시 job 상태 업데이트
-      // processing_status enum: queued, processing, completed, failed, rejected
-      await supabaseAny
-        .from("processing_jobs")
-        .update({
-          status: parseResult.success ? "processing" : "failed",
-          raw_text: parseResult.text || null,
-          page_count: parseResult.page_count || 0,
-          parse_method: parseResult.parse_method || null,
-          error_message: parseResult.error_message || null,
-        })
-        .eq("id", jobData.id);
-
-      if (!parseResult.success) {
-        return NextResponse.json(
-          {
-            success: false,
-            jobId: jobData.id,
-            error: parseResult.error_message || "Parsing failed",
-          },
-          { status: 422 }
-        );
-      }
-
-      // ─────────────────────────────────────────────────
-      // Step 2: /process 호출 (분석 + PII + 임베딩 + DB 저장)
-      // Worker가 직접 DB 저장, 크레딧 차감까지 처리
-      // ─────────────────────────────────────────────────
-      try {
-        const processResponse = await fetch(`${WORKER_URL}/process`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: parseResult.text,
-            user_id: user.id,
-            job_id: jobData.id,
-            mode: userInfo.plan === "enterprise" ? "phase_2" : "phase_1",
-            generate_embeddings: true,
-            mask_pii: true,
-            save_to_db: true,
-            source_file: storagePath,
-            file_type: ext.replace(".", ""),
-          }),
-        });
-
-        if (!processResponse.ok) {
-          throw new Error("Worker processing failed");
-        }
-
-        const processResult: ProcessResult = await processResponse.json();
-
-        if (!processResult.success) {
-          // 분석 실패
-          return NextResponse.json({
-            success: false,
-            jobId: jobData.id,
-            error: processResult.error || "Analysis failed",
-          }, { status: 422 });
-        }
-
-        // Worker가 이미 DB 저장, 크레딧 차감을 완료함
-        return NextResponse.json({
-          success: true,
-          jobId: jobData.id,
-          candidateId: processResult.candidate_id || undefined,
-          message: `Resume processed successfully (confidence: ${Math.round((processResult.confidence_score || 0) * 100)}%, chunks: ${processResult.chunks_saved || 0})`,
-        });
-
-      } catch (processError) {
-        console.error("Processing failed:", processError);
-
-        // 분석 실패해도 파싱은 성공했으므로 processing 상태 유지 (나중에 재시도)
-        await supabaseAny
-          .from("processing_jobs")
-          .update({
-            status: "processing",
-            error_message: "Analysis pending - will retry",
-          })
-          .eq("id", jobData.id);
-
-        return NextResponse.json({
-          success: true,
-          jobId: jobData.id,
-          message: `File parsed successfully - analysis pending (${parseResult.page_count} pages)`,
-        });
-      }
-    } catch (workerError) {
-      // Worker 연결 실패 시 job을 queued 상태로 유지 (나중에 처리)
-      console.error("Worker request failed:", workerError);
-
-      await supabaseAny
-        .from("processing_jobs")
-        .update({
-          status: "queued",
-          error_message: "Worker temporarily unavailable - queued for retry",
-        })
-        .eq("id", jobData.id);
-
-      return NextResponse.json({
-        success: true,
-        jobId: jobData.id,
-        message: "File uploaded - processing queued",
-      });
+    if (candidateError || !candidate) {
+      console.error("Failed to create candidate:", candidateError);
+      // 실패해도 진행은 가능하지만, UI 즉시 반영은 안됨. 로그만 남김.
     }
+
+    const candidateId = candidate?.id;
+
+    // processing_jobs에 candidate_id 업데이트
+    if (candidateId) {
+      await supabaseAny
+        .from("processing_jobs")
+        .update({ candidate_id: candidateId })
+        .eq("id", jobData.id);
+    }
+
+    // ─────────────────────────────────────────────────
+    // Worker에 비동기 처리 요청 (fire-and-forget)
+    // Vercel 타임아웃 방지를 위해 응답을 기다리지 않음
+    // Worker가 백그라운드에서 파싱 → 분석 → DB 저장 → 크레딧 차감
+    // ─────────────────────────────────────────────────
+
+    // Worker 전체 파이프라인 호출 (비동기, 응답 대기 안함)
+    const workerPayload = {
+      file_url: storagePath,
+      file_name: file.name,
+      user_id: publicUserId,
+      job_id: jobData.id,
+      candidate_id: candidateId, // 생성된 candidate ID 전달
+      mode: userInfo.plan === "enterprise" ? "phase_2" : "phase_1",
+    };
+
+    // Fire-and-forget: Worker에 요청 보내고 응답 기다리지 않음
+    fetch(`${WORKER_URL}/pipeline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(workerPayload),
+    }).catch((error) => {
+      // 연결 실패 시 로그만 남김 (이미 사용자에게 응답함)
+      console.error("Worker pipeline request failed:", error);
+    });
+
+    // 즉시 응답 반환 - Worker가 백그라운드에서 처리
+    return NextResponse.json({
+      success: true,
+      jobId: jobData.id,
+      message: "파일이 업로드되었습니다. 백그라운드에서 분석 중입니다.",
+    });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(

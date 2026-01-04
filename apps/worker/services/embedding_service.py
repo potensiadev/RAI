@@ -7,14 +7,18 @@ OpenAI text-embedding-3-small 사용
 
 import asyncio
 import logging
+import traceback
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from datetime import datetime
 
 from openai import AsyncOpenAI
 
 from config import get_settings
 
+# 로깅 설정 - 상세 출력
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
@@ -87,24 +91,42 @@ class EmbeddingService:
     MAX_CHUNK_CHARS = 2000
 
     def __init__(self):
+        logger.info("=" * 60)
+        logger.info("[EmbeddingService] 초기화 시작")
         self.client = None
-        if settings.OPENAI_API_KEY:
-            self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        openai_key = settings.OPENAI_API_KEY
+        if openai_key:
+            try:
+                self.client = AsyncOpenAI(api_key=openai_key)
+                logger.info(f"[EmbeddingService] ✅ OpenAI 클라이언트 초기화 성공 (key: {openai_key[:8]}...)")
+            except Exception as e:
+                logger.error(f"[EmbeddingService] ❌ OpenAI 클라이언트 초기화 실패: {e}")
+                logger.error(traceback.format_exc())
+        else:
+            logger.warning("[EmbeddingService] ⚠️ OPENAI_API_KEY 없음 - 임베딩 비활성화")
+        logger.info("=" * 60)
 
     async def create_embedding(self, text: str) -> Optional[List[float]]:
         """단일 텍스트 임베딩 생성"""
         if not self.client:
-            logger.error("OpenAI client not initialized")
+            logger.error("[EmbeddingService] ❌ OpenAI 클라이언트 미초기화 - 임베딩 불가")
             return None
+
+        start_time = datetime.now()
+        logger.info(f"[EmbeddingService] 단일 임베딩 생성 시작 - 텍스트 길이: {len(text)} chars")
 
         try:
             response = await self.client.embeddings.create(
                 model=self.EMBEDDING_MODEL,
                 input=text[:8000]  # 토큰 제한
             )
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.info(f"[EmbeddingService] ✅ 임베딩 생성 완료 ({elapsed:.2f}초) - 차원: {len(response.data[0].embedding)}")
             return response.data[0].embedding
         except Exception as e:
-            logger.error(f"Embedding creation failed: {e}")
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.error(f"[EmbeddingService] ❌ 임베딩 생성 실패 ({elapsed:.2f}초): {type(e).__name__}: {e}")
+            logger.error(f"[EmbeddingService] 상세 오류:\n{traceback.format_exc()}")
             return None
 
     async def create_embeddings_batch(
@@ -113,26 +135,42 @@ class EmbeddingService:
     ) -> List[Optional[List[float]]]:
         """배치 임베딩 생성"""
         if not self.client:
+            logger.error("[EmbeddingService] ❌ OpenAI 클라이언트 미초기화 - 배치 임베딩 불가")
             return [None] * len(texts)
+
+        start_time = datetime.now()
+        logger.info(f"[EmbeddingService] 배치 임베딩 생성 시작 - {len(texts)}개 텍스트")
+        for i, t in enumerate(texts):
+            logger.debug(f"[EmbeddingService]   텍스트 {i+1}: {len(t)} chars - {t[:100]}...")
 
         try:
             # 텍스트 길이 제한
             truncated = [t[:8000] for t in texts]
 
+            logger.info(f"[EmbeddingService] OpenAI embeddings.create 호출 중...")
             response = await self.client.embeddings.create(
                 model=self.EMBEDDING_MODEL,
                 input=truncated
             )
 
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.info(f"[EmbeddingService] ✅ 배치 임베딩 생성 완료 ({elapsed:.2f}초)")
+
             # 인덱스 순서대로 정렬
             embeddings = [None] * len(texts)
             for item in response.data:
                 embeddings[item.index] = item.embedding
+                logger.debug(f"[EmbeddingService]   임베딩 {item.index+1}: 차원 {len(item.embedding)}")
+
+            success_count = sum(1 for e in embeddings if e is not None)
+            logger.info(f"[EmbeddingService] ✅ 배치 결과: {success_count}/{len(texts)} 성공")
 
             return embeddings
 
         except Exception as e:
-            logger.error(f"Batch embedding failed: {e}")
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.error(f"[EmbeddingService] ❌ 배치 임베딩 실패 ({elapsed:.2f}초): {type(e).__name__}: {e}")
+            logger.error(f"[EmbeddingService] 상세 오류:\n{traceback.format_exc()}")
             return [None] * len(texts)
 
     async def process_candidate(
@@ -150,28 +188,60 @@ class EmbeddingService:
         Returns:
             EmbeddingResult with chunks and embeddings
         """
+        start_time = datetime.now()
+        logger.info("=" * 60)
+        logger.info("[EmbeddingService] 후보자 데이터 처리 시작")
+        logger.info(f"[EmbeddingService] 임베딩 생성: {'예' if generate_embeddings else '아니오'}")
+        logger.info(f"[EmbeddingService] 입력 데이터 필드: {list(data.keys()) if data else 'None'}")
+        logger.info("=" * 60)
+
         try:
             # 1. 청크 생성
+            logger.info("[EmbeddingService] Step 1: 청크 생성")
             chunks = self._create_chunks(data)
 
             if not chunks:
-                return EmbeddingResult(
-                    success=False,
-                    error="No chunks created"
-                )
+                logger.warning("[EmbeddingService] ⚠️ 청크가 생성되지 않음 - 데이터가 비어있을 수 있음")
+                # 빈 데이터에서도 최소 청크 생성 시도
+                fallback_content = f"이력서 데이터 (원본 필드: {list(data.keys()) if data else 'None'})"
+                chunks = [Chunk(
+                    chunk_type=ChunkType.SUMMARY,
+                    chunk_index=0,
+                    content=fallback_content,
+                    metadata={"fallback": True}
+                )]
+                logger.info("[EmbeddingService] 폴백 청크 생성됨")
+
+            logger.info(f"[EmbeddingService] ✅ 청크 생성 완료: {len(chunks)}개")
+            for i, chunk in enumerate(chunks):
+                logger.debug(f"[EmbeddingService]   청크 {i+1}: {chunk.chunk_type.value} - {len(chunk.content)} chars")
 
             # 2. 임베딩 생성 (옵션)
             total_tokens = 0
 
-            if generate_embeddings and self.client:
-                texts = [c.content for c in chunks]
-                embeddings = await self.create_embeddings_batch(texts)
+            if generate_embeddings:
+                if not self.client:
+                    logger.warning("[EmbeddingService] ⚠️ OpenAI 클라이언트 없음 - 임베딩 스킵")
+                else:
+                    logger.info("[EmbeddingService] Step 2: 임베딩 생성")
+                    texts = [c.content for c in chunks]
+                    embeddings = await self.create_embeddings_batch(texts)
 
-                for i, embedding in enumerate(embeddings):
-                    chunks[i].embedding = embedding
+                    embedding_success = 0
+                    for i, embedding in enumerate(embeddings):
+                        chunks[i].embedding = embedding
+                        if embedding is not None:
+                            embedding_success += 1
 
-                # 토큰 수 추정 (대략 4 문자 = 1 토큰)
-                total_tokens = sum(len(t) // 4 for t in texts)
+                    logger.info(f"[EmbeddingService] ✅ 임베딩 생성 완료: {embedding_success}/{len(chunks)} 성공")
+
+                    # 토큰 수 추정 (대략 4 문자 = 1 토큰)
+                    total_tokens = sum(len(t) // 4 for t in texts)
+                    logger.info(f"[EmbeddingService] 예상 토큰 사용량: {total_tokens}")
+
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.info(f"[EmbeddingService] ✅ 처리 완료 ({elapsed:.2f}초)")
+            logger.info("=" * 60)
 
             return EmbeddingResult(
                 success=True,
@@ -180,7 +250,10 @@ class EmbeddingService:
             )
 
         except Exception as e:
-            logger.error(f"Candidate processing failed: {e}")
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.error(f"[EmbeddingService] ❌ 처리 실패 ({elapsed:.2f}초): {type(e).__name__}: {e}")
+            logger.error(f"[EmbeddingService] 상세 오류:\n{traceback.format_exc()}")
+            logger.info("=" * 60)
             return EmbeddingResult(
                 success=False,
                 error=str(e)

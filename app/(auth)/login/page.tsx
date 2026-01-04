@@ -12,7 +12,7 @@ import { Sparkles, Loader2 } from "lucide-react";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/dashboard";
+  const next = searchParams.get("next") || "/candidates";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,10 +21,68 @@ function LoginForm() {
 
   const supabase = createClient();
 
+  // 사용자 가입 방법 확인 (API 호출)
+  const checkUserSignupProvider = async (emailToCheck: string): Promise<{
+    exists: boolean;
+    provider: string | null;
+    maskedEmail: string | null;
+  }> => {
+    try {
+      const response = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailToCheck }),
+      });
+
+      if (!response.ok) {
+        console.error("Email check failed:", response.status);
+        return { exists: false, provider: null, maskedEmail: null };
+      }
+
+      const data = await response.json();
+
+      if (!data.exists) {
+        return { exists: false, provider: null, maskedEmail: null };
+      }
+
+      // 이메일 마스킹: test@example.com -> te**@example.com
+      const [localPart, domain] = emailToCheck.split("@");
+      const maskedLocal = localPart.length > 2
+        ? localPart.slice(0, 2) + "***"
+        : localPart + "***";
+      const maskedEmail = `${maskedLocal}@${domain}`;
+
+      return {
+        exists: true,
+        provider: data.provider,
+        maskedEmail,
+      };
+    } catch (error) {
+      console.error("Email check error:", error);
+      return { exists: false, provider: null, maskedEmail: null };
+    }
+  };
+
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
+
+    // 사용자 존재 여부 및 가입 방법 확인
+    const userInfo = await checkUserSignupProvider(email);
+
+    if (!userInfo.exists) {
+      setError("등록되지 않은 이메일입니다. 회원가입을 진행해주세요.");
+      setIsLoading(false);
+      return;
+    }
+
+    // Google로 가입한 사용자가 이메일 로그인 시도
+    if (userInfo.provider === "google") {
+      setError(`이 계정은 Google로 가입되었습니다. 아래 'Google로 계속하기' 버튼을 사용해주세요.`);
+      setIsLoading(false);
+      return;
+    }
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -32,7 +90,11 @@ function LoginForm() {
     });
 
     if (error) {
-      setError(error.message);
+      if (error.message.includes("Invalid login credentials")) {
+        setError("비밀번호가 올바르지 않습니다. 다시 확인해주세요.");
+      } else {
+        setError(error.message);
+      }
       setIsLoading(false);
     } else {
       router.push(next);

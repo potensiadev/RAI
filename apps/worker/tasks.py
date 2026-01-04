@@ -16,6 +16,7 @@ from config import get_settings, AnalysisMode
 from agents.router_agent import RouterAgent, FileType, RouterResult
 from agents.analyst_agent import get_analyst_agent, AnalysisResult
 from agents.privacy_agent import get_privacy_agent, PrivacyResult
+from agents.validation_agent import get_validation_agent, ValidationResult
 from agents.identity_checker import get_identity_checker, IdentityCheckResult
 from agents.visual_agent import get_visual_agent
 from utils.hwp_parser import HWPParser, ParseMethod
@@ -239,6 +240,8 @@ def process_resume(
     mode: str = "phase_1",
     source_file: str = "",
     file_type: str = "",
+    file_name: str = "",
+    candidate_id: Optional[str] = None,
 ) -> dict:
     """
     이력서 분석 작업 (RQ Task)
@@ -314,7 +317,7 @@ def process_resume(
 
         # RQ는 동기 환경이므로 asyncio.run 사용
         analysis_result: AnalysisResult = asyncio.run(
-            analyst.analyze(resume_text=text, mode=analysis_mode)
+            analyst.analyze(resume_text=text, mode=analysis_mode, filename=file_name)
         )
 
         if not analysis_result.success or not analysis_result.data:
@@ -332,7 +335,31 @@ def process_resume(
         analyzed_data = analysis_result.data
 
         # ─────────────────────────────────────────────────
-        # Step 1.5: URL 추출 (LLM 대신 정규식 사용)
+        # Step 1.5a: 검증 및 보정 (Validation Agent)
+        # ─────────────────────────────────────────────────
+        validation_agent = get_validation_agent()
+        validation_result: ValidationResult = validation_agent.validate(
+            analyzed_data=analyzed_data,
+            original_text=text,
+            filename=file_name
+        )
+
+        if validation_result.success:
+            analyzed_data = validation_result.validated_data
+            # 신뢰도 점수 보정
+            for field_name, boost in validation_result.confidence_adjustments.items():
+                if field_name in analysis_result.field_confidence:
+                    analysis_result.field_confidence[field_name] = min(
+                        1.0, analysis_result.field_confidence[field_name] + boost
+                    )
+            # 보정 사항 로깅
+            if validation_result.corrections:
+                logger.info(f"[Task] ValidationAgent 보정: {len(validation_result.corrections)}건")
+                for corr in validation_result.corrections:
+                    logger.info(f"  - {corr['field']}: {corr['original']} → {corr['corrected']}")
+
+        # ─────────────────────────────────────────────────
+        # Step 1.5b: URL 추출 (LLM 대신 정규식 사용)
         # GitHub/LinkedIn URL은 텍스트에서 직접 추출하여 정확도 보장
         # ─────────────────────────────────────────────────
         extracted_urls = extract_urls_from_text(text)
@@ -465,6 +492,7 @@ def process_resume(
             source_file=source_file,
             file_type=file_type,
             analysis_mode=analysis_mode.value,
+            candidate_id=candidate_id,
             original_data=original_data,  # 중복 체크용 원본 데이터
         )
 
@@ -594,6 +622,7 @@ def full_pipeline(
     file_path: str,
     file_name: str,
     mode: str = "phase_1",
+    candidate_id: Optional[str] = None,
 ) -> dict:
     """
     전체 파이프라인 작업 (RQ Task)
@@ -648,6 +677,8 @@ def full_pipeline(
             mode=mode,
             source_file=file_path,
             file_type=parse_result.get("file_type", ""),
+            file_name=file_name,
+            candidate_id=candidate_id,
         )
 
         return process_result

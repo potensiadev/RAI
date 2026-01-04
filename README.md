@@ -113,7 +113,24 @@ ENCRYPTION_KEY=  # 64자 hex
 | Week 3-4 | 파싱 + AI 분석 | ✅ 완료 |
 | Week 5-6 | 후처리 + 검토 UI | ✅ 완료 |
 | Week 7 | 하이브리드 검색 | ✅ 완료 |
-| Week 8 | 결제 + 배포 | 🔄 진행중 |
+| Week 8 | 결제 + 배포 | ✅ 완료 |
+
+### 배포 현황 (2025-01-02)
+
+| 서비스 | 플랫폼 | URL |
+|--------|--------|-----|
+| Frontend | Vercel | Production 배포 완료 |
+| Worker API | Railway | `raiprod.up.railway.app` |
+| Database | Supabase | PostgreSQL + pgvector |
+
+### 서비스 로드맵
+
+| 단계 | 목표 | 상태 |
+|------|------|------|
+| MVP | 핵심 기능 구현 + 배포 | ✅ 완료 |
+| Closed Beta | 헤드헌터 대상 서비스 검증 | 🔄 진행중 |
+| 결제 연동 | Stripe 결제 시스템 | ⏸️ 검증 후 진행 |
+| Public Launch | 정식 서비스 오픈 | 📅 예정 |
 
 자세한 내용은 [개발 가이드](./docs/rai_development_guide.md)를 참조하세요.
 

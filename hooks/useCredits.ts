@@ -18,14 +18,19 @@ interface CreditsData {
  * 크레딧 정보 조회 API 호출
  */
 async function fetchUserCredits(): Promise<CreditsData> {
+  console.log("[useCredits] Fetching credits...");
+
   const response = await fetch("/api/user/credits");
+  console.log("[useCredits] Response status:", response.status);
 
   if (!response.ok) {
     const error: ApiResponse<null> = await response.json();
+    console.error("[useCredits] Error:", error);
     throw new Error(error.error?.message || "크레딧 조회에 실패했습니다.");
   }
 
   const data: ApiResponse<CreditsData> = await response.json();
+  console.log("[useCredits] Data:", data);
 
   if (!data.data) {
     throw new Error("크레딧 정보가 없습니다.");

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   validateFile,
@@ -6,6 +6,15 @@ import {
   type UserCreditsInfo,
 } from "@/lib/file-validation";
 import { withRateLimit } from "@/lib/rate-limit";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiBadRequest,
+  apiNotFound,
+  apiInsufficientCredits,
+  apiInternalError,
+  apiFileValidationError,
+} from "@/lib/api-response";
 
 /**
  * Async Upload Endpoint
@@ -24,14 +33,7 @@ import { withRateLimit } from "@/lib/rate-limit";
 // Worker URL for queue operations
 const WORKER_URL = process.env.WORKER_URL || "http://localhost:8000";
 
-interface AsyncUploadResponse {
-  success: boolean;
-  jobId?: string;
-  message?: string;
-  error?: string;
-}
-
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: NextRequest) {
   try {
     // 레이트 제한 체크
     const rateLimitResponse = withRateLimit(request, "upload");
@@ -44,10 +46,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // 인증 확인
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
+      return apiUnauthorized();
     }
 
     // 크레딧 확인
@@ -58,10 +57,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .single();
 
     if (userError || !userData) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return apiNotFound("사용자를 찾을 수 없습니다.");
     }
 
     // 크레딧 계산 (공통 유틸리티 사용)
@@ -69,10 +65,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const remaining = calculateRemainingCredits(userInfo);
 
     if (remaining <= 0) {
-      return NextResponse.json(
-        { success: false, error: "Insufficient credits" },
-        { status: 402 }
-      );
+      return apiInsufficientCredits();
     }
 
     // FormData 파싱
@@ -80,10 +73,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const file = formData.get("file") as File | null;
 
     if (!file) {
-      return NextResponse.json(
-        { success: false, error: "No file provided" },
-        { status: 400 }
-      );
+      return apiBadRequest("파일이 제공되지 않았습니다.");
     }
 
     // 파일 버퍼 읽기 (매직 바이트 검증용)
@@ -97,10 +87,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     if (!validation.valid) {
-      return NextResponse.json(
-        { success: false, error: validation.error },
-        { status: 400 }
-      );
+      return apiFileValidationError(validation.error || "파일 검증에 실패했습니다.");
     }
 
     const ext = validation.extension || "." + file.name.split(".").pop()?.toLowerCase();
@@ -120,10 +107,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (jobError || !job) {
       console.error("Failed to create job:", jobError);
-      return NextResponse.json(
-        { success: false, error: "Failed to create processing job" },
-        { status: 500 }
-      );
+      return apiInternalError("작업 생성에 실패했습니다.");
     }
 
     const jobData = job as { id: string };
@@ -147,10 +131,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         .eq("id", jobData.id);
 
       console.error("Storage upload failed:", uploadError);
-      return NextResponse.json(
-        { success: false, error: "Failed to upload file" },
-        { status: 500 }
-      );
+      return apiInternalError("파일 업로드에 실패했습니다.");
     }
 
     // Worker에 Queue 작업 추가 요청
@@ -180,17 +161,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       console.warn("Queue service unavailable:", queueError);
     }
 
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       jobId: jobData.id,
-      message: "File uploaded and queued for processing",
+      message: "파일이 업로드되어 처리 대기 중입니다.",
     });
 
   } catch (error) {
     console.error("Async upload error:", error);
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }

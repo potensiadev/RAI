@@ -6,15 +6,20 @@
  * - 청크 타입별 가중치 적용
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "@/lib/openai/embedding";
 import { withRateLimit } from "@/lib/rate-limit";
 import {
+  apiSuccess,
+  apiUnauthorized,
+  apiBadRequest,
+  apiInternalError,
+} from "@/lib/api-response";
+import {
   type SearchRequest,
   type SearchResponse,
   type CandidateSearchResult,
-  type ApiResponse,
   getConfidenceLevel,
   type RiskLevel,
   type ChunkType,
@@ -62,10 +67,7 @@ export async function POST(request: NextRequest) {
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "UNAUTHORIZED", message: "인증이 필요합니다." } },
-        { status: 401 }
-      );
+      return apiUnauthorized();
     }
 
     // 요청 바디 파싱
@@ -73,10 +75,7 @@ export async function POST(request: NextRequest) {
     const { query, filters, limit = 20, offset = 0 } = body;
 
     if (!query || query.trim().length === 0) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "INVALID_REQUEST", message: "검색어를 입력해주세요." } },
-        { status: 400 }
-      );
+      return apiBadRequest("검색어를 입력해주세요.");
     }
 
     // 검색 모드 결정: 10자 이상이면 Semantic(Vector), 아니면 Keyword(RDB)
@@ -151,10 +150,7 @@ export async function POST(request: NextRequest) {
           .range(offset, offset + limit - 1);
 
         if (error) {
-          return NextResponse.json<ApiResponse<null>>(
-            { error: { code: "DB_ERROR", message: error.message } },
-            { status: 500 }
-          );
+          return apiInternalError(error.message);
         }
 
         results = (data || []).map((row, index) => {
@@ -207,10 +203,7 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         console.error("Keyword search error:", error);
-        return NextResponse.json<ApiResponse<null>>(
-          { error: { code: "DB_ERROR", message: error.message } },
-          { status: 500 }
-        );
+        return apiInternalError(error.message);
       }
 
       // 키워드 매칭 기반 점수 계산
@@ -227,19 +220,13 @@ export async function POST(request: NextRequest) {
       total,
     };
 
-    return NextResponse.json<ApiResponse<SearchResponse>>({
-      data: response,
-      meta: {
-        total,
-        page: Math.floor(offset / limit) + 1,
-        limit,
-      },
+    return apiSuccess(response, {
+      total,
+      page: Math.floor(offset / limit) + 1,
+      limit,
     });
   } catch (error) {
     console.error("Search API error:", error);
-    return NextResponse.json<ApiResponse<null>>(
-      { error: { code: "INTERNAL_ERROR", message: "서버 오류가 발생했습니다." } },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }

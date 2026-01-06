@@ -3,8 +3,14 @@
  * 후보자의 원본 파일에 대한 signed URL 반환
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiNotFound,
+  apiInternalError,
+} from "@/lib/api-response";
 
 interface RouteParams {
     params: Promise<{ id: string }>;
@@ -18,10 +24,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         // 인증 확인
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
-            return NextResponse.json(
-                { error: "Unauthorized" },
-                { status: 401 }
-            );
+            return apiUnauthorized();
         }
 
         // 후보자 조회 (source_file 가져오기)
@@ -32,10 +35,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             .single();
 
         if (candidateError || !candidate) {
-            return NextResponse.json(
-                { error: "Candidate not found" },
-                { status: 404 }
-            );
+            return apiNotFound("후보자를 찾을 수 없습니다.");
         }
 
         // Cast to proper type
@@ -43,17 +43,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         const sourceFile = candidateData.source_file;
         if (!sourceFile) {
-            return NextResponse.json(
-                { error: "Source file not available", url: null },
-                { status: 200 }
-            );
+            return apiSuccess({ error: "원본 파일이 없습니다.", url: null });
         }
 
         // PDF만 미리보기 지원
         const fileType = candidateData.file_type?.toLowerCase();
         if (fileType !== "pdf") {
-            return NextResponse.json({
-                error: `Preview not supported for ${fileType || "unknown"} files. Only PDF is supported.`,
+            return apiSuccess({
+                error: `${fileType || "unknown"} 파일은 미리보기를 지원하지 않습니다. PDF만 지원됩니다.`,
                 url: null,
                 fileType,
             });
@@ -66,21 +63,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         if (signedUrlError || !signedUrlData) {
             console.error("Failed to create signed URL:", signedUrlError);
-            return NextResponse.json(
-                { error: "Failed to generate preview URL", url: null },
-                { status: 500 }
-            );
+            return apiInternalError("미리보기 URL 생성에 실패했습니다.");
         }
 
-        return NextResponse.json({
+        return apiSuccess({
             url: signedUrlData.signedUrl,
             fileType,
         });
     } catch (error) {
         console.error("Source file API error:", error);
-        return NextResponse.json(
-            { error: "Internal server error" },
-            { status: 500 }
-        );
+        return apiInternalError();
     }
 }

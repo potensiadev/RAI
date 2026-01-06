@@ -6,17 +6,23 @@
  * 후보자 정보 수정 (검토 후 편집)
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   type CandidateDetail,
-  type ApiResponse,
   getConfidenceLevel,
   type Career,
   type Project,
   type Education,
   type RiskLevel,
 } from "@/types";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiBadRequest,
+  apiNotFound,
+  apiInternalError,
+} from "@/lib/api-response";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -95,10 +101,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "UNAUTHORIZED", message: "인증이 필요합니다." } },
-        { status: 401 }
-      );
+      return apiUnauthorized();
     }
 
     // 후보자 상세 조회 (RLS가 user_id 필터 자동 적용)
@@ -110,30 +113,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (error) {
       if (error.code === "PGRST116") {
-        return NextResponse.json<ApiResponse<null>>(
-          { error: { code: "NOT_FOUND", message: "후보자를 찾을 수 없습니다." } },
-          { status: 404 }
-        );
+        return apiNotFound("후보자를 찾을 수 없습니다.");
       }
       console.error("Candidate fetch error:", error);
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "DB_ERROR", message: error.message } },
-        { status: 500 }
-      );
+      return apiInternalError(error.message);
     }
 
     const row = data as Record<string, unknown>;
     const candidate = toCandidateDetail(row);
 
-    return NextResponse.json<ApiResponse<CandidateDetail>>({
-      data: candidate,
-    });
+    return apiSuccess(candidate);
   } catch (error) {
     console.error("Candidate detail API error:", error);
-    return NextResponse.json<ApiResponse<null>>(
-      { error: { code: "INTERNAL_ERROR", message: "서버 오류가 발생했습니다." } },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }
 
@@ -145,10 +137,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "UNAUTHORIZED", message: "인증이 필요합니다." } },
-        { status: 401 }
-      );
+      return apiUnauthorized();
     }
 
     // 요청 바디 파싱
@@ -203,10 +192,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "INVALID_REQUEST", message: "업데이트할 필드가 없습니다." } },
-        { status: 400 }
-      );
+      return apiBadRequest("업데이트할 필드가 없습니다.");
     }
 
     // 후보자 업데이트 (RLS가 user_id 검증)
@@ -220,28 +206,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (error) {
       if (error.code === "PGRST116") {
-        return NextResponse.json<ApiResponse<null>>(
-          { error: { code: "NOT_FOUND", message: "후보자를 찾을 수 없습니다." } },
-          { status: 404 }
-        );
+        return apiNotFound("후보자를 찾을 수 없습니다.");
       }
       console.error("Candidate update error:", error);
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "DB_ERROR", message: error.message } },
-        { status: 500 }
-      );
+      return apiInternalError(error.message);
     }
 
     const candidate = toCandidateDetail(data as unknown as Record<string, unknown>);
 
-    return NextResponse.json<ApiResponse<CandidateDetail>>({
-      data: candidate,
-    });
+    return apiSuccess(candidate);
   } catch (error) {
     console.error("Candidate update API error:", error);
-    return NextResponse.json<ApiResponse<null>>(
-      { error: { code: "INTERNAL_ERROR", message: "서버 오류가 발생했습니다." } },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }

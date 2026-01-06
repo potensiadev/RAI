@@ -1,5 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  apiSuccess,
+  apiBadRequest,
+  apiInternalError,
+} from "@/lib/api-response";
 
 // Service Role 클라이언트 (RLS 우회)
 const supabaseAdmin = createClient(
@@ -12,19 +17,13 @@ export async function POST(request: NextRequest) {
     const { email } = await request.json();
 
     if (!email || typeof email !== "string") {
-      return NextResponse.json(
-        { error: "이메일이 필요합니다." },
-        { status: 400 }
-      );
+      return apiBadRequest("이메일이 필요합니다.");
     }
 
     // 이메일 형식 검증
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { error: "올바른 이메일 형식이 아닙니다." },
-        { status: 400 }
-      );
+      return apiBadRequest("올바른 이메일 형식이 아닙니다.");
     }
 
     // users 테이블에서 이메일 확인
@@ -36,28 +35,22 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("Email check error:", error);
-      return NextResponse.json(
-        { error: "이메일 확인 중 오류가 발생했습니다." },
-        { status: 500 }
-      );
+      return apiInternalError("이메일 확인 중 오류가 발생했습니다.");
     }
 
     if (!data) {
-      return NextResponse.json({
+      return apiSuccess({
         exists: false,
         provider: null,
       });
     }
 
-    return NextResponse.json({
+    return apiSuccess({
       exists: true,
       provider: data.signup_provider || "email",
     });
   } catch (error) {
     console.error("Check email error:", error);
-    return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }

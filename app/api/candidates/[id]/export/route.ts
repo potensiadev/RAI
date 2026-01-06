@@ -1,5 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiNotFound,
+  apiInternalError,
+  apiRateLimitExceeded,
+} from "@/lib/api-response";
 
 /**
  * Blind Export API
@@ -36,7 +43,7 @@ export async function POST(
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiUnauthorized();
     }
 
     // 요청 파싱
@@ -51,7 +58,7 @@ export async function POST(
       .single();
 
     if (userError || !userData) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return apiNotFound("사용자를 찾을 수 없습니다.");
     }
 
     const plan = (userData as { plan: string }).plan || "starter";
@@ -67,14 +74,7 @@ export async function POST(
 
       const currentCount = (countResult as unknown as number) || 0;
       if (currentCount >= monthlyLimit) {
-        return NextResponse.json(
-          {
-            error: `월 내보내기 한도(${monthlyLimit}회)를 초과했습니다.`,
-            limit: monthlyLimit,
-            used: currentCount,
-          },
-          { status: 429 }
-        );
+        return apiRateLimitExceeded(`월 내보내기 한도(${monthlyLimit}회)를 초과했습니다.`);
       }
     }
 
@@ -88,10 +88,7 @@ export async function POST(
       .single();
 
     if (candidateError || !candidate) {
-      return NextResponse.json(
-        { error: "Candidate not found" },
-        { status: 404 }
-      );
+      return apiNotFound("후보자를 찾을 수 없습니다.");
     }
 
     // 블라인드 데이터 생성 (연락처 마스킹)
@@ -131,34 +128,28 @@ export async function POST(
       includePortfolio: body.includePortfolio ?? false,
     });
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        html: htmlContent,
-        fileName,
-        format,
-        candidate: {
-          id: blindData.id,
-          name: blindData.name,
-          // 마스킹된 정보만 포함
-          phone: "[연락처 비공개]",
-          email: "[이메일 비공개]",
-          summary: blindData.summary,
-          expYears: blindData.exp_years,
-          skills: blindData.skills,
-          careers: blindData.careers,
-          education: blindData.education,
-          projects: blindData.projects,
-          strengths: blindData.strengths,
-        },
+    return apiSuccess({
+      html: htmlContent,
+      fileName,
+      format,
+      candidate: {
+        id: blindData.id,
+        name: blindData.name,
+        // 마스킹된 정보만 포함
+        phone: "[연락처 비공개]",
+        email: "[이메일 비공개]",
+        summary: blindData.summary,
+        expYears: blindData.exp_years,
+        skills: blindData.skills,
+        careers: blindData.careers,
+        education: blindData.education,
+        projects: blindData.projects,
+        strengths: blindData.strengths,
       },
     });
   } catch (error) {
     console.error("Blind export error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }
 
@@ -175,7 +166,7 @@ export async function GET(
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiUnauthorized();
     }
 
     // 사용자 플랜 조회
@@ -198,7 +189,7 @@ export async function GET(
 
     const used = (countResult as unknown as number) || 0;
 
-    return NextResponse.json({
+    return apiSuccess({
       plan,
       limit: monthlyLimit === Infinity ? "unlimited" : monthlyLimit,
       used,
@@ -206,10 +197,7 @@ export async function GET(
     });
   } catch (error) {
     console.error("Export status error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }
 

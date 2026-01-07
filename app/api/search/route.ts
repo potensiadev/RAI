@@ -72,14 +72,38 @@ export async function POST(request: NextRequest) {
 
     // 요청 바디 파싱
     const body: SearchRequest = await request.json();
-    const { query, filters, limit = 20, offset = 0 } = body;
+    const { query, filters } = body;
+
+    // 페이지네이션 파라미터 검증 (정수 오버플로우 및 DoS 방지)
+    const MAX_LIMIT = 100;
+    const MIN_LIMIT = 1;
+    const MIN_OFFSET = 0;
+
+    let limit = typeof body.limit === "number" ? body.limit : 20;
+    let offset = typeof body.offset === "number" ? body.offset : 0;
+
+    if (limit < MIN_LIMIT) limit = MIN_LIMIT;
+    if (limit > MAX_LIMIT) limit = MAX_LIMIT;
+    if (offset < MIN_OFFSET) offset = MIN_OFFSET;
+
+    // 검색어 검증
+    const MAX_QUERY_LENGTH = 500;
+    const MAX_KEYWORD_LENGTH = 50;
 
     if (!query || query.trim().length === 0) {
       return apiBadRequest("검색어를 입력해주세요.");
     }
 
+    // 검색어 길이 제한 (DoS 방지)
+    if (query.length > MAX_QUERY_LENGTH) {
+      return apiBadRequest(`검색어는 ${MAX_QUERY_LENGTH}자 이하로 입력해주세요.`);
+    }
+
+    // 검색어 정제: 앞뒤 공백 제거
+    const sanitizedQuery = query.trim();
+
     // 검색 모드 결정: 10자 이상이면 Semantic(Vector), 아니면 Keyword(RDB)
-    const isSemanticSearch = query.length > 10;
+    const isSemanticSearch = sanitizedQuery.length > 10;
 
     let results: CandidateSearchResult[] = [];
     let total = 0;
@@ -91,7 +115,7 @@ export async function POST(request: NextRequest) {
 
       try {
         // Step 1: 쿼리 임베딩 생성
-        const queryEmbedding = await generateEmbedding(query);
+        const queryEmbedding = await generateEmbedding(sanitizedQuery);
 
         // Step 2: search_candidates RPC 함수 호출
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,8 +190,11 @@ export async function POST(request: NextRequest) {
       // Keyword Search (RDB)
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-      // 쉼표로 키워드 분리
-      const keywords = query.split(",").map(k => k.trim()).filter(Boolean);
+      // 키워드 분리 및 개별 키워드 길이 제한
+      const keywords = sanitizedQuery
+        .split(",")
+        .map(k => k.trim().slice(0, MAX_KEYWORD_LENGTH))
+        .filter(Boolean);
 
       let queryBuilder = supabase
         .from("candidates")

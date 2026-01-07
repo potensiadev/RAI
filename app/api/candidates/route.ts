@@ -24,10 +24,22 @@ export async function GET(request: NextRequest) {
       return apiUnauthorized();
     }
 
-    // 쿼리 파라미터 파싱
+    // 쿼리 파라미터 파싱 및 검증
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "20");
+
+    // 페이지네이션 파라미터 검증 (정수 오버플로우 및 DoS 방지)
+    const MAX_LIMIT = 100;
+    const MIN_LIMIT = 1;
+    const MIN_PAGE = 1;
+
+    let page = parseInt(searchParams.get("page") || "1", 10);
+    let limit = parseInt(searchParams.get("limit") || "20", 10);
+
+    // NaN 또는 범위 외 값 처리
+    if (isNaN(page) || page < MIN_PAGE) page = MIN_PAGE;
+    if (isNaN(limit) || limit < MIN_LIMIT) limit = MIN_LIMIT;
+    if (limit > MAX_LIMIT) limit = MAX_LIMIT;
+
     const status = searchParams.get("status") || "completed";
     const offset = (page - 1) * limit;
 

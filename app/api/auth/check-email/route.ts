@@ -5,6 +5,7 @@ import {
   apiBadRequest,
   apiInternalError,
 } from "@/lib/api-response";
+import { withRateLimit } from "@/lib/rate-limit";
 
 // Service Role 클라이언트 (RLS 우회)
 const supabaseAdmin = createClient(
@@ -14,6 +15,10 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate Limit 체크 (분당 5회 - 이메일 열거 공격 방지)
+    const rateLimitResponse = await withRateLimit(request, "auth");
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { email } = await request.json();
 
     if (!email || typeof email !== "string") {

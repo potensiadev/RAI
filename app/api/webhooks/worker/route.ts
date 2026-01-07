@@ -17,7 +17,9 @@ import {
  * - 실시간 클라이언트 알림 (향후 WebSocket/SSE 연동)
  */
 
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "";
+// Webhook Secret 필수 검증
+// 환경변수가 설정되지 않으면 모든 요청 거부
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
 interface WebhookPayload {
   job_id: string;
@@ -34,11 +36,16 @@ interface WebhookPayload {
 
 export async function POST(request: NextRequest) {
   try {
-    // Webhook Secret 검증
+    // Webhook Secret 필수 검증
+    if (!WEBHOOK_SECRET) {
+      console.error("[Webhook] WEBHOOK_SECRET environment variable is not configured");
+      return apiInternalError("서버 설정 오류입니다.");
+    }
+
     const authHeader = request.headers.get("X-Webhook-Secret");
-    if (WEBHOOK_SECRET && authHeader !== WEBHOOK_SECRET) {
-      console.warn("Invalid webhook secret");
-      return apiUnauthorized();
+    if (!authHeader || authHeader !== WEBHOOK_SECRET) {
+      console.warn("[Webhook] Invalid or missing webhook secret");
+      return apiUnauthorized("유효하지 않은 인증 정보입니다.");
     }
 
     const payload: WebhookPayload = await request.json();

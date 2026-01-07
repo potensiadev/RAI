@@ -38,14 +38,28 @@ pdf_parser = PDFParser()
 docx_parser = DOCXParser()
 
 
-def notify_webhook(job_id: str, status: str, result: Optional[dict] = None, error: Optional[str] = None):
+def notify_webhook(
+    job_id: str,
+    status: str,
+    result: Optional[dict] = None,
+    error: Optional[str] = None,
+    max_retries: int = 2
+):
     """
-    Webhook으로 작업 완료 알림 전송 (동기)
+    Webhook으로 작업 완료 알림 전송 (동기, 재시도 포함)
 
     Next.js API의 /api/webhooks/worker 로 전송
+
+    Args:
+        job_id: 작업 ID
+        status: 작업 상태
+        result: 결과 데이터
+        error: 에러 메시지
+        max_retries: 최대 재시도 횟수 (기본: 2, 총 3번 시도)
     """
     webhook_url = settings.WEBHOOK_URL
     if not webhook_url:
+        logger.debug(f"[Webhook] URL not configured, skipping notification for job {job_id}")
         return
 
     payload = {
@@ -55,43 +69,127 @@ def notify_webhook(job_id: str, status: str, result: Optional[dict] = None, erro
         "error": error,
     }
 
-    try:
-        with httpx.Client() as client:
-            response = client.post(
-                webhook_url,
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Webhook-Secret": settings.WEBHOOK_SECRET,
-                },
-                timeout=10,
+    # 재시도하면 안 되는 HTTP 상태 코드 (클라이언트 에러)
+    NON_RETRYABLE_STATUS_CODES = {400, 401, 403, 404, 405, 422}
+
+    for attempt in range(max_retries + 1):
+        try:
+            with httpx.Client() as client:
+                response = client.post(
+                    webhook_url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Webhook-Secret": settings.WEBHOOK_SECRET,
+                    },
+                    timeout=10,
+                )
+
+                if response.status_code == 200:
+                    logger.info(f"[Webhook] Successfully notified job {job_id} (status: {status})")
+                    return
+
+                # 4xx 클라이언트 에러는 재시도해도 의미 없음
+                if response.status_code in NON_RETRYABLE_STATUS_CODES:
+                    logger.error(
+                        f"[Webhook] Non-retryable error {response.status_code} for job {job_id}. "
+                        f"Response: {response.text[:200]}"
+                    )
+                    return  # 재시도 없이 종료
+
+                # 5xx 서버 에러는 재시도
+                logger.warning(
+                    f"[Webhook] Server error {response.status_code} "
+                    f"(attempt {attempt + 1}/{max_retries + 1})"
+                )
+
+        except httpx.TimeoutException as e:
+            logger.warning(
+                f"[Webhook] Timeout for job {job_id} (attempt {attempt + 1}/{max_retries + 1}): {e}"
+            )
+        except httpx.ConnectError as e:
+            logger.warning(
+                f"[Webhook] Connection error for job {job_id} (attempt {attempt + 1}/{max_retries + 1}): {e}"
+            )
+        except Exception as e:
+            logger.error(
+                f"[Webhook] Unexpected error for job {job_id} (attempt {attempt + 1}/{max_retries + 1}): {e}"
             )
 
-            if response.status_code != 200:
-                logger.warning(f"Webhook notification failed: {response.status_code}")
-    except Exception as e:
-        logger.error(f"Webhook notification error: {e}")
+        # 재시도 전 대기 (지수 백오프: 1초, 2초)
+        if attempt < max_retries:
+            wait_time = 2 ** attempt
+            logger.info(f"[Webhook] Retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
+
+    # 모든 재시도 실패
+    logger.error(
+        f"[Webhook] All {max_retries + 1} attempts failed for job {job_id}. "
+        f"Frontend may not receive status update."
+    )
 
 
-def download_file_from_storage(file_path: str) -> bytes:
+class DownloadError(Exception):
+    """파일 다운로드 실패 예외"""
+    def __init__(self, message: str, retries_attempted: int = 0):
+        super().__init__(message)
+        self.retries_attempted = retries_attempted
+
+
+def download_file_from_storage(
+    file_path: str,
+    max_retries: int = 3,
+    retry_delay: float = 1.0
+) -> bytes:
     """
-    Supabase Storage에서 파일 다운로드
+    Supabase Storage에서 파일 다운로드 (재시도 로직 포함)
 
     Args:
         file_path: Storage 경로 (예: "resumes/{user_id}/{filename}")
+        max_retries: 최대 재시도 횟수 (기본: 3)
+        retry_delay: 재시도 간 대기 시간 (기본: 1초, 지수 백오프 적용)
 
     Returns:
         파일 바이트 데이터
+
+    Raises:
+        DownloadError: 모든 재시도 실패 시
     """
     from supabase import create_client
 
     supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
-
-    # Storage 버킷에서 파일 다운로드
     bucket_name = "resumes"
-    response = supabase.storage.from_(bucket_name).download(file_path)
 
-    return response
+    last_error = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            logger.info(f"[Download] Attempting to download: {file_path} (attempt {attempt + 1}/{max_retries + 1})")
+
+            response = supabase.storage.from_(bucket_name).download(file_path)
+
+            if response and len(response) > 0:
+                logger.info(f"[Download] Successfully downloaded {len(response)} bytes")
+                return response
+            else:
+                raise ValueError("Empty response from storage")
+
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                f"[Download] Attempt {attempt + 1}/{max_retries + 1} failed: {type(e).__name__}: {e}"
+            )
+
+            if attempt < max_retries:
+                # 지수 백오프: 1초, 2초, 4초
+                wait_time = retry_delay * (2 ** attempt)
+                logger.info(f"[Download] Retrying in {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+
+    # 모든 재시도 실패
+    error_msg = f"Failed to download {file_path} after {max_retries + 1} attempts: {last_error}"
+    logger.error(f"[Download] {error_msg}")
+    raise DownloadError(error_msg, retries_attempted=max_retries + 1)
 
 
 def parse_file(
@@ -465,16 +563,33 @@ def process_resume(
         # Step 3: 청킹 + 임베딩 (Embedding Service)
         # ─────────────────────────────────────────────────
         embedding_service = get_embedding_service()
-        embedding_result: EmbeddingResult = asyncio.run(
-            embedding_service.process_candidate(data=analyzed_data, generate_embeddings=True)
-        )
+        embeddings_failed = False
+        embeddings_error = None
+
+        try:
+            embedding_result: EmbeddingResult = asyncio.run(
+                embedding_service.process_candidate(data=analyzed_data, generate_embeddings=True)
+            )
+        except Exception as embed_error:
+            logger.error(f"[Task] Embedding generation exception: {embed_error}")
+            embeddings_failed = True
+            embeddings_error = str(embed_error)
+            embedding_result = None
 
         chunk_count = 0
         embedding_chunks = []
 
-        if embedding_result.success:
+        if embedding_result and embedding_result.success:
             chunk_count = len(embedding_result.chunks)
             embedding_chunks = embedding_result.chunks
+        else:
+            embeddings_failed = True
+            if embedding_result:
+                embeddings_error = embedding_result.error or "Unknown embedding error"
+            logger.warning(
+                f"[Task] Embedding generation failed: {embeddings_error}. "
+                f"Candidate will be saved but not searchable."
+            )
 
         # ─────────────────────────────────────────────────
         # Step 4: DB 저장 (candidates + candidate_chunks)
@@ -590,6 +705,8 @@ def process_resume(
             "is_update": is_update,
             "parent_id": parent_id,
             "portfolio_thumbnail_url": portfolio_thumbnail_url,
+            "embeddings_failed": embeddings_failed,
+            "embeddings_error": embeddings_error,
         })
 
         return {
@@ -602,6 +719,8 @@ def process_resume(
             "is_update": is_update,
             "parent_id": parent_id,
             "portfolio_thumbnail_url": portfolio_thumbnail_url,
+            "embeddings_failed": embeddings_failed,
+            "embeddings_error": embeddings_error,
         }
 
     except Exception as e:

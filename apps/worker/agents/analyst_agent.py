@@ -239,14 +239,37 @@ Return valid JSON only."""
         """
         Merge responses with cross-check on critical fields.
         """
+        warnings_precheck = []
+
+        # 타임아웃 에러 감지 및 경고 추가
+        for provider, response in responses.items():
+            if response.error and "timeout" in response.error.lower():
+                warnings_precheck.append(Warning(
+                    type="timeout",
+                    field=provider.value,
+                    message=f"{provider.value} API 타임아웃 - 과금이 발생했을 수 있습니다",
+                    severity="high"
+                ))
+                logger.warning(
+                    f"[AnalystAgent] {provider.value} 타임아웃 감지 - "
+                    f"요청이 전송된 후 타임아웃되어 과금될 수 있음"
+                )
+            elif response.error:
+                warnings_precheck.append(Warning(
+                    type="llm_error",
+                    field=provider.value,
+                    message=f"{provider.value} API 에러: {response.error[:100]}",
+                    severity="medium"
+                ))
+
         valid_responses = [r for r in responses.values() if r.success and r.content]
-        
+
         if not valid_responses:
-            return {}, 0.0, [Warning("critical", "all", "All LLM providers failed")]
+            return {}, 0.0, warnings_precheck + [Warning("critical", "all", "All LLM providers failed")]
 
         # If only one response, use it
         if len(valid_responses) == 1:
-            return valid_responses[0].content, 0.7, [Warning("info", "cross_check", "Only one provider available")]
+            return valid_responses[0].content, 0.7, warnings_precheck + [Warning("info", "cross_check", "Only one provider available")]
 
         # Multiple responses - merge with cross-check
         openai_data = responses.get(LLMProvider.OPENAI)
@@ -292,7 +315,7 @@ Return valid JSON only."""
 
         avg_confidence = confidence_sum / max(1, field_count) if field_count > 0 else 0.8
 
-        return base_data, avg_confidence, warnings
+        return base_data, avg_confidence, warnings_precheck + warnings
 
 
 # Singleton

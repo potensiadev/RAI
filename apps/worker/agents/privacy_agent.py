@@ -28,6 +28,8 @@ AES_KEY_SIZE = 32  # 256 bits
 NONCE_SIZE = 12    # 96 bits (GCM 권장)
 SALT_SIZE = 16     # 128 bits
 PBKDF2_ITERATIONS = 100000
+KEY_VERSION_SIZE = 1  # 1 byte for key version (supports 256 versions)
+ENCRYPTION_HEADER = b'RAI1'  # 4 bytes magic header for versioned encryption
 
 
 class PIIType(str, Enum):
@@ -118,9 +120,19 @@ class PrivacyAgent:
         Args:
             encryption_key: AES 암호화 마스터 키 (64자 hex 또는 32바이트)
                           없으면 settings에서 가져옴
+
+        Key Rotation 지원:
+            - ENCRYPTION_KEY: 현재 활성 키 (암호화에 사용)
+            - ENCRYPTION_KEY_V{n}: 이전 버전 키들 (복호화에만 사용)
+            - 예: ENCRYPTION_KEY_V1, ENCRYPTION_KEY_V2, ...
         """
         self.master_key = encryption_key or settings.ENCRYPTION_KEY
         self._validate_master_key()
+
+        # 키 로테이션을 위한 키 저장소 초기화
+        self._key_store: Dict[int, str] = {}
+        self._current_key_version: int = 0
+        self._init_key_store()
 
     def _validate_master_key(self) -> None:
         """마스터 키 유효성 검증"""
@@ -137,24 +149,83 @@ class PrivacyAgent:
         elif len(self.master_key) != 32:
             raise ValueError("ENCRYPTION_KEY must be 64 hex chars or 32 bytes")
 
-    def _derive_key(self, salt: bytes) -> bytes:
+    def _init_key_store(self) -> None:
+        """
+        키 저장소 초기화 - 환경변수에서 모든 버전의 키 로드
+
+        키 네이밍 규칙:
+        - ENCRYPTION_KEY: 현재 활성 키 (버전 0 또는 가장 높은 버전)
+        - ENCRYPTION_KEY_V1, V2, ...: 이전 버전 키
+        - ENCRYPTION_KEY_VERSION: 현재 키 버전 번호 (기본값: 0)
+        """
+        if not self.master_key:
+            return
+
+        # 현재 키 버전 확인
+        version_str = os.environ.get("ENCRYPTION_KEY_VERSION", "0")
+        try:
+            self._current_key_version = int(version_str)
+        except ValueError:
+            self._current_key_version = 0
+
+        # 현재 활성 키 등록
+        self._key_store[self._current_key_version] = self.master_key
+
+        # 이전 버전 키들 로드 (V1부터 V255까지)
+        for version in range(1, 256):
+            if version == self._current_key_version:
+                continue  # 이미 등록됨
+
+            key_name = f"ENCRYPTION_KEY_V{version}"
+            key_value = os.environ.get(key_name)
+
+            if key_value:
+                try:
+                    self._validate_key_format(key_value)
+                    self._key_store[version] = key_value
+                    logger.info(f"Loaded encryption key version {version}")
+                except ValueError as e:
+                    logger.warning(f"Invalid key {key_name}: {e}")
+
+        logger.info(
+            f"Key rotation initialized: current_version={self._current_key_version}, "
+            f"available_versions={sorted(self._key_store.keys())}"
+        )
+
+    def _validate_key_format(self, key: str) -> None:
+        """키 형식 검증"""
+        if len(key) == 64:
+            try:
+                bytes.fromhex(key)
+            except ValueError:
+                raise ValueError("Key must be 64 hex characters")
+        elif len(key) != 32:
+            raise ValueError("Key must be 64 hex chars or 32 bytes")
+
+    def _get_key_for_version(self, version: int) -> Optional[str]:
+        """특정 버전의 키 반환"""
+        return self._key_store.get(version)
+
+    def _derive_key(self, salt: bytes, master_key: Optional[str] = None) -> bytes:
         """
         PBKDF2로 데이터별 암호화 키 유도
 
         Args:
             salt: 랜덤 salt (각 암호화마다 다름)
+            master_key: 사용할 마스터 키 (None이면 현재 활성 키 사용)
 
         Returns:
             32바이트 AES-256 키
         """
-        if not self.master_key:
+        key_to_use = master_key or self.master_key
+        if not key_to_use:
             raise ValueError("Encryption key not configured")
 
         # 마스터 키를 바이트로 변환
-        if len(self.master_key) == 64:
-            master_bytes = bytes.fromhex(self.master_key)
+        if len(key_to_use) == 64:
+            master_bytes = bytes.fromhex(key_to_use)
         else:
-            master_bytes = self.master_key.encode()
+            master_bytes = key_to_use.encode()
 
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
@@ -429,9 +500,11 @@ class PrivacyAgent:
 
     def encrypt(self, value: str) -> Optional[str]:
         """
-        AES-256-GCM 암호화
+        AES-256-GCM 암호화 (버전 키 지원)
 
-        Format: base64(salt + nonce + ciphertext + tag)
+        Format: base64(header + version + salt + nonce + ciphertext + tag)
+        - header: 4 bytes ('RAI1' - 버전 키 지원 식별)
+        - version: 1 byte (키 버전)
         - salt: 16 bytes (PBKDF2용)
         - nonce: 12 bytes (GCM IV)
         - ciphertext: variable
@@ -455,8 +528,9 @@ class PrivacyAgent:
             aesgcm = AESGCM(key)
             ciphertext = aesgcm.encrypt(nonce, value.encode('utf-8'), None)
 
-            # salt + nonce + ciphertext(tag 포함) 결합
-            encrypted_data = salt + nonce + ciphertext
+            # header + version + salt + nonce + ciphertext(tag 포함) 결합
+            version_byte = bytes([self._current_key_version])
+            encrypted_data = ENCRYPTION_HEADER + version_byte + salt + nonce + ciphertext
 
             # Base64 인코딩
             return base64.b64encode(encrypted_data).decode('utf-8')
@@ -467,7 +541,7 @@ class PrivacyAgent:
 
     def decrypt(self, encrypted_value: str) -> Optional[str]:
         """
-        AES-256-GCM 복호화
+        AES-256-GCM 복호화 (버전 키 지원)
 
         Args:
             encrypted_value: Base64 인코딩된 암호문 (encrypt 메서드 출력)
@@ -482,26 +556,129 @@ class PrivacyAgent:
             # Base64 디코딩
             encrypted_data = base64.b64decode(encrypted_value.encode('utf-8'))
 
-            # salt, nonce, ciphertext 분리
-            if len(encrypted_data) < SALT_SIZE + NONCE_SIZE + 16:  # 최소 tag 크기
-                logger.error("Encrypted data too short")
-                return None
-
-            salt = encrypted_data[:SALT_SIZE]
-            nonce = encrypted_data[SALT_SIZE:SALT_SIZE + NONCE_SIZE]
-            ciphertext = encrypted_data[SALT_SIZE + NONCE_SIZE:]
-
-            # salt로부터 키 유도
-            key = self._derive_key(salt)
-
-            # AES-256-GCM 복호화
-            aesgcm = AESGCM(key)
-            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-
-            return plaintext.decode('utf-8')
+            # 새 포맷 확인 (RAI1 헤더)
+            if encrypted_data[:4] == ENCRYPTION_HEADER:
+                return self._decrypt_versioned(encrypted_data)
+            else:
+                # 레거시 포맷 (헤더 없음, 버전 0으로 처리)
+                return self._decrypt_legacy(encrypted_data)
 
         except Exception as e:
             logger.error(f"AES-256-GCM decryption failed: {e}")
+            return None
+
+    def _decrypt_versioned(self, encrypted_data: bytes) -> Optional[str]:
+        """버전 키 포맷 복호화"""
+        # header(4) + version(1) + salt(16) + nonce(12) + ciphertext(최소 16)
+        min_length = len(ENCRYPTION_HEADER) + KEY_VERSION_SIZE + SALT_SIZE + NONCE_SIZE + 16
+        if len(encrypted_data) < min_length:
+            logger.error("Versioned encrypted data too short")
+            return None
+
+        # 파싱
+        offset = len(ENCRYPTION_HEADER)
+        key_version = encrypted_data[offset]
+        offset += KEY_VERSION_SIZE
+
+        salt = encrypted_data[offset:offset + SALT_SIZE]
+        offset += SALT_SIZE
+
+        nonce = encrypted_data[offset:offset + NONCE_SIZE]
+        offset += NONCE_SIZE
+
+        ciphertext = encrypted_data[offset:]
+
+        # 해당 버전의 키 조회
+        master_key = self._get_key_for_version(key_version)
+        if not master_key:
+            logger.error(f"No key found for version {key_version}")
+            return None
+
+        # 키 유도 및 복호화
+        key = self._derive_key(salt, master_key)
+        aesgcm = AESGCM(key)
+        plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+
+        return plaintext.decode('utf-8')
+
+    def _decrypt_legacy(self, encrypted_data: bytes) -> Optional[str]:
+        """레거시 포맷 복호화 (버전 0)"""
+        if len(encrypted_data) < SALT_SIZE + NONCE_SIZE + 16:
+            logger.error("Legacy encrypted data too short")
+            return None
+
+        salt = encrypted_data[:SALT_SIZE]
+        nonce = encrypted_data[SALT_SIZE:SALT_SIZE + NONCE_SIZE]
+        ciphertext = encrypted_data[SALT_SIZE + NONCE_SIZE:]
+
+        # 버전 0의 키로 복호화 (현재 키 또는 V0 키)
+        master_key = self._get_key_for_version(0) or self.master_key
+        key = self._derive_key(salt, master_key)
+
+        aesgcm = AESGCM(key)
+        plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+
+        return plaintext.decode('utf-8')
+
+    def re_encrypt(self, encrypted_value: str) -> Optional[str]:
+        """
+        현재 키 버전으로 재암호화
+
+        키 로테이션 후 기존 데이터를 새 키로 업데이트할 때 사용
+
+        Args:
+            encrypted_value: 기존 암호문
+
+        Returns:
+            새 키로 암호화된 값 또는 None
+        """
+        if not encrypted_value:
+            return None
+
+        try:
+            # 먼저 복호화
+            plaintext = self.decrypt(encrypted_value)
+            if plaintext is None:
+                logger.error("Failed to decrypt for re-encryption")
+                return None
+
+            # 현재 키로 재암호화
+            return self.encrypt(plaintext)
+
+        except Exception as e:
+            logger.error(f"Re-encryption failed: {e}")
+            return None
+
+    def get_encryption_metadata(self, encrypted_value: str) -> Optional[Dict[str, Any]]:
+        """
+        암호화된 값의 메타데이터 조회 (버전 등)
+
+        Args:
+            encrypted_value: 암호문
+
+        Returns:
+            메타데이터 딕셔너리 또는 None
+        """
+        try:
+            encrypted_data = base64.b64decode(encrypted_value.encode('utf-8'))
+
+            if encrypted_data[:4] == ENCRYPTION_HEADER:
+                key_version = encrypted_data[4]
+                return {
+                    "format": "versioned",
+                    "key_version": key_version,
+                    "is_current_key": key_version == self._current_key_version,
+                    "needs_rotation": key_version != self._current_key_version
+                }
+            else:
+                return {
+                    "format": "legacy",
+                    "key_version": 0,
+                    "is_current_key": self._current_key_version == 0,
+                    "needs_rotation": self._current_key_version != 0
+                }
+
+        except Exception:
             return None
 
     def can_encrypt(self) -> bool:

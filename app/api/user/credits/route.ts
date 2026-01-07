@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { type ApiResponse, type PlanType } from "@/types";
+import { getPlanCredits } from "@/lib/config/plans";
 
 interface CreditsResponse {
   credits: number;           // 추가 구매 크레딧
@@ -17,13 +18,6 @@ interface CreditsResponse {
   billingCycleStart?: string;
   wasReset?: boolean;        // 이번 요청에서 리셋되었는지
 }
-
-// 플랜별 기본 크레딧 (fallback용)
-const PLAN_BASE_CREDITS: Record<PlanType, number> = {
-  starter: 50,
-  pro: 150,
-  enterprise: 300,
-};
 
 export async function GET() {
   try {
@@ -121,7 +115,7 @@ export async function GET() {
     };
 
     const plan = (userData.plan as PlanType) || "starter";
-    const planBaseCredits = PLAN_BASE_CREDITS[plan];
+    const planBaseCredits = getPlanCredits(plan);
     const additionalCredits = userData.credits ?? 0;
     const usedThisMonth = userData.credits_used_this_month ?? 0;
 

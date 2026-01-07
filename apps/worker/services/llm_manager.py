@@ -27,6 +27,10 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# LLM 호출 타임아웃 설정 (초)
+LLM_TIMEOUT_SECONDS = 120  # 2분 (이력서 분석은 시간이 걸릴 수 있음)
+LLM_CONNECT_TIMEOUT = 10   # 연결 타임아웃
+
 
 class LLMProvider(str, Enum):
     """지원하는 LLM 제공자"""
@@ -66,13 +70,17 @@ class LLMManager:
         logger.info("[LLMManager] 초기화 시작")
         logger.info("=" * 60)
 
-        # OpenAI 클라이언트
+        # OpenAI 클라이언트 (타임아웃 설정 포함)
         self.openai_client: Optional[AsyncOpenAI] = None
         openai_key = settings.OPENAI_API_KEY
         if openai_key:
             try:
-                self.openai_client = AsyncOpenAI(api_key=openai_key)
-                logger.info(f"[LLMManager] ✅ OpenAI 클라이언트 초기화 성공 (key: {openai_key[:8]}...)")
+                from httpx import Timeout
+                self.openai_client = AsyncOpenAI(
+                    api_key=openai_key,
+                    timeout=Timeout(LLM_TIMEOUT_SECONDS, connect=LLM_CONNECT_TIMEOUT)
+                )
+                logger.info(f"[LLMManager] ✅ OpenAI 클라이언트 초기화 성공 (key: {openai_key[:8]}..., timeout: {LLM_TIMEOUT_SECONDS}s)")
             except Exception as e:
                 logger.error(f"[LLMManager] ❌ OpenAI 클라이언트 초기화 실패: {e}")
                 logger.error(traceback.format_exc())
@@ -92,13 +100,17 @@ class LLMManager:
         else:
             logger.warning("[LLMManager] ⚠️ GEMINI_API_KEY 없음")
 
-        # Claude 클라이언트
+        # Claude 클라이언트 (타임아웃 설정 포함)
         self.anthropic_client: Optional[AsyncAnthropic] = None
         anthropic_key = settings.ANTHROPIC_API_KEY
         if anthropic_key:
             try:
-                self.anthropic_client = AsyncAnthropic(api_key=anthropic_key)
-                logger.info(f"[LLMManager] ✅ Claude 클라이언트 초기화 성공 (key: {anthropic_key[:8]}...)")
+                from httpx import Timeout
+                self.anthropic_client = AsyncAnthropic(
+                    api_key=anthropic_key,
+                    timeout=Timeout(LLM_TIMEOUT_SECONDS, connect=LLM_CONNECT_TIMEOUT)
+                )
+                logger.info(f"[LLMManager] ✅ Claude 클라이언트 초기화 성공 (key: {anthropic_key[:8]}..., timeout: {LLM_TIMEOUT_SECONDS}s)")
             except Exception as e:
                 logger.error(f"[LLMManager] ❌ Claude 클라이언트 초기화 실패: {e}")
                 logger.error(traceback.format_exc())
@@ -353,13 +365,31 @@ class LLMManager:
 
             logger.info("[LLMManager] Gemini generate_content 호출 중...")
 
-            # google-genai는 동기 API이므로 asyncio.to_thread 사용
-            response = await asyncio.to_thread(
-                self.gemini_client.models.generate_content,
-                model=model_name,
-                contents=prompt,
-                config=config
-            )
+            # google-genai는 동기 API이므로 asyncio.to_thread 사용 (타임아웃 적용)
+            try:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.gemini_client.models.generate_content,
+                        model=model_name,
+                        contents=prompt,
+                        config=config
+                    ),
+                    timeout=LLM_TIMEOUT_SECONDS
+                )
+            except asyncio.TimeoutError:
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.error(
+                    f"[LLMManager] ❌ Gemini API 타임아웃 ({LLM_TIMEOUT_SECONDS}초 초과, 실제 {elapsed:.1f}초)\n"
+                    f"⚠️ 주의: API 요청이 이미 전송되어 과금될 수 있습니다.\n"
+                    f"   모델: {model_name}, 프롬프트 길이: {len(prompt)} chars"
+                )
+                return LLMResponse(
+                    provider=LLMProvider.GEMINI,
+                    content=None,
+                    raw_response="",
+                    model=model_name,
+                    error=f"Gemini API timeout after {LLM_TIMEOUT_SECONDS} seconds (request may still be billed)"
+                )
 
             elapsed = (datetime.now() - start_time).total_seconds()
             raw_content = response.text
@@ -576,12 +606,28 @@ class LLMManager:
             )
 
             prompt = self._convert_messages_to_prompt(messages)
-            response = await asyncio.to_thread(
-                self.gemini_client.models.generate_content,
-                model=model_name,
-                contents=prompt,
-                config=config
-            )
+            try:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.gemini_client.models.generate_content,
+                        model=model_name,
+                        contents=prompt,
+                        config=config
+                    ),
+                    timeout=LLM_TIMEOUT_SECONDS
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"[LLMManager] ❌ Gemini Text API 타임아웃 ({LLM_TIMEOUT_SECONDS}초)\n"
+                    f"⚠️ 주의: API 요청이 이미 전송되어 과금될 수 있습니다."
+                )
+                return LLMResponse(
+                    provider=LLMProvider.GEMINI,
+                    content=None,
+                    raw_response="",
+                    model=model_name,
+                    error=f"Gemini API timeout after {LLM_TIMEOUT_SECONDS} seconds (request may still be billed)"
+                )
 
             content = response.text
 

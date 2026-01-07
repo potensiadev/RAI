@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getPlanExportLimit } from "@/lib/config/plans";
 
 /**
  * Blind Export API
@@ -9,13 +10,6 @@ import { createClient } from "@/lib/supabase/server";
  * - 월별 내보내기 횟수 제한 (Starter: 30회)
  * - 내보내기 기록 저장
  */
-
-// 플랜별 월 내보내기 제한
-const PLAN_LIMITS: Record<string, number> = {
-  starter: 30,
-  pro: Infinity,
-  enterprise: Infinity,
-};
 
 interface ExportRequest {
   format?: "pdf" | "docx";
@@ -36,7 +30,7 @@ export async function POST(
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
     }
 
     // 요청 파싱
@@ -51,21 +45,29 @@ export async function POST(
       .single();
 
     if (userError || !userData) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json({ error: "사용자 정보를 찾을 수 없습니다." }, { status: 404 });
     }
 
     const plan = (userData as { plan: string }).plan || "starter";
-    const monthlyLimit = PLAN_LIMITS[plan] || 30;
+    const monthlyLimit = getPlanExportLimit(plan);
 
     // 월별 내보내기 횟수 체크
     if (monthlyLimit !== Infinity) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: countResult } = await (supabase as any).rpc(
+      const { data: countResult, error: countError } = await (supabase as any).rpc(
         "get_monthly_blind_export_count",
         { p_user_id: user.id }
       );
 
-      const currentCount = (countResult as unknown as number) || 0;
+      if (countError) {
+        console.error("Failed to get export count:", countError);
+        return NextResponse.json(
+          { error: "내보내기 횟수 확인 중 오류가 발생했습니다." },
+          { status: 500 }
+        );
+      }
+
+      const currentCount = (countResult as number) ?? 0;
       if (currentCount >= monthlyLimit) {
         return NextResponse.json(
           {
@@ -89,7 +91,7 @@ export async function POST(
 
     if (candidateError || !candidate) {
       return NextResponse.json(
-        { error: "Candidate not found" },
+        { error: "후보자를 찾을 수 없습니다." },
         { status: 404 }
       );
     }
@@ -115,7 +117,7 @@ export async function POST(
     const fileName = `${blindData.name || "이력서"}_블라인드_${new Date().toISOString().split("T")[0]}.${format}`;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from("blind_exports").insert({
+    const { error: insertError } = await (supabase as any).from("blind_exports").insert({
       user_id: user.id,
       candidate_id: candidateId,
       format,
@@ -124,6 +126,11 @@ export async function POST(
       ip_address: request.headers.get("x-forwarded-for") || "unknown",
       user_agent: request.headers.get("user-agent") || "unknown",
     });
+
+    if (insertError) {
+      console.error("Failed to save export record:", insertError);
+      // 내보내기 기록 저장 실패해도 내보내기는 진행
+    }
 
     // HTML 템플릿 생성 (클라이언트에서 PDF로 변환)
     const htmlContent = generateBlindResumeHTML(blindData, {
@@ -156,7 +163,7 @@ export async function POST(
   } catch (error) {
     console.error("Blind export error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "서버 오류가 발생했습니다." },
       { status: 500 }
     );
   }
@@ -175,28 +182,40 @@ export async function GET(
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
     }
 
     // 사용자 플랜 조회
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: userData } = await (supabase as any)
+    const { data: userData, error: userError } = await (supabase as any)
       .from("users")
       .select("plan")
       .eq("id", user.id)
       .single();
 
-    const plan = ((userData as { plan?: string } | null)?.plan) || "starter";
-    const monthlyLimit = PLAN_LIMITS[plan] || 30;
+    if (userError || !userData) {
+      return NextResponse.json({ error: "사용자 정보를 찾을 수 없습니다." }, { status: 404 });
+    }
+
+    const plan = (userData as { plan?: string })?.plan || "starter";
+    const monthlyLimit = getPlanExportLimit(plan);
 
     // 월별 사용량 조회
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: countResult } = await (supabase as any).rpc(
+    const { data: countResult, error: countError } = await (supabase as any).rpc(
       "get_monthly_blind_export_count",
       { p_user_id: user.id }
     );
 
-    const used = (countResult as unknown as number) || 0;
+    if (countError) {
+      console.error("Failed to get export count:", countError);
+      return NextResponse.json(
+        { error: "사용량 조회 중 오류가 발생했습니다." },
+        { status: 500 }
+      );
+    }
+
+    const used = (countResult as number) ?? 0;
 
     return NextResponse.json({
       plan,
@@ -207,7 +226,7 @@ export async function GET(
   } catch (error) {
     console.error("Export status error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "서버 오류가 발생했습니다." },
       { status: 500 }
     );
   }

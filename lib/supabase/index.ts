@@ -15,3 +15,13 @@ export {
 
 // Middleware client
 export { updateSession } from "./middleware";
+
+// Admin client (API 라우트용, RLS 우회)
+export {
+  getAdminClient,
+  callRpc,
+  reserveCredit,
+  releaseCreditReservation,
+  checkConcurrentUploadLimit,
+  withRollback,
+} from "./admin";

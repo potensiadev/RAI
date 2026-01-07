@@ -20,6 +20,32 @@ import {
 } from "@/types";
 
 /**
+ * PostgREST ilike 연산자용 특수문자 이스케이프
+ * SQL Injection 및 패턴 매칭 오류 방지
+ */
+function escapePostgrestPattern(input: string): string {
+  // PostgreSQL LIKE 특수문자 이스케이프: %, _, \
+  // PostgREST에서 사용되는 특수문자도 이스케이프
+  return input
+    .replace(/\\/g, '\\\\')  // 백슬래시 먼저 이스케이프
+    .replace(/%/g, '\\%')    // % 와일드카드
+    .replace(/_/g, '\\_')    // _ 단일 문자 와일드카드
+    .replace(/'/g, "''")     // 단일 인용부호
+    .replace(/"/g, '\\"');   // 이중 인용부호
+}
+
+/**
+ * 쉼표로 구분된 키워드 파싱 및 정규화
+ */
+function parseAndSanitizeKeywords(query: string): string[] {
+  return query
+    .split(",")
+    .map(k => k.trim())
+    .filter(k => k.length > 0)
+    .map(k => escapePostgrestPattern(k));
+}
+
+/**
  * DB row를 CandidateSearchResult로 변환
  */
 function toSearchResult(
@@ -90,13 +116,16 @@ export async function POST(request: NextRequest) {
         const queryEmbedding = await generateEmbedding(query);
 
         // Step 2: search_candidates RPC 함수 호출
+        // RPC는 offset을 지원하지 않으므로 더 많은 결과를 가져와 슬라이싱
+        const fetchCount = offset + limit;
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: rpcData, error: rpcError } = await (supabase as any).rpc(
           "search_candidates",
           {
             p_user_id: user.id,
             p_query_embedding: queryEmbedding,
-            p_match_count: limit,
+            p_match_count: fetchCount,
             p_exp_years_min: filters?.expYearsMin || null,
             p_exp_years_max: filters?.expYearsMax || null,
             p_skills: filters?.skills?.length ? filters.skills : null,
@@ -109,16 +138,24 @@ export async function POST(request: NextRequest) {
           throw rpcError;
         }
 
+        // 전체 결과 수 (offset 적용 전)
+        const allResults = rpcData || [];
+        total = allResults.length;
+
+        // offset 적용 후 슬라이싱
+        const slicedResults = allResults.slice(offset, offset + limit);
+
         // RPC 결과를 CandidateSearchResult로 변환
-        results = (rpcData || []).map((row: Record<string, unknown>) => {
+        results = slicedResults.map((row: Record<string, unknown>) => {
           const matchScore = (row.match_score as number) || 0;
           return toSearchResult(row, matchScore);
         });
-
-        total = results.length;
       } catch (embeddingError) {
         // 임베딩 생성 실패 시 텍스트 검색으로 Fallback
         console.warn("Embedding failed, falling back to text search:", embeddingError);
+
+        // 특수문자 이스케이프
+        const sanitizedQuery = escapePostgrestPattern(query);
 
         let queryBuilder = supabase
           .from("candidates")
@@ -126,7 +163,7 @@ export async function POST(request: NextRequest) {
           .eq("user_id", user.id)
           .eq("status", "completed")
           .eq("is_latest", true)
-          .or(`summary.ilike.%${query}%,last_position.ilike.%${query}%`);
+          .or(`summary.ilike.%${sanitizedQuery}%,last_position.ilike.%${sanitizedQuery}%`);
 
         if (filters?.expYearsMin) {
           queryBuilder = queryBuilder.gte("exp_years", filters.expYearsMin);
@@ -138,7 +175,8 @@ export async function POST(request: NextRequest) {
           queryBuilder = queryBuilder.overlaps("skills", filters.skills);
         }
         if (filters?.location) {
-          queryBuilder = queryBuilder.ilike("location_city", `%${filters.location}%`);
+          const sanitizedLocation = escapePostgrestPattern(filters.location);
+          queryBuilder = queryBuilder.ilike("location_city", `%${sanitizedLocation}%`);
         }
 
         const { data, error, count } = await queryBuilder
@@ -164,8 +202,8 @@ export async function POST(request: NextRequest) {
       // Keyword Search (RDB)
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-      // 쉼표로 키워드 분리
-      const keywords = query.split(",").map(k => k.trim()).filter(Boolean);
+      // 쉼표로 키워드 분리 및 특수문자 이스케이프
+      const keywords = parseAndSanitizeKeywords(query);
 
       let queryBuilder = supabase
         .from("candidates")
@@ -193,7 +231,8 @@ export async function POST(request: NextRequest) {
         queryBuilder = queryBuilder.overlaps("skills", filters.skills);
       }
       if (filters?.location) {
-        queryBuilder = queryBuilder.ilike("location_city", `%${filters.location}%`);
+        const sanitizedLocation = escapePostgrestPattern(filters.location);
+        queryBuilder = queryBuilder.ilike("location_city", `%${sanitizedLocation}%`);
       }
 
       const { data, error, count } = await queryBuilder

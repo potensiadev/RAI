@@ -74,20 +74,168 @@ class ParseResponse(BaseModel):
     warnings: list[str] = []
 
 
+class DependencyStatus(BaseModel):
+    """의존성 상태"""
+    name: str
+    status: str  # "healthy", "unhealthy", "unconfigured"
+    latency_ms: Optional[float] = None
+    error: Optional[str] = None
+
+
 class HealthResponse(BaseModel):
     """헬스체크 응답"""
-    status: str
+    status: str  # "healthy", "degraded", "unhealthy"
     mode: str
     version: str
+    dependencies: Optional[list[DependencyStatus]] = None
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check():
-    """헬스체크 엔드포인트"""
+async def health_check(detailed: bool = False):
+    """
+    헬스체크 엔드포인트
+
+    Args:
+        detailed: True면 의존성 상태 포함
+
+    Returns:
+        HealthResponse with overall status and optional dependency details
+    """
+    import time
+
+    dependencies = []
+    all_healthy = True
+    any_unhealthy = False
+
+    # 기본 헬스체크: 필수 의존성(Supabase, LLM) 상태만 빠르게 확인
+    # Supabase 설정 확인
+    if not (settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY):
+        all_healthy = False
+
+    # LLM 설정 확인 (최소 1개 이상 필요)
+    llm_manager = get_llm_manager()
+    if not llm_manager.openai_client and not llm_manager.gemini_client:
+        any_unhealthy = True
+
+    # DB 클라이언트 초기화 확인
+    db_service = get_database_service()
+    if not db_service.client:
+        any_unhealthy = True
+
+    if detailed:
+        # 1. Supabase 연결 확인
+        supabase_status = DependencyStatus(name="supabase", status="unconfigured")
+        if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
+            try:
+                start = time.time()
+                db_service = get_database_service()
+                if db_service.client:
+                    # 간단한 쿼리로 연결 확인
+                    result = db_service.client.table("users").select("id").limit(1).execute()
+                    latency = (time.time() - start) * 1000
+                    supabase_status = DependencyStatus(
+                        name="supabase",
+                        status="healthy",
+                        latency_ms=round(latency, 2)
+                    )
+                else:
+                    supabase_status = DependencyStatus(
+                        name="supabase",
+                        status="unhealthy",
+                        error="Client not initialized"
+                    )
+                    any_unhealthy = True
+            except Exception as e:
+                supabase_status = DependencyStatus(
+                    name="supabase",
+                    status="unhealthy",
+                    error=str(e)[:100]
+                )
+                any_unhealthy = True
+        else:
+            all_healthy = False
+        dependencies.append(supabase_status)
+
+        # 2. LLM Providers 확인
+        llm_manager = get_llm_manager()
+
+        # OpenAI
+        openai_status = DependencyStatus(name="openai", status="unconfigured")
+        if settings.OPENAI_API_KEY:
+            if llm_manager.openai_client:
+                openai_status = DependencyStatus(name="openai", status="healthy")
+            else:
+                openai_status = DependencyStatus(
+                    name="openai",
+                    status="unhealthy",
+                    error="Client initialization failed"
+                )
+                any_unhealthy = True
+        dependencies.append(openai_status)
+
+        # Gemini
+        gemini_status = DependencyStatus(name="gemini", status="unconfigured")
+        if settings.GEMINI_API_KEY:
+            if llm_manager.gemini_client:
+                gemini_status = DependencyStatus(name="gemini", status="healthy")
+            else:
+                gemini_status = DependencyStatus(
+                    name="gemini",
+                    status="unhealthy",
+                    error="Client initialization failed"
+                )
+        dependencies.append(gemini_status)
+
+        # Anthropic
+        anthropic_status = DependencyStatus(name="anthropic", status="unconfigured")
+        if settings.ANTHROPIC_API_KEY:
+            if llm_manager.anthropic_client:
+                anthropic_status = DependencyStatus(name="anthropic", status="healthy")
+            else:
+                anthropic_status = DependencyStatus(
+                    name="anthropic",
+                    status="unhealthy",
+                    error="Client initialization failed"
+                )
+        dependencies.append(anthropic_status)
+
+        # 3. Queue Service (Redis) 확인
+        queue_status = DependencyStatus(name="redis", status="unconfigured")
+        if settings.REDIS_URL:
+            try:
+                queue_service = get_queue_service()
+                if queue_service.is_available:
+                    queue_status = DependencyStatus(name="redis", status="healthy")
+                else:
+                    queue_status = DependencyStatus(
+                        name="redis",
+                        status="unhealthy",
+                        error="Queue not available"
+                    )
+            except Exception as e:
+                queue_status = DependencyStatus(
+                    name="redis",
+                    status="unhealthy",
+                    error=str(e)[:100]
+                )
+        dependencies.append(queue_status)
+
+    # 전체 상태 결정
+    # - healthy: 모든 필수 의존성 정상
+    # - degraded: 일부 의존성 문제 있지만 동작 가능
+    # - unhealthy: 핵심 의존성(Supabase, LLM) 실패
+    if any_unhealthy:
+        overall_status = "degraded"
+    elif not all_healthy:
+        overall_status = "degraded"
+    else:
+        overall_status = "healthy"
+
     return HealthResponse(
-        status="healthy",
+        status=overall_status,
         mode=settings.ANALYSIS_MODE.value,
-        version="1.0.0"
+        version="1.0.0",
+        dependencies=dependencies if detailed else None
     )
 
 

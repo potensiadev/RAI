@@ -119,8 +119,26 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['users']['Row'], 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Database['public']['Tables']['users']['Insert']>;
+        Insert: {
+          email: string;
+          name?: string | null;
+          avatar_url?: string | null;
+          plan?: string;
+          credits?: number;
+          credits_used_this_month?: number;
+          consents_completed?: boolean;
+          consents_completed_at?: string | null;
+        };
+        Update: {
+          email?: string;
+          name?: string | null;
+          avatar_url?: string | null;
+          plan?: string;
+          credits?: number;
+          credits_used_this_month?: number;
+          consents_completed?: boolean;
+          consents_completed_at?: string | null;
+        };
       };
       candidates: {
         Row: {
@@ -129,18 +147,14 @@ export interface Database {
           name: string;
           birth_year: number | null;
           gender: string | null;
-          // 암호화된 원본
           phone_encrypted: string | null;
           email_encrypted: string | null;
           address_encrypted: string | null;
-          // 마스킹된 값 (표시용)
           phone_masked: string | null;
           email_masked: string | null;
           address_masked: string | null;
-          // 해시 (중복 체크용)
           phone_hash: string | null;
           email_hash: string | null;
-          // 필터링용 정형 필드
           skills: string[];
           exp_years: number;
           last_company: string | null;
@@ -154,33 +168,114 @@ export interface Database {
           strengths: string[];
           careers: Record<string, unknown>[];
           projects: Record<string, unknown>[];
-          // 시각 자산
           photo_url: string | null;
           portfolio_thumbnail_url: string | null;
           portfolio_url: string | null;
           github_url: string | null;
           linkedin_url: string | null;
-          // 버전 관리
           version: number;
           parent_id: string | null;
           is_latest: boolean;
-          // AI 분석 메타
           confidence_score: number;
           field_confidence: Record<string, number> | null;
           analysis_mode: string;
           requires_review: boolean;
           warnings: string[];
-          // 파일 정보
           source_file: string | null;
           file_type: string | null;
-          // 상태
           status: string;
           risk_level: string | null;
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['candidates']['Row'], 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Database['public']['Tables']['candidates']['Insert']>;
+        Insert: {
+          user_id: string;
+          name: string;
+          birth_year?: number | null;
+          gender?: string | null;
+          phone_encrypted?: string | null;
+          email_encrypted?: string | null;
+          address_encrypted?: string | null;
+          phone_masked?: string | null;
+          email_masked?: string | null;
+          address_masked?: string | null;
+          phone_hash?: string | null;
+          email_hash?: string | null;
+          skills?: string[];
+          exp_years?: number;
+          last_company?: string | null;
+          last_position?: string | null;
+          education_level?: string | null;
+          education_school?: string | null;
+          education_major?: string | null;
+          education?: Record<string, unknown>[];
+          location_city?: string | null;
+          summary?: string | null;
+          strengths?: string[];
+          careers?: Record<string, unknown>[];
+          projects?: Record<string, unknown>[];
+          photo_url?: string | null;
+          portfolio_thumbnail_url?: string | null;
+          portfolio_url?: string | null;
+          github_url?: string | null;
+          linkedin_url?: string | null;
+          version?: number;
+          parent_id?: string | null;
+          is_latest?: boolean;
+          confidence_score?: number;
+          field_confidence?: Record<string, number> | null;
+          analysis_mode?: string;
+          requires_review?: boolean;
+          warnings?: string[];
+          source_file?: string | null;
+          file_type?: string | null;
+          status?: string;
+          risk_level?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          name?: string;
+          birth_year?: number | null;
+          gender?: string | null;
+          phone_encrypted?: string | null;
+          email_encrypted?: string | null;
+          address_encrypted?: string | null;
+          phone_masked?: string | null;
+          email_masked?: string | null;
+          address_masked?: string | null;
+          phone_hash?: string | null;
+          email_hash?: string | null;
+          skills?: string[];
+          exp_years?: number;
+          last_company?: string | null;
+          last_position?: string | null;
+          education_level?: string | null;
+          education_school?: string | null;
+          education_major?: string | null;
+          education?: Record<string, unknown>[];
+          location_city?: string | null;
+          summary?: string | null;
+          strengths?: string[];
+          careers?: Record<string, unknown>[];
+          projects?: Record<string, unknown>[];
+          photo_url?: string | null;
+          portfolio_thumbnail_url?: string | null;
+          portfolio_url?: string | null;
+          github_url?: string | null;
+          linkedin_url?: string | null;
+          version?: number;
+          parent_id?: string | null;
+          is_latest?: boolean;
+          confidence_score?: number;
+          field_confidence?: Record<string, number> | null;
+          analysis_mode?: string;
+          requires_review?: boolean;
+          warnings?: string[];
+          source_file?: string | null;
+          file_type?: string | null;
+          status?: string;
+          risk_level?: string | null;
+        };
       };
       user_consents: {
         Row: {
@@ -202,8 +297,149 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['user_consents']['Row'], 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Database['public']['Tables']['user_consents']['Insert']>;
+        Insert: {
+          user_id: string;
+          terms_of_service?: boolean;
+          terms_of_service_version?: string | null;
+          terms_of_service_agreed_at?: string | null;
+          privacy_policy?: boolean;
+          privacy_policy_version?: string | null;
+          privacy_policy_agreed_at?: string | null;
+          third_party_data_guarantee?: boolean;
+          third_party_data_guarantee_version?: string | null;
+          third_party_data_guarantee_agreed_at?: string | null;
+          marketing_consent?: boolean;
+          marketing_consent_agreed_at?: string | null;
+          ip_address?: string | null;
+          user_agent?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          terms_of_service?: boolean;
+          terms_of_service_version?: string | null;
+          terms_of_service_agreed_at?: string | null;
+          privacy_policy?: boolean;
+          privacy_policy_version?: string | null;
+          privacy_policy_agreed_at?: string | null;
+          third_party_data_guarantee?: boolean;
+          third_party_data_guarantee_version?: string | null;
+          third_party_data_guarantee_agreed_at?: string | null;
+          marketing_consent?: boolean;
+          marketing_consent_agreed_at?: string | null;
+          ip_address?: string | null;
+          user_agent?: string | null;
+        };
+      };
+      processing_jobs: {
+        Row: {
+          id: string;
+          user_id: string;
+          candidate_id: string | null;
+          status: 'queued' | 'processing' | 'completed' | 'failed' | 'rejected';
+          file_name: string;
+          file_type: string;
+          file_size: number;
+          file_path: string | null;
+          parse_method: string | null;
+          page_count: number | null;
+          analysis_mode: string | null;
+          confidence_score: number | null;
+          error_code: string | null;
+          error_message: string | null;
+          created_at: string;
+          started_at: string | null;
+          completed_at: string | null;
+        };
+        Insert: {
+          user_id: string;
+          candidate_id?: string | null;
+          status: 'queued' | 'processing' | 'completed' | 'failed' | 'rejected';
+          file_name: string;
+          file_type: string;
+          file_size: number;
+          file_path?: string | null;
+          parse_method?: string | null;
+          page_count?: number | null;
+          analysis_mode?: string | null;
+          confidence_score?: number | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          started_at?: string | null;
+          completed_at?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          candidate_id?: string | null;
+          status?: 'queued' | 'processing' | 'completed' | 'failed' | 'rejected';
+          file_name?: string;
+          file_type?: string;
+          file_size?: number;
+          file_path?: string | null;
+          parse_method?: string | null;
+          page_count?: number | null;
+          analysis_mode?: string | null;
+          confidence_score?: number | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          started_at?: string | null;
+          completed_at?: string | null;
+        };
+      };
+      candidate_chunks: {
+        Row: {
+          id: string;
+          candidate_id: string;
+          chunk_type: 'summary' | 'career' | 'project' | 'skill' | 'education';
+          content: string;
+          embedding: number[] | null;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        };
+        Insert: {
+          candidate_id: string;
+          chunk_type: 'summary' | 'career' | 'project' | 'skill' | 'education';
+          content: string;
+          embedding?: number[] | null;
+          metadata?: Record<string, unknown>;
+        };
+        Update: {
+          candidate_id?: string;
+          chunk_type?: 'summary' | 'career' | 'project' | 'skill' | 'education';
+          content?: string;
+          embedding?: number[] | null;
+          metadata?: Record<string, unknown>;
+        };
+      };
+      blind_exports: {
+        Row: {
+          id: string;
+          user_id: string;
+          candidate_id: string;
+          format: 'pdf' | 'docx';
+          file_name: string;
+          masked_fields: string[];
+          ip_address: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          candidate_id: string;
+          format: 'pdf' | 'docx';
+          file_name: string;
+          masked_fields: string[];
+          ip_address?: string | null;
+          user_agent?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          candidate_id?: string;
+          format?: 'pdf' | 'docx';
+          file_name?: string;
+          masked_fields?: string[];
+          ip_address?: string | null;
+          user_agent?: string | null;
+        };
       };
       search_feedback: {
         Row: {
@@ -216,8 +452,22 @@ export interface Database {
           relevance_score: number;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['search_feedback']['Row'], 'id' | 'created_at'>;
-        Update: Partial<Database['public']['Tables']['search_feedback']['Insert']>;
+        Insert: {
+          user_id: string;
+          candidate_id: string;
+          search_query: string;
+          feedback_type: string;
+          result_position: number;
+          relevance_score: number;
+        };
+        Update: {
+          user_id?: string;
+          candidate_id?: string;
+          search_query?: string;
+          feedback_type?: string;
+          result_position?: number;
+          relevance_score?: number;
+        };
       };
       credit_transactions: {
         Row: {
@@ -231,19 +481,104 @@ export interface Database {
           payment_id: string | null;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['credit_transactions']['Row'], 'id' | 'created_at'>;
-        Update: Partial<Database['public']['Tables']['credit_transactions']['Insert']>;
+        Insert: {
+          user_id: string;
+          type: string;
+          amount: number;
+          balance_after: number;
+          description?: string | null;
+          candidate_id?: string | null;
+          payment_id?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          type?: string;
+          amount?: number;
+          balance_after?: number;
+          description?: string | null;
+          candidate_id?: string | null;
+          payment_id?: string | null;
+        };
       };
+    };
+    Views: {
+      [_ in never]: never;
     };
     Functions: {
       search_candidates: {
         Args: {
-          query_embedding: number[];
-          match_count: number;
-          filter_user_id: string;
+          p_user_id: string;
+          p_query_embedding: number[];
+          p_match_count: number;
+          p_exp_years_min: number | null;
+          p_exp_years_max: number | null;
+          p_skills: string[] | null;
+          p_location: string | null;
         };
-        Returns: Database['public']['Tables']['candidates']['Row'][];
+        Returns: {
+          id: string;
+          name: string;
+          last_position: string | null;
+          last_company: string | null;
+          exp_years: number;
+          skills: string[];
+          photo_url: string | null;
+          summary: string | null;
+          confidence_score: number;
+          requires_review: boolean;
+          match_score: number;
+        }[];
       };
+      get_user_credits: {
+        Args: {
+          p_user_id: string;
+        };
+        Returns: {
+          plan: string;
+          base_credits: number;
+          credits_used: number;
+          bonus_credits: number;
+          remaining_credits: number;
+        }[];
+      };
+      get_monthly_blind_export_count: {
+        Args: {
+          p_user_id: string;
+        };
+        Returns: number;
+      };
+      deduct_credit: {
+        Args: {
+          p_user_id: string;
+          p_candidate_id?: string;
+          p_description?: string;
+        };
+        Returns: boolean;
+      };
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }
+
+/**
+ * Typed Supabase Client Helper
+ * API에서 as any 캐스팅 없이 타입 안전하게 사용
+ */
+export type TypedSupabaseClient = import('@supabase/supabase-js').SupabaseClient<Database>;
+
+/**
+ * 테이블 Row 타입 헬퍼
+ */
+export type Tables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row'];
+export type TablesInsert<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Insert'];
+export type TablesUpdate<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Update'];
+
+/**
+ * RPC 함수 타입 헬퍼
+ */
+export type Functions<T extends keyof Database['public']['Functions']> = Database['public']['Functions'][T];

@@ -58,6 +58,16 @@ class EmbeddingResult:
     chunks: List[Chunk] = field(default_factory=list)
     total_tokens: int = 0
     error: Optional[str] = None
+    # 부분 성공 정보
+    total_chunks: int = 0
+    embedded_chunks: int = 0
+    failed_chunks: int = 0
+    warnings: List[str] = field(default_factory=list)
+
+    @property
+    def is_partial_success(self) -> bool:
+        """부분 성공 여부 (일부 청크만 임베딩 성공)"""
+        return self.success and self.failed_chunks > 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -65,7 +75,12 @@ class EmbeddingResult:
             "chunk_count": len(self.chunks),
             "chunks": [c.to_dict() for c in self.chunks],
             "total_tokens": self.total_tokens,
-            "error": self.error
+            "error": self.error,
+            "total_chunks": self.total_chunks,
+            "embedded_chunks": self.embedded_chunks,
+            "failed_chunks": self.failed_chunks,
+            "is_partial_success": self.is_partial_success,
+            "warnings": self.warnings,
         }
 
 
@@ -218,22 +233,52 @@ class EmbeddingService:
 
             # 2. 임베딩 생성 (옵션)
             total_tokens = 0
+            embedded_count = 0
+            failed_count = 0
+            warnings = []
 
             if generate_embeddings:
                 if not self.client:
                     logger.warning("[EmbeddingService] ⚠️ OpenAI 클라이언트 없음 - 임베딩 스킵")
+                    warnings.append("OpenAI 클라이언트 미초기화 - 임베딩 생성 불가")
                 else:
-                    logger.info("[EmbeddingService] Step 2: 임베딩 생성")
+                    logger.info("[EmbeddingService] Step 2: 배치 임베딩 생성")
                     texts = [c.content for c in chunks]
                     embeddings = await self.create_embeddings_batch(texts)
 
-                    embedding_success = 0
+                    # 배치 결과 확인
+                    failed_indices = []
                     for i, embedding in enumerate(embeddings):
                         chunks[i].embedding = embedding
                         if embedding is not None:
-                            embedding_success += 1
+                            embedded_count += 1
+                        else:
+                            failed_indices.append(i)
 
-                    logger.info(f"[EmbeddingService] ✅ 임베딩 생성 완료: {embedding_success}/{len(chunks)} 성공")
+                    # 실패한 청크에 대해 개별 재시도
+                    if failed_indices:
+                        logger.info(f"[EmbeddingService] Step 2-1: 실패한 {len(failed_indices)}개 청크 개별 재시도")
+                        for idx in failed_indices:
+                            try:
+                                retry_embedding = await self.create_embedding(chunks[idx].content)
+                                if retry_embedding:
+                                    chunks[idx].embedding = retry_embedding
+                                    embedded_count += 1
+                                    logger.info(f"[EmbeddingService] ✅ 청크 {idx} 재시도 성공")
+                                else:
+                                    failed_count += 1
+                                    logger.warning(f"[EmbeddingService] ❌ 청크 {idx} 재시도 실패")
+                            except Exception as retry_error:
+                                failed_count += 1
+                                logger.warning(f"[EmbeddingService] ❌ 청크 {idx} 재시도 예외: {retry_error}")
+
+                    logger.info(f"[EmbeddingService] ✅ 임베딩 생성 완료: {embedded_count}/{len(chunks)} 성공")
+
+                    # 부분 실패 경고 추가
+                    if failed_count > 0:
+                        warning_msg = f"{failed_count}개 청크 임베딩 실패 - 해당 청크는 검색에서 제외됩니다"
+                        warnings.append(warning_msg)
+                        logger.warning(f"[EmbeddingService] ⚠️ {warning_msg}")
 
                     # 토큰 수 추정 (대략 4 문자 = 1 토큰)
                     total_tokens = sum(len(t) // 4 for t in texts)
@@ -246,7 +291,11 @@ class EmbeddingService:
             return EmbeddingResult(
                 success=True,
                 chunks=chunks,
-                total_tokens=total_tokens
+                total_tokens=total_tokens,
+                total_chunks=len(chunks),
+                embedded_chunks=embedded_count,
+                failed_chunks=failed_count,
+                warnings=warnings,
             )
 
         except Exception as e:

@@ -10,6 +10,7 @@ Worker에서 직접 Supabase에 데이터 저장
 
 import hashlib
 import logging
+import re
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -17,6 +18,10 @@ from enum import Enum
 from supabase import create_client, Client
 
 from config import get_settings
+
+# 전화번호 패턴 (중복 체크용) - 루프 외부에서 컴파일
+PHONE_PREFIX_PATTERN = re.compile(r'010[- ]?(\d{4})')
+PHONE_DIGITS_PATTERN = re.compile(r'\D')
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -39,6 +44,12 @@ class DuplicateCheckResult:
     existing_candidate_id: Optional[str] = None
     existing_candidate_name: Optional[str] = None
     confidence: float = 0.0  # 매칭 신뢰도
+    error: Optional[str] = None  # 에러 발생 시 메시지
+
+    @property
+    def has_error(self) -> bool:
+        """에러 발생 여부"""
+        return self.error is not None
 
 
 @dataclass
@@ -74,8 +85,7 @@ class DatabaseService:
         """전화번호 정규화 (숫자만 추출)"""
         if not phone:
             return None
-        import re
-        digits = re.sub(r'\D', '', phone)
+        digits = PHONE_DIGITS_PATTERN.sub('', phone)
         # 한국 휴대폰: 010으로 시작하는 11자리
         if len(digits) == 11 and digits.startswith('010'):
             return digits
@@ -203,9 +213,8 @@ class DatabaseService:
                         cand_name = candidate.get('name', '')
                         # 전화번호 앞 4자리 추출 (마스킹 패턴: 010-1234-****)
                         if masked_phone and len(masked_phone) >= 8:
-                            # 010-1234 형태에서 1234 추출
-                            import re
-                            match = re.search(r'010[- ]?(\d{4})', masked_phone)
+                            # 010-1234 형태에서 1234 추출 (컴파일된 패턴 사용)
+                            match = PHONE_PREFIX_PATTERN.search(masked_phone)
                             if match:
                                 cand_prefix = match.group(1)
                                 my_prefix = self._get_phone_prefix(phone)
@@ -253,48 +262,78 @@ class DatabaseService:
             )
 
         except Exception as e:
-            logger.error(f"Duplicate check failed: {e}")
-            # 오류 시 중복 없음으로 처리 (false positive 방지)
+            logger.error(f"Duplicate check failed: {e}", exc_info=True)
+            # 오류 시 에러 정보를 포함하여 반환 (호출자가 적절히 처리)
             return DuplicateCheckResult(
                 is_duplicate=False,
                 match_type=DuplicateMatchType.NONE,
-                confidence=0.0
+                confidence=0.0,
+                error=f"Duplicate check failed: {str(e)}"
             )
 
     def _update_version_stacking(
         self,
         existing_candidate_id: str,
         match_type: DuplicateMatchType,
-    ) -> bool:
+    ) -> Tuple[bool, Optional[str]]:
         """
-        버전 스태킹: 기존 후보자를 이전 버전으로 설정
+        버전 스태킹: 기존 후보자를 이전 버전으로 설정 (Race Condition 방지)
 
         Args:
             existing_candidate_id: 기존 후보자 ID
             match_type: 매칭 타입 (로그용)
 
         Returns:
-            성공 여부
+            Tuple[성공 여부, 에러 메시지]
         """
         if not self.client:
-            return False
+            return False, "Supabase client not initialized"
 
         try:
-            # 기존 후보자의 is_latest를 False로 업데이트
-            self.client.table("candidates").update({
+            # Step 1: 현재 상태 확인 (is_latest=True인지)
+            check_result = self.client.table("candidates").select(
+                "id, is_latest"
+            ).eq("id", existing_candidate_id).single().execute()
+
+            if not check_result.data:
+                logger.warning(f"Candidate not found: {existing_candidate_id}")
+                return False, "Candidate not found"
+
+            if not check_result.data.get("is_latest"):
+                # 이미 다른 요청에서 업데이트됨 (Race Condition 감지)
+                logger.warning(
+                    f"Version stacking race condition detected: {existing_candidate_id} "
+                    f"already marked as old version"
+                )
+                return False, "Race condition: candidate already updated"
+
+            # Step 2: 업데이트 실행
+            update_result = self.client.table("candidates").update({
                 "is_latest": False,
                 "updated_at": "now()"
-            }).eq("id", existing_candidate_id).execute()
+            }).eq("id", existing_candidate_id).eq("is_latest", True).execute()
 
-            logger.info(
-                f"Version stacking: {existing_candidate_id} marked as old version "
-                f"(match_type: {match_type.value})"
-            )
-            return True
+            # Step 3: 업데이트 후 확인
+            verify_result = self.client.table("candidates").select(
+                "is_latest"
+            ).eq("id", existing_candidate_id).single().execute()
+
+            if verify_result.data and verify_result.data.get("is_latest") == False:
+                logger.info(
+                    f"Version stacking: {existing_candidate_id} marked as old version "
+                    f"(match_type: {match_type.value})"
+                )
+                return True, None
+            else:
+                # 업데이트 실패 (다른 요청이 동시에 처리함)
+                logger.warning(
+                    f"Version stacking verification failed: {existing_candidate_id}"
+                )
+                return False, "Version stacking verification failed"
 
         except Exception as e:
-            logger.error(f"Version stacking failed: {e}")
-            return False
+            logger.error(f"Version stacking failed: {e}", exc_info=True)
+            return False, str(e)
 
     def save_candidate(
         self,
@@ -355,12 +394,29 @@ class DatabaseService:
                 birth_year=orig.get("birth_year"),
             )
 
+            # 중복 체크 에러 시 저장 중단 (데이터 무결성 보장)
+            if dup_result.has_error:
+                logger.error(f"Duplicate check error, aborting save: {dup_result.error}")
+                return SaveResult(
+                    success=False,
+                    error=f"Duplicate check failed: {dup_result.error}"
+                )
+
             if dup_result.is_duplicate and dup_result.existing_candidate_id:
                 # 버전 스태킹: 기존 레코드를 이전 버전으로 설정
-                self._update_version_stacking(
+                stacking_success, stacking_error = self._update_version_stacking(
                     dup_result.existing_candidate_id,
                     dup_result.match_type
                 )
+
+                if not stacking_success:
+                    # Race Condition 감지 시 저장 중단
+                    logger.error(f"Version stacking failed: {stacking_error}")
+                    return SaveResult(
+                        success=False,
+                        error=f"Version stacking failed: {stacking_error}"
+                    )
+
                 parent_id = dup_result.existing_candidate_id
                 is_update = True
                 logger.info(

@@ -46,8 +46,9 @@ export default function SignupPage() {
         return { exists: false, provider: null };
       }
 
-      const data = await response.json();
-      return { exists: data.exists, provider: data.provider };
+      const response_data = await response.json();
+      const result = response_data.data; // apiSuccess wraps in { success, data }
+      return { exists: result?.exists ?? false, provider: result?.provider ?? null };
     } catch (error) {
       console.error("Email check error:", error);
       return { exists: false, provider: null };

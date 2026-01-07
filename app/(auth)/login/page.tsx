@@ -39,9 +39,10 @@ function LoginForm() {
         return { exists: false, provider: null, maskedEmail: null };
       }
 
-      const data = await response.json();
+      const response_data = await response.json();
+      const result = response_data.data; // apiSuccess wraps in { success, data }
 
-      if (!data.exists) {
+      if (!result?.exists) {
         return { exists: false, provider: null, maskedEmail: null };
       }
 
@@ -54,7 +55,7 @@ function LoginForm() {
 
       return {
         exists: true,
-        provider: data.provider,
+        provider: result.provider,
         maskedEmail,
       };
     } catch (error) {

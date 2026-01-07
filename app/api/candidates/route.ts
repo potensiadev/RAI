@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("Candidates fetch error:", error);
-      return apiInternalError(error.message);
+      return apiInternalError();
     }
 
     // DB row를 CandidateListItem으로 변환

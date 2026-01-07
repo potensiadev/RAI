@@ -59,7 +59,7 @@ function toSearchResult(
 export async function POST(request: NextRequest) {
   try {
     // 레이트 제한 체크 (검색은 분당 30회)
-    const rateLimitResponse = withRateLimit(request, "search");
+    const rateLimitResponse = await withRateLimit(request, "search");
     if (rateLimitResponse) return rateLimitResponse;
 
     const supabase = await createClient();
@@ -150,7 +150,8 @@ export async function POST(request: NextRequest) {
           .range(offset, offset + limit - 1);
 
         if (error) {
-          return apiInternalError(error.message);
+          console.error("Text search error:", error);
+          return apiInternalError();
         }
 
         results = (data || []).map((row, index) => {
@@ -203,7 +204,7 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         console.error("Keyword search error:", error);
-        return apiInternalError(error.message);
+        return apiInternalError();
       }
 
       // 키워드 매칭 기반 점수 계산

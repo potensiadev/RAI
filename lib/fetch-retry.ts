@@ -256,3 +256,61 @@ export function callWorkerPipelineAsync(
     console.error("[Worker Pipeline Async] Unexpected error:", error);
   });
 }
+
+/**
+ * DLQ (Dead Letter Queue)에 실패 기록
+ * 서버리스 환경에서도 실패한 작업을 추적하고 재처리 가능
+ */
+export async function recordFailureToDLQ(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  jobId: string,
+  status: string,
+  payload: Record<string, unknown>,
+  error: string
+): Promise<void> {
+  try {
+    await supabase.from("webhook_failures").insert({
+      job_id: jobId,
+      status,
+      payload,
+      error,
+      retry_count: 0,
+    });
+    console.log(`[DLQ] Recorded failure for job ${jobId}`);
+  } catch (dlqError) {
+    console.error("[DLQ] Failed to record failure:", dlqError);
+  }
+}
+
+/**
+ * 개선된 비동기 Worker 호출 (DLQ 통합)
+ * - 실패 시 DLQ에 기록
+ * - 재시도 횟수 추적
+ * - 구조화된 에러 로깅
+ */
+export function callWorkerPipelineWithDLQ(
+  workerUrl: string,
+  payload: Record<string, unknown> & { job_id: string },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  onFailure?: (error: string, attempts: number) => Promise<void>
+): void {
+  callWorkerPipeline(workerUrl, payload, async (error, attempts) => {
+    // DLQ에 실패 기록
+    await recordFailureToDLQ(
+      supabase,
+      payload.job_id,
+      "worker_call_failed",
+      payload,
+      `Worker call failed after ${attempts} attempts: ${error}`
+    );
+
+    // 추가 실패 콜백 실행
+    if (onFailure) {
+      await onFailure(error, attempts);
+    }
+  }).catch((error) => {
+    console.error("[Worker Pipeline DLQ] Unexpected error:", error);
+  });
+}

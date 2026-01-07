@@ -113,23 +113,38 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (authError || !user || !user.email) {
       return apiUnauthorized();
     }
 
-    // 후보자 상세 조회 (RLS가 user_id 필터 자동 적용)
+    // 사용자 ID 조회 (public.users)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: userData } = await (supabase as any)
+      .from("users")
+      .select("id")
+      .eq("email", user.email)
+      .single();
+
+    const publicUserId = (userData as { id: string } | null)?.id;
+    if (!publicUserId) {
+      return apiUnauthorized("사용자 정보를 찾을 수 없습니다.");
+    }
+
+    // 후보자 상세 조회 (명시적 user_id 검증 + RLS 이중 보호)
     const { data, error } = await supabase
       .from("candidates")
       .select(CANDIDATE_DETAIL_COLUMNS)
       .eq("id", id)
+      .eq("user_id", publicUserId) // 명시적 소유권 검증
       .single();
 
     if (error) {
       if (error.code === "PGRST116") {
         return apiNotFound("후보자를 찾을 수 없습니다.");
       }
+      // DB 에러 상세 정보 숨김
       console.error("Candidate fetch error:", error);
-      return apiInternalError(error.message);
+      return apiInternalError();
     }
 
     const row = data as Record<string, unknown>;
@@ -149,8 +164,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (authError || !user || !user.email) {
       return apiUnauthorized();
+    }
+
+    // 사용자 ID 조회 (public.users)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: userData } = await (supabase as any)
+      .from("users")
+      .select("id")
+      .eq("email", user.email)
+      .single();
+
+    const publicUserId = (userData as { id: string } | null)?.id;
+    if (!publicUserId) {
+      return apiUnauthorized("사용자 정보를 찾을 수 없습니다.");
     }
 
     // 요청 바디 파싱
@@ -208,12 +236,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return apiBadRequest("업데이트할 필드가 없습니다.");
     }
 
-    // 후보자 업데이트 (RLS가 user_id 검증)
+    // 후보자 업데이트 (명시적 user_id 검증 + RLS 이중 보호)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from("candidates")
       .update(updateData)
       .eq("id", id)
+      .eq("user_id", publicUserId) // 명시적 소유권 검증
       .select(CANDIDATE_DETAIL_COLUMNS)
       .single();
 
@@ -221,14 +250,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       if (error.code === "PGRST116") {
         return apiNotFound("후보자를 찾을 수 없습니다.");
       }
+      // DB 에러 상세 정보 숨김
       console.error("Candidate update error:", error);
-      return apiInternalError(error.message);
+      return apiInternalError();
     }
 
     const candidate = toCandidateDetail(data as unknown as Record<string, unknown>);
 
     return apiSuccess(candidate);
   } catch (error) {
+    // 에러 상세 정보는 서버 로그에만 기록
     console.error("Candidate update API error:", error);
     return apiInternalError();
   }

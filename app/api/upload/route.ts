@@ -6,7 +6,8 @@ import {
   type UserCreditsInfo,
 } from "@/lib/file-validation";
 import { withRateLimit } from "@/lib/rate-limit";
-import { callWorkerPipelineAsync } from "@/lib/fetch-retry";
+import { callWorkerPipelineAsync, recordFailureToDLQ } from "@/lib/fetch-retry";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   apiSuccess,
   apiUnauthorized,
@@ -122,7 +123,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // 레이트 제한 체크 (인증 전 IP 기반)
-    const rateLimitResponse = withRateLimit(request, "upload");
+    const rateLimitResponse = await withRateLimit(request, "upload");
     if (rateLimitResponse) return rateLimitResponse;
 
     const supabase = await createClient();
@@ -278,15 +279,31 @@ export async function POST(request: NextRequest) {
       mode: userInfo.plan === "enterprise" ? "phase_2" : "phase_1",
     };
 
-    // 비동기 호출: 재시도 로직 포함, 실패 시 job 상태 업데이트
+    // 비동기 호출: 재시도 로직 포함, 실패 시 job 상태 업데이트 + DLQ 기록
     callWorkerPipelineAsync(WORKER_URL, workerPayload, async (error, attempts) => {
       log.error(`Worker pipeline failed after ${attempts} attempts`, new Error(error), { jobId: jobData.id, attempts });
+
+      // DLQ에 실패 기록 (재처리용)
+      const serviceSupabase = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { persistSession: false } }
+      );
+      await recordFailureToDLQ(
+        serviceSupabase,
+        jobData.id,
+        "worker_call_failed",
+        workerPayload,
+        `Worker connection failed after ${attempts} attempts: ${error}`
+      );
+
       // 모든 재시도 실패 시 job 상태를 failed로 업데이트
       await supabaseAny
         .from("processing_jobs")
         .update({
           status: "failed",
           error_message: `Worker connection failed after ${attempts} attempts: ${error}`,
+          error_code: "WORKER_UNREACHABLE",
         })
         .eq("id", jobData.id);
 
@@ -357,7 +374,8 @@ export async function GET(request: NextRequest) {
     .limit(20);
 
   if (error) {
-    return apiInternalError(error.message);
+    console.error("Processing jobs fetch error:", error);
+    return apiInternalError();
   }
 
   return apiSuccess(data);

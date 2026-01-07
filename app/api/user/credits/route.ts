@@ -94,7 +94,7 @@ export async function GET() {
 
     if (error) {
       console.error("[Credits API] Fallback error:", error);
-      return apiInternalError(error.message);
+      return apiInternalError();
     }
 
     if (!data) {

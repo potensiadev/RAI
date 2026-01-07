@@ -29,7 +29,7 @@ import {
 export async function POST(request: NextRequest) {
     try {
         // 레이트 제한 체크
-        const rateLimitResponse = withRateLimit(request, "upload");
+        const rateLimitResponse = await withRateLimit(request, "upload");
         if (rateLimitResponse) return rateLimitResponse;
 
         const supabase = await createClient();

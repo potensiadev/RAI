@@ -7,6 +7,7 @@ import {
   apiInternalError,
   apiRateLimitExceeded,
 } from "@/lib/api-response";
+import { withRateLimit } from "@/lib/rate-limit";
 import { PLAN_CONFIG } from "@/lib/file-validation";
 import { type PlanType } from "@/types/auth";
 
@@ -46,6 +47,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Rate Limit 체크 (시간당 20회)
+    const rateLimitResponse = await withRateLimit(request, "export");
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { id: candidateId } = await params;
     const supabase = await createClient();
 
@@ -170,6 +175,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Rate Limit 체크 (시간당 20회)
+    const rateLimitResponse = await withRateLimit(request, "export");
+    if (rateLimitResponse) return rateLimitResponse;
+
     await params; // params 사용 표시
     const supabase = await createClient();
 

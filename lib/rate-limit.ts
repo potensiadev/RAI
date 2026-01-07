@@ -6,11 +6,12 @@
  * - 사용자 기반 레이트 제한
  * - 슬라이딩 윈도우 알고리즘
  *
- * 주의: 인메모리 캐시는 서버리스 환경에서 인스턴스 간 공유되지 않음
- * 프로덕션에서는 Redis 또는 Vercel KV 사용 권장
+ * Supabase 기반 분산 레이트 제한 (서버리스 환경 지원)
+ * 로컬 캐시와 Supabase를 병행하여 성능 최적화
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 // ─────────────────────────────────────────────────
 // 타입 정의
@@ -75,7 +76,25 @@ export const RATE_LIMIT_CONFIGS = {
 } as const;
 
 // ─────────────────────────────────────────────────
-// 인메모리 캐시
+// Supabase 클라이언트 (Rate Limit 전용)
+// ─────────────────────────────────────────────────
+
+function getRateLimitSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    console.warn("[RateLimit] Supabase credentials not found, falling back to in-memory");
+    return null;
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false }
+  });
+}
+
+// ─────────────────────────────────────────────────
+// 인메모리 캐시 (로컬 폴백 + 성능 최적화)
 // ─────────────────────────────────────────────────
 
 const rateLimitCache = new Map<string, RateLimitEntry>();
@@ -126,11 +145,11 @@ export function getClientIP(request: NextRequest): string {
 }
 
 /**
- * 레이트 제한 체크
+ * 레이트 제한 체크 (인메모리 - 로컬 폴백용)
  */
-export function checkRateLimit(
+function checkRateLimitInMemory(
   identifier: string,
-  config: RateLimitConfig = RATE_LIMIT_CONFIGS.default
+  config: RateLimitConfig
 ): RateLimitResult {
   cleanupExpiredEntries();
 
@@ -169,6 +188,67 @@ export function checkRateLimit(
     remaining: config.limit - entry.count,
     reset: entry.resetTime,
   };
+}
+
+/**
+ * 레이트 제한 체크 (Supabase 분산 - 서버리스 환경 지원)
+ */
+export async function checkRateLimitDistributed(
+  identifier: string,
+  config: RateLimitConfig = RATE_LIMIT_CONFIGS.default
+): Promise<RateLimitResult> {
+  const supabase = getRateLimitSupabase();
+
+  // Supabase 사용 불가 시 인메모리 폴백
+  if (!supabase) {
+    return checkRateLimitInMemory(identifier, config);
+  }
+
+  const now = Date.now();
+  const windowStart = new Date(now - config.windowMs).toISOString();
+
+  try {
+    // 현재 윈도우의 요청 수 조회 및 새 요청 기록 (단일 트랜잭션)
+    const { data, error } = await supabase.rpc("check_rate_limit", {
+      p_identifier: identifier,
+      p_window_ms: config.windowMs,
+      p_limit: config.limit,
+    });
+
+    if (error) {
+      console.warn("[RateLimit] Supabase RPC error, falling back to in-memory:", error.message);
+      return checkRateLimitInMemory(identifier, config);
+    }
+
+    const result = data as { allowed: boolean; count: number; reset_at: string } | null;
+
+    if (!result) {
+      return checkRateLimitInMemory(identifier, config);
+    }
+
+    const resetTime = new Date(result.reset_at).getTime();
+
+    return {
+      success: result.allowed,
+      limit: config.limit,
+      remaining: Math.max(0, config.limit - result.count),
+      reset: resetTime,
+    };
+  } catch (err) {
+    console.warn("[RateLimit] Exception, falling back to in-memory:", err);
+    return checkRateLimitInMemory(identifier, config);
+  }
+}
+
+/**
+ * 레이트 제한 체크 (동기 래퍼 - 기존 호환성 유지)
+ * 주의: 서버리스 환경에서 정확한 제한을 위해 checkRateLimitDistributed 사용 권장
+ */
+export function checkRateLimit(
+  identifier: string,
+  config: RateLimitConfig = RATE_LIMIT_CONFIGS.default
+): RateLimitResult {
+  return checkRateLimitInMemory(identifier, config);
 }
 
 /**
@@ -211,7 +291,7 @@ export function rateLimitExceededResponse(
 // ─────────────────────────────────────────────────
 
 /**
- * API 라우트에 레이트 제한 적용
+ * API 라우트에 레이트 제한 적용 (비동기 - Supabase 분산 지원)
  *
  * @example
  * export async function POST(request: NextRequest) {
@@ -220,18 +300,18 @@ export function rateLimitExceededResponse(
  *   // ... 나머지 로직
  * }
  */
-export function withRateLimit(
+export async function withRateLimit(
   request: NextRequest,
   configKey: keyof typeof RATE_LIMIT_CONFIGS = "default",
   userId?: string
-): NextResponse | null {
+): Promise<NextResponse | null> {
   const config = RATE_LIMIT_CONFIGS[configKey];
   const ip = getClientIP(request);
 
   // IP + 사용자 ID 조합으로 식별 (사용자별 제한 강화)
   const identifier = userId ? `${configKey}:${userId}:${ip}` : `${configKey}:${ip}`;
 
-  const result = checkRateLimit(identifier, config);
+  const result = await checkRateLimitDistributed(identifier, config);
 
   if (!result.success) {
     return rateLimitExceededResponse(result, config.message);

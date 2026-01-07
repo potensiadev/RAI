@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("Feedback insert error:", error);
-      return apiInternalError(error.message);
+      return apiInternalError();
     }
 
     return apiSuccess({ id: (data as { id: string }).id });

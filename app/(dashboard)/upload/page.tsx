@@ -110,7 +110,13 @@ export default function UploadPage() {
       }
 
       if (!presignRes.ok || !presignData.success) {
-        throw new Error(presignData.error || "업로드 준비 실패");
+        throw new Error(presignData.error?.message || presignData.error || "업로드 준비 실패");
+      }
+
+      // API 응답에서 data 추출
+      const presign = presignData.data;
+      if (!presign?.storagePath || !presign?.jobId) {
+        throw new Error("Presign 응답 데이터가 올바르지 않습니다.");
       }
 
       // Phase 2: Direct Storage Upload - 클라이언트가 직접 Supabase Storage에 업로드
@@ -127,7 +133,7 @@ export default function UploadPage() {
 
       const { error: uploadError } = await supabase.storage
         .from("resumes")
-        .upload(presignData.storagePath, uploadFile.file, {
+        .upload(presign.storagePath, uploadFile.file, {
           contentType: uploadFile.file.type || "application/octet-stream",
           upsert: false,
         });
@@ -148,12 +154,12 @@ export default function UploadPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          jobId: presignData.jobId,
-          candidateId: presignData.candidateId,
-          storagePath: presignData.storagePath,
+          jobId: presign.jobId,
+          candidateId: presign.candidateId,
+          storagePath: presign.storagePath,
           fileName: uploadFile.file.name,
-          userId: presignData.userId,
-          plan: presignData.plan,
+          userId: presign.userId,
+          plan: presign.plan,
         }),
       });
 

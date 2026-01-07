@@ -5,9 +5,14 @@
  * - status=completed, is_latest=true 필터
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { toCandidateListItem, type CandidateListItem, type ApiResponse } from "@/types";
+import { toCandidateListItem, type CandidateListItem } from "@/types";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiInternalError,
+} from "@/lib/api-response";
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,16 +21,25 @@ export async function GET(request: NextRequest) {
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "UNAUTHORIZED", message: "인증이 필요합니다." } },
-        { status: 401 }
-      );
+      return apiUnauthorized();
     }
 
-    // 쿼리 파라미터 파싱
+    // 쿼리 파라미터 파싱 및 검증
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "20");
+
+    // 페이지네이션 파라미터 검증 (정수 오버플로우 및 DoS 방지)
+    const MAX_LIMIT = 100;
+    const MIN_LIMIT = 1;
+    const MIN_PAGE = 1;
+
+    let page = parseInt(searchParams.get("page") || "1", 10);
+    let limit = parseInt(searchParams.get("limit") || "20", 10);
+
+    // NaN 또는 범위 외 값 처리
+    if (isNaN(page) || page < MIN_PAGE) page = MIN_PAGE;
+    if (isNaN(limit) || limit < MIN_LIMIT) limit = MIN_LIMIT;
+    if (limit > MAX_LIMIT) limit = MAX_LIMIT;
+
     const status = searchParams.get("status") || "completed";
     const offset = (page - 1) * limit;
 
@@ -40,10 +54,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("Candidates fetch error:", error);
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "DB_ERROR", message: error.message } },
-        { status: 500 }
-      );
+      return apiInternalError();
     }
 
     // DB row를 CandidateListItem으로 변환
@@ -51,19 +62,13 @@ export async function GET(request: NextRequest) {
       toCandidateListItem(row as Record<string, unknown>)
     );
 
-    return NextResponse.json<ApiResponse<CandidateListItem[]>>({
-      data: candidates,
-      meta: {
-        total: count ?? 0,
-        page,
-        limit,
-      },
+    return apiSuccess(candidates, {
+      total: count ?? 0,
+      page,
+      limit,
     });
   } catch (error) {
     console.error("Candidates API error:", error);
-    return NextResponse.json<ApiResponse<null>>(
-      { error: { code: "INTERNAL_ERROR", message: "서버 오류가 발생했습니다." } },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }

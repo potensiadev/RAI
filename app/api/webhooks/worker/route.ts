@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiBadRequest,
+  apiInternalError,
+} from "@/lib/api-response";
+
+// NextResponse는 Health check GET에서 사용
 
 /**
  * Worker Webhook Endpoint
@@ -9,7 +17,9 @@ import { createClient } from "@supabase/supabase-js";
  * - 실시간 클라이언트 알림 (향후 WebSocket/SSE 연동)
  */
 
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "";
+// Webhook Secret 필수 검증
+// 환경변수가 설정되지 않으면 모든 요청 거부
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
 interface WebhookPayload {
   job_id: string;
@@ -24,25 +34,24 @@ interface WebhookPayload {
   error?: string;
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: NextRequest) {
   try {
-    // Webhook Secret 검증
+    // Webhook Secret 필수 검증
+    if (!WEBHOOK_SECRET) {
+      console.error("[Webhook] WEBHOOK_SECRET environment variable is not configured");
+      return apiInternalError("서버 설정 오류입니다.");
+    }
+
     const authHeader = request.headers.get("X-Webhook-Secret");
-    if (WEBHOOK_SECRET && authHeader !== WEBHOOK_SECRET) {
-      console.warn("Invalid webhook secret");
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (!authHeader || authHeader !== WEBHOOK_SECRET) {
+      console.warn("[Webhook] Invalid or missing webhook secret");
+      return apiUnauthorized("유효하지 않은 인증 정보입니다.");
     }
 
     const payload: WebhookPayload = await request.json();
 
     if (!payload.job_id || !payload.status) {
-      return NextResponse.json(
-        { error: "Invalid payload: job_id and status required" },
-        { status: 400 }
-      );
+      return apiBadRequest("job_id와 status가 필요합니다.");
     }
 
     console.log(`[Webhook] Received: job=${payload.job_id}, status=${payload.status}`);
@@ -53,10 +62,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (!supabaseUrl || !supabaseServiceKey) {
       console.error("Supabase credentials not configured");
-      return NextResponse.json(
-        { error: "Server configuration error" },
-        { status: 500 }
-      );
+      return apiInternalError("서버 설정 오류입니다.");
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -86,10 +92,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (updateError) {
       console.error(`[Webhook] Failed to update job: ${updateError.message}`);
-      return NextResponse.json(
-        { error: "Failed to update job status" },
-        { status: 500 }
-      );
+      return apiInternalError("작업 상태 업데이트에 실패했습니다.");
     }
 
     // 작업 완료 시 추가 처리
@@ -102,24 +105,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       console.warn(`[Webhook] Job failed: ${payload.error}`);
     }
 
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       message: `Job ${payload.job_id} status updated to ${payload.status}`,
     });
 
   } catch (error) {
     console.error("[Webhook] Error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }
 
 // Health check
 export async function GET(): Promise<NextResponse> {
   return NextResponse.json({
-    status: "ok",
-    endpoint: "worker-webhook",
+    success: true,
+    data: {
+      status: "ok",
+      endpoint: "worker-webhook",
+    },
   });
 }

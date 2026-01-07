@@ -6,17 +6,23 @@
  * 후보자 정보 수정 (검토 후 편집)
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   type CandidateDetail,
-  type ApiResponse,
   getConfidenceLevel,
   type Career,
   type Project,
   type Education,
   type RiskLevel,
 } from "@/types";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiBadRequest,
+  apiNotFound,
+  apiInternalError,
+} from "@/lib/api-response";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -87,6 +93,19 @@ function toCandidateDetail(row: Record<string, unknown>): CandidateDetail {
   };
 }
 
+// 후보자 상세 조회에 필요한 컬럼
+const CANDIDATE_DETAIL_COLUMNS = `
+  id, name, last_position, last_company, exp_years, skills,
+  photo_url, summary, confidence_score, risk_level, requires_review,
+  created_at, updated_at, birth_year, gender,
+  phone, phone_masked, email, email_masked, address, address_masked,
+  education_level, education_school, education_major, location_city,
+  careers, projects, education, strengths,
+  portfolio_thumbnail_url, portfolio_url, github_url, linkedin_url,
+  version, parent_id, is_latest, analysis_mode, warnings, field_confidence,
+  source_file, file_type
+`;
+
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
@@ -94,46 +113,47 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "UNAUTHORIZED", message: "인증이 필요합니다." } },
-        { status: 401 }
-      );
+    if (authError || !user || !user.email) {
+      return apiUnauthorized();
     }
 
-    // 후보자 상세 조회 (RLS가 user_id 필터 자동 적용)
+    // 사용자 ID 조회 (public.users)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: userData } = await (supabase as any)
+      .from("users")
+      .select("id")
+      .eq("email", user.email)
+      .single();
+
+    const publicUserId = (userData as { id: string } | null)?.id;
+    if (!publicUserId) {
+      return apiUnauthorized("사용자 정보를 찾을 수 없습니다.");
+    }
+
+    // 후보자 상세 조회 (명시적 user_id 검증 + RLS 이중 보호)
     const { data, error } = await supabase
       .from("candidates")
-      .select("*")
+      .select(CANDIDATE_DETAIL_COLUMNS)
       .eq("id", id)
+      .eq("user_id", publicUserId) // 명시적 소유권 검증
       .single();
 
     if (error) {
       if (error.code === "PGRST116") {
-        return NextResponse.json<ApiResponse<null>>(
-          { error: { code: "NOT_FOUND", message: "후보자를 찾을 수 없습니다." } },
-          { status: 404 }
-        );
+        return apiNotFound("후보자를 찾을 수 없습니다.");
       }
+      // DB 에러 상세 정보 숨김
       console.error("Candidate fetch error:", error);
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "DB_ERROR", message: error.message } },
-        { status: 500 }
-      );
+      return apiInternalError();
     }
 
     const row = data as Record<string, unknown>;
     const candidate = toCandidateDetail(row);
 
-    return NextResponse.json<ApiResponse<CandidateDetail>>({
-      data: candidate,
-    });
+    return apiSuccess(candidate);
   } catch (error) {
     console.error("Candidate detail API error:", error);
-    return NextResponse.json<ApiResponse<null>>(
-      { error: { code: "INTERNAL_ERROR", message: "서버 오류가 발생했습니다." } },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }
 
@@ -144,11 +164,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "UNAUTHORIZED", message: "인증이 필요합니다." } },
-        { status: 401 }
-      );
+    if (authError || !user || !user.email) {
+      return apiUnauthorized();
+    }
+
+    // 사용자 ID 조회 (public.users)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: userData } = await (supabase as any)
+      .from("users")
+      .select("id")
+      .eq("email", user.email)
+      .single();
+
+    const publicUserId = (userData as { id: string } | null)?.id;
+    if (!publicUserId) {
+      return apiUnauthorized("사용자 정보를 찾을 수 없습니다.");
     }
 
     // 요청 바디 파싱
@@ -203,45 +233,34 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "INVALID_REQUEST", message: "업데이트할 필드가 없습니다." } },
-        { status: 400 }
-      );
+      return apiBadRequest("업데이트할 필드가 없습니다.");
     }
 
-    // 후보자 업데이트 (RLS가 user_id 검증)
+    // 후보자 업데이트 (명시적 user_id 검증 + RLS 이중 보호)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from("candidates")
       .update(updateData)
       .eq("id", id)
-      .select("*")
+      .eq("user_id", publicUserId) // 명시적 소유권 검증
+      .select(CANDIDATE_DETAIL_COLUMNS)
       .single();
 
     if (error) {
       if (error.code === "PGRST116") {
-        return NextResponse.json<ApiResponse<null>>(
-          { error: { code: "NOT_FOUND", message: "후보자를 찾을 수 없습니다." } },
-          { status: 404 }
-        );
+        return apiNotFound("후보자를 찾을 수 없습니다.");
       }
+      // DB 에러 상세 정보 숨김
       console.error("Candidate update error:", error);
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "DB_ERROR", message: error.message } },
-        { status: 500 }
-      );
+      return apiInternalError();
     }
 
     const candidate = toCandidateDetail(data as unknown as Record<string, unknown>);
 
-    return NextResponse.json<ApiResponse<CandidateDetail>>({
-      data: candidate,
-    });
+    return apiSuccess(candidate);
   } catch (error) {
+    // 에러 상세 정보는 서버 로그에만 기록
     console.error("Candidate update API error:", error);
-    return NextResponse.json<ApiResponse<null>>(
-      { error: { code: "INTERNAL_ERROR", message: "서버 오류가 발생했습니다." } },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }

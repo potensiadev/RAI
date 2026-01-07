@@ -1,61 +1,68 @@
 /**
  * POST /api/upload/presign
  * 파일을 Supabase Storage에 직접 업로드하기 위한 presigned URL 생성
- * 
+ *
  * Vercel의 4.5MB 제한을 우회하기 위해 클라이언트가 직접 Storage에 업로드
+ *
+ * 주의: presign은 메타데이터만 검증 (확장자, 크기)
+ * 매직 바이트 검증은 /api/upload/confirm에서 수행
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  validateFile,
+  calculateRemainingCredits,
+  type UserCreditsInfo,
+} from "@/lib/file-validation";
+import { withRateLimit } from "@/lib/rate-limit";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiBadRequest,
+  apiNotFound,
+  apiInsufficientCredits,
+  apiInternalError,
+  apiFileValidationError,
+} from "@/lib/api-response";
 
 export async function POST(request: NextRequest) {
     try {
+        // 레이트 제한 체크
+        const rateLimitResponse = await withRateLimit(request, "upload");
+        if (rateLimitResponse) return rateLimitResponse;
+
         const supabase = await createClient();
 
         // 인증 확인
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-            return NextResponse.json(
-                { success: false, error: "Unauthorized" },
-                { status: 401 }
-            );
+            return apiUnauthorized();
         }
 
         // 요청 바디 파싱
         const { fileName, fileSize, fileType } = await request.json();
 
         if (!fileName || !fileSize || !fileType) {
-            return NextResponse.json(
-                { success: false, error: "Missing required fields" },
-                { status: 400 }
-            );
+            return apiBadRequest("필수 필드가 누락되었습니다.");
         }
 
-        // 파일 확장자 확인
-        const ext = "." + fileName.split(".").pop()?.toLowerCase();
-        const ALLOWED_EXTENSIONS = [".hwp", ".hwpx", ".doc", ".docx", ".pdf"];
-        if (!ALLOWED_EXTENSIONS.includes(ext)) {
-            return NextResponse.json(
-                { success: false, error: `Unsupported file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}` },
-                { status: 400 }
-            );
+        // 파일 검증 (확장자 + 크기, 매직 바이트는 confirm에서 검증)
+        const validation = validateFile({
+            fileName,
+            fileSize,
+            // fileBuffer 없음 - presign은 메타데이터만 받음
+        });
+
+        if (!validation.valid) {
+            return apiFileValidationError(validation.error || "파일 검증에 실패했습니다.");
         }
 
-        // 파일 크기 확인 (50MB)
-        const MAX_FILE_SIZE = 50 * 1024 * 1024;
-        if (fileSize > MAX_FILE_SIZE) {
-            return NextResponse.json(
-                { success: false, error: "File size exceeds 50MB limit" },
-                { status: 400 }
-            );
-        }
+        const ext = validation.extension || "." + fileName.split(".").pop()?.toLowerCase();
 
         // 크레딧 확인
         if (!user.email) {
-            return NextResponse.json(
-                { success: false, error: "User email not found" },
-                { status: 400 }
-            );
+            return apiBadRequest("사용자 이메일을 찾을 수 없습니다.");
         }
 
         const { data: userData, error: userError } = await supabase
@@ -65,27 +72,17 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (userError || !userData) {
-            return NextResponse.json(
-                { success: false, error: "User not found" },
-                { status: 404 }
-            );
+            return apiNotFound("사용자를 찾을 수 없습니다.");
         }
 
         const publicUserId = (userData as { id: string }).id;
-        const userInfo = userData as { credits: number; credits_used_this_month: number; plan: string };
+        const userInfo = userData as UserCreditsInfo;
 
-        const baseCredits: Record<string, number> = {
-            starter: 50,
-            pro: 150,
-            enterprise: 300,
-        };
-        const remaining = (baseCredits[userInfo.plan] || 50) - userInfo.credits_used_this_month + userInfo.credits;
+        // 크레딧 계산 (공통 유틸리티 사용)
+        const remaining = calculateRemainingCredits(userInfo);
 
         if (remaining <= 0) {
-            return NextResponse.json(
-                { success: false, error: "Insufficient credits" },
-                { status: 402 }
-            );
+            return apiInsufficientCredits();
         }
 
         // processing_jobs 레코드 생성
@@ -105,10 +102,7 @@ export async function POST(request: NextRequest) {
 
         if (jobError || !job) {
             console.error("Failed to create job:", jobError);
-            return NextResponse.json(
-                { success: false, error: "Failed to create processing job" },
-                { status: 500 }
-            );
+            return apiInternalError("작업 생성에 실패했습니다.");
         }
 
         const jobData = job as { id: string };
@@ -148,20 +142,16 @@ export async function POST(request: NextRequest) {
 
         // 클라이언트가 직접 업로드할 정보 반환
         // 클라이언트에서 supabase.storage.from('resumes').upload() 사용
-        return NextResponse.json({
-            success: true,
+        return apiSuccess({
             storagePath,
             jobId: jobData.id,
             candidateId,
             userId: publicUserId,
             plan: userInfo.plan,
-            message: "Ready for direct upload to storage",
+            message: "스토리지에 직접 업로드할 준비가 완료되었습니다.",
         });
     } catch (error) {
         console.error("Presign error:", error);
-        return NextResponse.json(
-            { success: false, error: "Internal server error" },
-            { status: 500 }
-        );
+        return apiInternalError();
     }
 }

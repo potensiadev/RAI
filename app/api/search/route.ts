@@ -6,44 +6,24 @@
  * - 청크 타입별 가중치 적용
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "@/lib/openai/embedding";
+import { withRateLimit } from "@/lib/rate-limit";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiBadRequest,
+  apiInternalError,
+} from "@/lib/api-response";
 import {
   type SearchRequest,
   type SearchResponse,
   type CandidateSearchResult,
-  type ApiResponse,
   getConfidenceLevel,
   type RiskLevel,
   type ChunkType,
 } from "@/types";
-
-/**
- * PostgREST ilike 연산자용 특수문자 이스케이프
- * SQL Injection 및 패턴 매칭 오류 방지
- */
-function escapePostgrestPattern(input: string): string {
-  // PostgreSQL LIKE 특수문자 이스케이프: %, _, \
-  // PostgREST에서 사용되는 특수문자도 이스케이프
-  return input
-    .replace(/\\/g, '\\\\')  // 백슬래시 먼저 이스케이프
-    .replace(/%/g, '\\%')    // % 와일드카드
-    .replace(/_/g, '\\_')    // _ 단일 문자 와일드카드
-    .replace(/'/g, "''")     // 단일 인용부호
-    .replace(/"/g, '\\"');   // 이중 인용부호
-}
-
-/**
- * 쉼표로 구분된 키워드 파싱 및 정규화
- */
-function parseAndSanitizeKeywords(query: string): string[] {
-  return query
-    .split(",")
-    .map(k => k.trim())
-    .filter(k => k.length > 0)
-    .map(k => escapePostgrestPattern(k));
-}
 
 /**
  * DB row를 CandidateSearchResult로 변환
@@ -78,30 +58,52 @@ function toSearchResult(
 
 export async function POST(request: NextRequest) {
   try {
+    // 레이트 제한 체크 (검색은 분당 30회)
+    const rateLimitResponse = await withRateLimit(request, "search");
+    if (rateLimitResponse) return rateLimitResponse;
+
     const supabase = await createClient();
 
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "UNAUTHORIZED", message: "인증이 필요합니다." } },
-        { status: 401 }
-      );
+      return apiUnauthorized();
     }
 
     // 요청 바디 파싱
     const body: SearchRequest = await request.json();
-    const { query, filters, limit = 20, offset = 0 } = body;
+    const { query, filters } = body;
+
+    // 페이지네이션 파라미터 검증 (정수 오버플로우 및 DoS 방지)
+    const MAX_LIMIT = 100;
+    const MIN_LIMIT = 1;
+    const MIN_OFFSET = 0;
+
+    let limit = typeof body.limit === "number" ? body.limit : 20;
+    let offset = typeof body.offset === "number" ? body.offset : 0;
+
+    if (limit < MIN_LIMIT) limit = MIN_LIMIT;
+    if (limit > MAX_LIMIT) limit = MAX_LIMIT;
+    if (offset < MIN_OFFSET) offset = MIN_OFFSET;
+
+    // 검색어 검증
+    const MAX_QUERY_LENGTH = 500;
+    const MAX_KEYWORD_LENGTH = 50;
 
     if (!query || query.trim().length === 0) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "INVALID_REQUEST", message: "검색어를 입력해주세요." } },
-        { status: 400 }
-      );
+      return apiBadRequest("검색어를 입력해주세요.");
     }
 
+    // 검색어 길이 제한 (DoS 방지)
+    if (query.length > MAX_QUERY_LENGTH) {
+      return apiBadRequest(`검색어는 ${MAX_QUERY_LENGTH}자 이하로 입력해주세요.`);
+    }
+
+    // 검색어 정제: 앞뒤 공백 제거
+    const sanitizedQuery = query.trim();
+
     // 검색 모드 결정: 10자 이상이면 Semantic(Vector), 아니면 Keyword(RDB)
-    const isSemanticSearch = query.length > 10;
+    const isSemanticSearch = sanitizedQuery.length > 10;
 
     let results: CandidateSearchResult[] = [];
     let total = 0;
@@ -113,19 +115,16 @@ export async function POST(request: NextRequest) {
 
       try {
         // Step 1: 쿼리 임베딩 생성
-        const queryEmbedding = await generateEmbedding(query);
+        const queryEmbedding = await generateEmbedding(sanitizedQuery);
 
         // Step 2: search_candidates RPC 함수 호출
-        // RPC는 offset을 지원하지 않으므로 더 많은 결과를 가져와 슬라이싱
-        const fetchCount = offset + limit;
-
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: rpcData, error: rpcError } = await (supabase as any).rpc(
           "search_candidates",
           {
             p_user_id: user.id,
             p_query_embedding: queryEmbedding,
-            p_match_count: fetchCount,
+            p_match_count: limit,
             p_exp_years_min: filters?.expYearsMin || null,
             p_exp_years_max: filters?.expYearsMax || null,
             p_skills: filters?.skills?.length ? filters.skills : null,
@@ -138,24 +137,16 @@ export async function POST(request: NextRequest) {
           throw rpcError;
         }
 
-        // 전체 결과 수 (offset 적용 전)
-        const allResults = rpcData || [];
-        total = allResults.length;
-
-        // offset 적용 후 슬라이싱
-        const slicedResults = allResults.slice(offset, offset + limit);
-
         // RPC 결과를 CandidateSearchResult로 변환
-        results = slicedResults.map((row: Record<string, unknown>) => {
+        results = (rpcData || []).map((row: Record<string, unknown>) => {
           const matchScore = (row.match_score as number) || 0;
           return toSearchResult(row, matchScore);
         });
+
+        total = results.length;
       } catch (embeddingError) {
         // 임베딩 생성 실패 시 텍스트 검색으로 Fallback
         console.warn("Embedding failed, falling back to text search:", embeddingError);
-
-        // 특수문자 이스케이프
-        const sanitizedQuery = escapePostgrestPattern(query);
 
         let queryBuilder = supabase
           .from("candidates")
@@ -163,7 +154,7 @@ export async function POST(request: NextRequest) {
           .eq("user_id", user.id)
           .eq("status", "completed")
           .eq("is_latest", true)
-          .or(`summary.ilike.%${sanitizedQuery}%,last_position.ilike.%${sanitizedQuery}%`);
+          .or(`summary.ilike.%${query}%,last_position.ilike.%${query}%`);
 
         if (filters?.expYearsMin) {
           queryBuilder = queryBuilder.gte("exp_years", filters.expYearsMin);
@@ -175,8 +166,7 @@ export async function POST(request: NextRequest) {
           queryBuilder = queryBuilder.overlaps("skills", filters.skills);
         }
         if (filters?.location) {
-          const sanitizedLocation = escapePostgrestPattern(filters.location);
-          queryBuilder = queryBuilder.ilike("location_city", `%${sanitizedLocation}%`);
+          queryBuilder = queryBuilder.ilike("location_city", `%${filters.location}%`);
         }
 
         const { data, error, count } = await queryBuilder
@@ -184,10 +174,8 @@ export async function POST(request: NextRequest) {
           .range(offset, offset + limit - 1);
 
         if (error) {
-          return NextResponse.json<ApiResponse<null>>(
-            { error: { code: "DB_ERROR", message: error.message } },
-            { status: 500 }
-          );
+          console.error("Text search error:", error);
+          return apiInternalError();
         }
 
         results = (data || []).map((row, index) => {
@@ -202,8 +190,11 @@ export async function POST(request: NextRequest) {
       // Keyword Search (RDB)
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-      // 쉼표로 키워드 분리 및 특수문자 이스케이프
-      const keywords = parseAndSanitizeKeywords(query);
+      // 키워드 분리 및 개별 키워드 길이 제한
+      const keywords = sanitizedQuery
+        .split(",")
+        .map(k => k.trim().slice(0, MAX_KEYWORD_LENGTH))
+        .filter(Boolean);
 
       let queryBuilder = supabase
         .from("candidates")
@@ -231,8 +222,7 @@ export async function POST(request: NextRequest) {
         queryBuilder = queryBuilder.overlaps("skills", filters.skills);
       }
       if (filters?.location) {
-        const sanitizedLocation = escapePostgrestPattern(filters.location);
-        queryBuilder = queryBuilder.ilike("location_city", `%${sanitizedLocation}%`);
+        queryBuilder = queryBuilder.ilike("location_city", `%${filters.location}%`);
       }
 
       const { data, error, count } = await queryBuilder
@@ -241,10 +231,7 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         console.error("Keyword search error:", error);
-        return NextResponse.json<ApiResponse<null>>(
-          { error: { code: "DB_ERROR", message: error.message } },
-          { status: 500 }
-        );
+        return apiInternalError();
       }
 
       // 키워드 매칭 기반 점수 계산
@@ -261,19 +248,13 @@ export async function POST(request: NextRequest) {
       total,
     };
 
-    return NextResponse.json<ApiResponse<SearchResponse>>({
-      data: response,
-      meta: {
-        total,
-        page: Math.floor(offset / limit) + 1,
-        limit,
-      },
+    return apiSuccess(response, {
+      total,
+      page: Math.floor(offset / limit) + 1,
+      limit,
     });
   } catch (error) {
     console.error("Search API error:", error);
-    return NextResponse.json<ApiResponse<null>>(
-      { error: { code: "INTERNAL_ERROR", message: "서버 오류가 발생했습니다." } },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }

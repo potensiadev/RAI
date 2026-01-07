@@ -4,10 +4,16 @@
  * - 월 변경 시 자동 리셋 (get_user_credits 함수 사용)
  */
 
-import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { type ApiResponse, type PlanType } from "@/types";
-import { getPlanCredits } from "@/lib/config/plans";
+import { type PlanType } from "@/types";
+import {
+  apiSuccess,
+  apiUnauthorized,
+  apiBadRequest,
+  apiNotFound,
+  apiInternalError,
+} from "@/lib/api-response";
+import { PLAN_CONFIG } from "@/lib/file-validation";
 
 interface CreditsResponse {
   credits: number;           // 추가 구매 크레딧
@@ -19,6 +25,9 @@ interface CreditsResponse {
   wasReset?: boolean;        // 이번 요청에서 리셋되었는지
 }
 
+// 중앙화된 플랜 설정 사용
+const PLAN_BASE_CREDITS = PLAN_CONFIG.BASE_CREDITS;
+
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -29,10 +38,7 @@ export async function GET() {
 
     if (authError || !user) {
       console.log("[Credits API] Auth error:", authError);
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "UNAUTHORIZED", message: "인증이 필요합니다." } },
-        { status: 401 }
-      );
+      return apiUnauthorized();
     }
 
     // get_user_credits RPC 호출 (월 변경 시 자동 리셋 포함)
@@ -67,19 +73,14 @@ export async function GET() {
 
       console.log("[Credits API] Response:", response);
 
-      return NextResponse.json<ApiResponse<CreditsResponse>>({
-        data: response,
-      });
+      return apiSuccess(response);
     }
 
     // RPC 실패 시 fallback: 직접 조회 (자동 리셋 없음)
     console.warn("[Credits API] RPC failed, using fallback. Email:", user.email);
 
     if (!user.email) {
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "BAD_REQUEST", message: "사용자 이메일을 찾을 수 없습니다." } },
-        { status: 400 }
-      );
+      return apiBadRequest("사용자 이메일을 찾을 수 없습니다.");
     }
 
     // email로 조회 (auth.users.id와 public.users.id가 다를 수 있음)
@@ -93,18 +94,12 @@ export async function GET() {
 
     if (error) {
       console.error("[Credits API] Fallback error:", error);
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "DB_ERROR", message: error.message } },
-        { status: 500 }
-      );
+      return apiInternalError();
     }
 
     if (!data) {
       console.error("[Credits API] No user data found for email:", user.email);
-      return NextResponse.json<ApiResponse<null>>(
-        { error: { code: "NOT_FOUND", message: "사용자 정보를 찾을 수 없습니다." } },
-        { status: 404 }
-      );
+      return apiNotFound("사용자 정보를 찾을 수 없습니다.");
     }
 
     // Type assertion for Supabase response
@@ -115,7 +110,7 @@ export async function GET() {
     };
 
     const plan = (userData.plan as PlanType) || "starter";
-    const planBaseCredits = getPlanCredits(plan);
+    const planBaseCredits = PLAN_BASE_CREDITS[plan];
     const additionalCredits = userData.credits ?? 0;
     const usedThisMonth = userData.credits_used_this_month ?? 0;
 
@@ -131,14 +126,9 @@ export async function GET() {
       remainingCredits,
     };
 
-    return NextResponse.json<ApiResponse<CreditsResponse>>({
-      data: response,
-    });
+    return apiSuccess(response);
   } catch (error) {
     console.error("Credits API error:", error);
-    return NextResponse.json<ApiResponse<null>>(
-      { error: { code: "INTERNAL_ERROR", message: "서버 오류가 발생했습니다." } },
-      { status: 500 }
-    );
+    return apiInternalError();
   }
 }

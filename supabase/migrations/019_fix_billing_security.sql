@@ -22,6 +22,7 @@ DROP FUNCTION IF EXISTS calculate_next_billing_date(DATE, INTEGER);
 
 -- 기존 UPDATE 정책 삭제
 DROP POLICY IF EXISTS "Users can update own profile" ON users;
+DROP POLICY IF EXISTS "Users can update own profile safely" ON users;
 
 -- 새 UPDATE 정책: 안전한 컬럼만 업데이트 허용
 -- 민감한 컬럼(credits, plan, billing_cycle 등)은 업데이트 불가

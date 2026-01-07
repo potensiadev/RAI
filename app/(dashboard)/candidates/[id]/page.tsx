@@ -175,11 +175,17 @@ export default function CandidateDetailPage() {
     fetchCandidate();
   }, [fetchCandidate]);
 
-  // Save changes
+  // Save changes with Optimistic Update
   const handleSave = async (updates: Partial<CandidateDetail>) => {
     if (!candidate) return;
 
+    // 1. 이전 상태 저장 (롤백용)
+    const previousCandidate = { ...candidate };
+
+    // 2. Optimistic Update - UI 즉시 반영
+    setCandidate(prev => prev ? { ...prev, ...updates } : prev);
     setIsSaving(true);
+
     try {
       const response = await fetch(`/api/candidates/${candidateId}`, {
         method: "PATCH",
@@ -191,10 +197,16 @@ export default function CandidateDetailPage() {
         throw new Error("저장 중 오류가 발생했습니다");
       }
 
-      // Refresh data
-      await fetchCandidate();
+      // 3. 성공 - 이미 UI 반영됨, 서버 응답으로 최종 확정
+      const data = await response.json();
+      if (data.data) {
+        // 서버에서 반환된 정확한 데이터로 동기화 (서버 계산 필드 포함)
+        setCandidate(transformCandidate(data.data));
+      }
     } catch (err) {
+      // 4. 실패 - 롤백
       console.error("Save error:", err);
+      setCandidate(previousCandidate);
       throw err;
     } finally {
       setIsSaving(false);

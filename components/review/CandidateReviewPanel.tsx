@@ -81,11 +81,19 @@ export default function CandidateReviewPanel({
   const handleSave = async () => {
     if (!onSave || !hasChanges) return;
 
+    // 1. 현재 변경사항 저장 (롤백용)
+    const pendingChanges = { ...changes };
+
+    // 2. 즉시 UI 반영 - 변경사항 배너 숨김
+    setChanges({});
     setIsSaving(true);
+
     try {
-      await onSave(changes);
-      setChanges({});
+      await onSave(pendingChanges);
+      // 3. 성공 - 부모 컴포넌트가 이미 optimistic update 완료
     } catch (error) {
+      // 4. 실패 - 변경사항 복원 (배너 다시 표시)
+      setChanges(pendingChanges);
       console.error("Failed to save:", error);
     } finally {
       setIsSaving(false);
@@ -134,7 +142,7 @@ export default function CandidateReviewPanel({
               onClick={handleSave}
               disabled={isSaving}
               className="px-4 py-2 rounded-lg bg-neon-cyan hover:bg-neon-cyan/80
-                       text-deep-space text-sm font-medium transition-colors
+                       text-slate-900 text-sm font-semibold transition-colors
                        disabled:opacity-50 flex items-center gap-2"
             >
               {isSaving ? (

@@ -42,8 +42,12 @@ export async function POST(request: NextRequest) {
             return apiBadRequest("필수 필드가 누락되었습니다.");
         }
 
-        // 파일 확장자 추출
-        const ext = "." + fileName.split(".").pop()?.toLowerCase();
+        // 파일 확장자 안전하게 추출
+        const fileNameParts = fileName.split(".");
+        if (fileNameParts.length < 2) {
+            return apiBadRequest("파일 확장자를 확인할 수 없습니다.");
+        }
+        const ext = "." + fileNameParts[fileNameParts.length - 1].toLowerCase();
 
         // ─────────────────────────────────────────────────
         // 보안: Storage에서 파일 헤더를 읽어 매직 바이트 검증

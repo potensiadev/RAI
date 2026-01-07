@@ -43,8 +43,18 @@ export async function POST(request: NextRequest) {
         // 요청 바디 파싱
         const { fileName, fileSize, fileType } = await request.json();
 
-        if (!fileName || !fileSize || !fileType) {
+        if (!fileName || !fileSize) {
             return apiBadRequest("필수 필드가 누락되었습니다.");
+        }
+
+        // 파일명 길이 검증 (Storage 경로 제한)
+        if (fileName.length > 200) {
+            return apiBadRequest("파일명이 너무 깁니다. (최대 200자)");
+        }
+
+        // 0바이트 파일 체크
+        if (fileSize === 0) {
+            return apiBadRequest("빈 파일은 업로드할 수 없습니다.");
         }
 
         // 파일 검증 (확장자 + 크기, 매직 바이트는 confirm에서 검증)
@@ -58,7 +68,11 @@ export async function POST(request: NextRequest) {
             return apiFileValidationError(validation.error || "파일 검증에 실패했습니다.");
         }
 
-        const ext = validation.extension || "." + fileName.split(".").pop()?.toLowerCase();
+        // 확장자 안전하게 추출
+        const ext = validation.extension;
+        if (!ext) {
+            return apiFileValidationError("파일 확장자를 확인할 수 없습니다.");
+        }
 
         // 크레딧 확인
         if (!user.email) {

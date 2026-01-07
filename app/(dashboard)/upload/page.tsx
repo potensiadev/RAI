@@ -81,6 +81,9 @@ export default function UploadPage() {
     );
     setActiveProcessingFile({ ...uploadFile, phase: "routing" });
 
+    // presign 데이터를 catch에서 접근하기 위해 외부 선언
+    let presign: { storagePath?: string; jobId?: string; candidateId?: string; userId?: string; plan?: string } | null = null;
+
     try {
       // Phase 1: Presign - 서버에서 job/candidate 생성
       setActiveProcessingFile((prev) => prev ? { ...prev, phase: "routing" } : null);
@@ -114,7 +117,7 @@ export default function UploadPage() {
       }
 
       // API 응답에서 data 추출
-      const presign = presignData.data;
+      presign = presignData.data;
       if (!presign?.storagePath || !presign?.jobId) {
         throw new Error("Presign 응답 데이터가 올바르지 않습니다.");
       }
@@ -165,7 +168,7 @@ export default function UploadPage() {
 
       const confirmData = await confirmRes.json();
       if (!confirmRes.ok || !confirmData.success) {
-        throw new Error(confirmData.error || "확인 요청 실패");
+        throw new Error(confirmData.error?.message || confirmData.error || "확인 요청 실패");
       }
 
       // 완료
@@ -178,6 +181,23 @@ export default function UploadPage() {
 
       return true;
     } catch (error) {
+      // 실패 시 orphan 데이터 정리 시도 (best effort)
+      if (presign?.jobId) {
+        try {
+          await fetch("/api/upload/cleanup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jobId: presign.jobId,
+              candidateId: presign.candidateId,
+              storagePath: presign.storagePath,
+            }),
+          });
+        } catch {
+          // 정리 실패는 무시 (백그라운드 정리 작업에 위임)
+        }
+      }
+
       setFiles((prev) =>
         prev.map((f) =>
           f.id === uploadFile.id

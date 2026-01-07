@@ -37,17 +37,19 @@ function createSaveError(message: string, status: number, code?: string): SaveEr
   return error;
 }
 
-// Transform DB row to CandidateDetail
-function transformCandidate(row: Record<string, unknown>): CandidateDetail {
-  const confidence = (row.confidence_score as number) ?? 0;
-  const confidencePercent = Math.round(confidence * 100);
+// Transform API response to CandidateDetail
+// API 응답은 이미 camelCase로 변환된 상태이므로, snake_case와 camelCase 모두 처리
+function transformCandidate(data: Record<string, unknown>): CandidateDetail {
+  // confidence_score (snake) 또는 aiConfidence (camel) 처리
+  const rawConfidence = (data.confidence_score as number) ?? (data.aiConfidence as number) ?? 0;
+  const confidencePercent = rawConfidence > 1 ? rawConfidence : Math.round(rawConfidence * 100);
 
   let confidenceLevel: ConfidenceLevel = "low";
   if (confidencePercent >= 95) confidenceLevel = "high";
   else if (confidencePercent >= 80) confidenceLevel = "medium";
 
-  // Transform careers from snake_case to camelCase
-  const rawCareers = (row.careers as Array<Record<string, unknown>>) || [];
+  // Transform careers - snake_case와 camelCase 모두 처리
+  const rawCareers = (data.careers as Array<Record<string, unknown>>) || [];
   const transformedCareers = rawCareers.map((career) => ({
     company: career.company as string || "",
     position: career.position as string || "",
@@ -60,45 +62,54 @@ function transformCandidate(row: Record<string, unknown>): CandidateDetail {
   }));
 
   return {
-    id: row.id as string,
-    name: (row.name as string) || "이름 미확인",
-    role: (row.last_position as string) || "",
-    company: (row.last_company as string) || "",
-    expYears: (row.exp_years as number) || 0,
-    skills: (row.skills as string[]) || [],
-    photoUrl: row.photo_url as string | undefined,
-    summary: row.summary as string | undefined,
+    id: data.id as string,
+    name: (data.name as string) || "이름 미확인",
+    // snake_case (last_position) 또는 camelCase (role) 처리
+    role: (data.last_position as string) || (data.role as string) || "",
+    company: (data.last_company as string) || (data.company as string) || "",
+    expYears: (data.exp_years as number) ?? (data.expYears as number) ?? 0,
+    skills: (data.skills as string[]) || [],
+    photoUrl: (data.photo_url as string) || (data.photoUrl as string) || undefined,
+    summary: data.summary as string | undefined,
     aiConfidence: confidencePercent,
-    confidenceLevel,
-    riskLevel: confidencePercent >= 80 ? "low" : confidencePercent >= 60 ? "medium" : "high",
-    requiresReview: (row.requires_review as boolean) ?? confidencePercent < 95,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
+    confidenceLevel: (data.confidenceLevel as ConfidenceLevel) || confidenceLevel,
+    riskLevel: (data.riskLevel as "low" | "medium" | "high") || (confidencePercent >= 80 ? "low" : confidencePercent >= 60 ? "medium" : "high"),
+    requiresReview: (data.requires_review as boolean) ?? (data.requiresReview as boolean) ?? confidencePercent < 95,
+    createdAt: (data.created_at as string) || (data.createdAt as string),
+    updatedAt: (data.updated_at as string) || (data.updatedAt as string),
 
-    // Detail fields
-    birthYear: row.birth_year as number | undefined,
-    gender: row.gender as "male" | "female" | "other" | undefined,
-    // Issue #4: Show full PII in UI (not masked) - use encrypted values if available, otherwise masked
-    phone: (row.phone as string) || (row.phone_masked as string) || undefined,
-    email: (row.email as string) || (row.email_masked as string) || undefined,
-    address: (row.address as string) || (row.address_masked as string) || undefined,
-    // Issue #5: Use exp_years from DB
+    // Detail fields - snake_case와 camelCase 모두 처리
+    birthYear: (data.birth_year as number) ?? (data.birthYear as number) ?? undefined,
+    gender: data.gender as "male" | "female" | "other" | undefined,
+    // Issue #4: Show full PII in UI
+    phone: (data.phone as string) || (data.phone_masked as string) || (data.phoneMasked as string) || undefined,
+    email: (data.email as string) || (data.email_masked as string) || (data.emailMasked as string) || undefined,
+    address: (data.address as string) || (data.address_masked as string) || (data.addressMasked as string) || undefined,
+
+    // 교육 정보 분리 필드
+    educationLevel: (data.education_level as string) || (data.educationLevel as string) || undefined,
+    educationSchool: (data.education_school as string) || (data.educationSchool as string) || undefined,
+    educationMajor: (data.education_major as string) || (data.educationMajor as string) || undefined,
+    locationCity: (data.location_city as string) || (data.locationCity as string) || undefined,
+
     careers: transformedCareers,
-    projects: (row.projects as CandidateDetail["projects"]) || [],
-    education: (row.education as CandidateDetail["education"]) || [],
-    strengths: (row.strengths as string[]) || [],
-    portfolioThumbnailUrl: row.portfolio_thumbnail_url as string | undefined,
+    projects: (data.projects as CandidateDetail["projects"]) || [],
+    education: (data.education as CandidateDetail["education"]) || [],
+    strengths: (data.strengths as string[]) || [],
+    portfolioThumbnailUrl: (data.portfolio_thumbnail_url as string) || (data.portfolioThumbnailUrl as string) || undefined,
     // Issue #3: Get URL fields for conditional rendering
-    portfolioUrl: row.portfolio_url as string | undefined,
-    githubUrl: row.github_url as string | undefined,
-    linkedinUrl: row.linkedin_url as string | undefined,
-    version: (row.version as number) || 1,
-    parentId: row.parent_id as string | undefined,
-    isLatest: (row.is_latest as boolean) ?? true,
-    analysisMode: (row.analysis_mode as "phase_1" | "phase_2") || "phase_1",
-    warnings: (row.warnings as string[]) || [],
+    portfolioUrl: (data.portfolio_url as string) || (data.portfolioUrl as string) || undefined,
+    githubUrl: (data.github_url as string) || (data.githubUrl as string) || undefined,
+    linkedinUrl: (data.linkedin_url as string) || (data.linkedinUrl as string) || undefined,
+    version: (data.version as number) || 1,
+    parentId: (data.parent_id as string) || (data.parentId as string) || undefined,
+    isLatest: (data.is_latest as boolean) ?? (data.isLatest as boolean) ?? true,
+    analysisMode: (data.analysis_mode as "phase_1" | "phase_2") || (data.analysisMode as "phase_1" | "phase_2") || "phase_1",
+    warnings: (data.warnings as string[]) || [],
+    fieldConfidence: (data.field_confidence as Record<string, number>) || (data.fieldConfidence as Record<string, number>) || undefined,
     // Issue #2: Get source file for split view
-    sourceFile: row.source_file as string | undefined,
+    sourceFile: (data.source_file as string) || (data.sourceFile as string) || undefined,
+    fileType: (data.file_type as string) || (data.fileType as string) || undefined,
   };
 }
 

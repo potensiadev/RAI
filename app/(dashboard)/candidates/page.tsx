@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -16,6 +16,104 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// ─────────────────────────────────────────────────
+// 경력 계산 유틸리티
+// ─────────────────────────────────────────────────
+interface Career {
+  company?: string;
+  position?: string;
+  start_date?: string;
+  startDate?: string;
+  end_date?: string;
+  endDate?: string;
+  is_current?: boolean;
+  isCurrent?: boolean;
+}
+
+interface ExperienceDuration {
+  years: number;
+  months: number;
+  totalMonths: number;
+}
+
+function calculateTotalExperience(careers: Career[]): ExperienceDuration {
+  if (!careers || careers.length === 0) {
+    return { years: 0, months: 0, totalMonths: 0 };
+  }
+
+  const ranges: { start: number; end: number }[] = [];
+
+  for (const career of careers) {
+    const startDate = career.start_date || career.startDate;
+    if (!startDate) continue;
+
+    const startParts = startDate.split("-");
+    const startYear = parseInt(startParts[0], 10);
+    const startMonth = startParts[1] ? parseInt(startParts[1], 10) : 1;
+
+    if (isNaN(startYear)) continue;
+
+    const startMonthIndex = startYear * 12 + startMonth;
+    let endMonthIndex: number;
+
+    const isCurrent = career.is_current || career.isCurrent;
+    const endDate = career.end_date || career.endDate;
+
+    if (isCurrent || !endDate) {
+      const now = new Date();
+      endMonthIndex = now.getFullYear() * 12 + (now.getMonth() + 1);
+    } else {
+      const endParts = endDate.split("-");
+      const endYear = parseInt(endParts[0], 10);
+      const endMonth = endParts[1] ? parseInt(endParts[1], 10) : 12;
+      if (isNaN(endYear)) continue;
+      endMonthIndex = endYear * 12 + endMonth;
+    }
+
+    if (endMonthIndex >= startMonthIndex) {
+      ranges.push({ start: startMonthIndex, end: endMonthIndex });
+    }
+  }
+
+  if (ranges.length === 0) {
+    return { years: 0, months: 0, totalMonths: 0 };
+  }
+
+  ranges.sort((a, b) => a.start - b.start);
+
+  const mergedRanges: { start: number; end: number }[] = [];
+  let currentRange = { ...ranges[0] };
+
+  for (let i = 1; i < ranges.length; i++) {
+    const range = ranges[i];
+    if (range.start <= currentRange.end + 1) {
+      currentRange.end = Math.max(currentRange.end, range.end);
+    } else {
+      mergedRanges.push(currentRange);
+      currentRange = { ...range };
+    }
+  }
+  mergedRanges.push(currentRange);
+
+  const totalMonths = mergedRanges.reduce(
+    (sum, range) => sum + (range.end - range.start + 1),
+    0
+  );
+
+  return {
+    years: Math.floor(totalMonths / 12),
+    months: totalMonths % 12,
+    totalMonths,
+  };
+}
+
+function formatExperience(exp: ExperienceDuration): string {
+  if (exp.totalMonths === 0) return "경력 없음";
+  if (exp.years === 0) return `${exp.months}개월`;
+  if (exp.months === 0) return `${exp.years}년`;
+  return `${exp.years}년 ${exp.months}개월`;
+}
+
 interface Candidate {
   id: string;
   name: string;
@@ -26,6 +124,7 @@ interface Candidate {
   confidence_score: number;
   created_at: string;
   summary: string | null;
+  careers: Career[] | null;
 }
 
 export default function CandidatesPage() {
@@ -49,7 +148,7 @@ export default function CandidatesPage() {
     try {
       const { data, error } = await supabase
         .from("candidates")
-        .select("id, name, last_position, last_company, exp_years, skills, confidence_score, created_at, summary")
+        .select("id, name, last_position, last_company, exp_years, skills, confidence_score, created_at, summary, careers")
         .eq("status", "completed")
         .eq("is_latest", true)
         .order("created_at", { ascending: false });
@@ -84,7 +183,12 @@ export default function CandidatesPage() {
         result.sort((a, b) => (b.confidence_score || 0) - (a.confidence_score || 0));
         break;
       case "exp":
-        result.sort((a, b) => (b.exp_years || 0) - (a.exp_years || 0));
+        // 실제 경력 계산값으로 정렬
+        result.sort((a, b) => {
+          const expA = calculateTotalExperience(a.careers || []).totalMonths;
+          const expB = calculateTotalExperience(b.careers || []).totalMonths;
+          return expB - expA;
+        });
         break;
       default:
         result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -240,7 +344,7 @@ export default function CandidatesPage() {
                 )}
                 <span className="flex items-center gap-1.5 text-slate-300">
                   <Briefcase className="w-4 h-4 text-slate-500" />
-                  {candidate.exp_years || 0}년
+                  {formatExperience(calculateTotalExperience(candidate.careers || []))}
                 </span>
               </div>
 

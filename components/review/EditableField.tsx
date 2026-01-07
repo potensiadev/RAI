@@ -33,8 +33,14 @@ export default function EditableField({
 }: EditableFieldProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value?.toString() ?? "");
-  const [originalValue] = useState(value?.toString() ?? "");
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+  // value prop이 변경되면 editValue 동기화 (편집 중이 아닐 때만)
+  useEffect(() => {
+    if (!isEditing) {
+      setEditValue(value?.toString() ?? "");
+    }
+  }, [value, isEditing]);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -43,13 +49,19 @@ export default function EditableField({
   }, [isEditing]);
 
   const handleSave = () => {
-    const newValue = type === "number" ? Number(editValue) : editValue;
-    onSave?.(fieldKey, newValue);
+    // 빈 값 처리: number 타입에서 빈 문자열은 null로 처리
+    if (editValue.trim() === "") {
+      // 빈 값이면 저장하지 않음 (또는 null로 처리)
+      onSave?.(fieldKey, type === "number" ? 0 : "");
+    } else {
+      const newValue = type === "number" ? Number(editValue) : editValue;
+      onSave?.(fieldKey, newValue);
+    }
     setIsEditing(false);
   };
 
   const handleCancel = () => {
-    setEditValue(originalValue);
+    setEditValue(value?.toString() ?? "");
     setIsEditing(false);
   };
 
@@ -63,7 +75,7 @@ export default function EditableField({
 
   const displayValue = value?.toString() || "";
   const isEmpty = !displayValue;
-  const isModified = editValue !== originalValue;
+  const isModified = editValue !== (value?.toString() ?? "");
 
   // Confidence color
   const getConfidenceColor = (conf?: number) => {

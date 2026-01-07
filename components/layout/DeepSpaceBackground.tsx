@@ -53,9 +53,18 @@ function generateNebulas(count: number): Nebula[] {
 }
 
 export default function DeepSpaceBackground() {
-    const [stars] = useState(() => generateStars(80));
-    const [nebulas] = useState(() => generateNebulas(5));
+    // Hydration mismatch 방지: 클라이언트에서만 랜덤 데이터 생성
+    const [stars, setStars] = useState<Star[]>([]);
+    const [nebulas, setNebulas] = useState<Nebula[]>([]);
+    const [isMounted, setIsMounted] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+
+    // 클라이언트 마운트 후에만 랜덤 데이터 생성
+    useEffect(() => {
+        setStars(generateStars(80));
+        setNebulas(generateNebulas(5));
+        setIsMounted(true);
+    }, []);
 
     // Parallax effect on mouse move
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });

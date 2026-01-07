@@ -18,6 +18,119 @@ import EditableField from "./EditableField";
 import CareerTimelineOrbit from "@/components/detail/CareerTimelineOrbit";
 import type { CandidateDetail, Career, Education, Project } from "@/types";
 
+// ─────────────────────────────────────────────────
+// 경력 기간 계산 유틸리티
+// ─────────────────────────────────────────────────
+
+interface ExperienceDuration {
+  years: number;
+  months: number;
+  totalMonths: number;
+}
+
+/**
+ * 경력 목록에서 총 경력 기간 계산
+ * - 중복 기간은 한 번만 계산 (병렬 경력 고려)
+ * - isCurrent가 true면 현재 날짜까지 계산
+ */
+function calculateTotalExperience(careers: Career[]): ExperienceDuration {
+  if (!careers || careers.length === 0) {
+    return { years: 0, months: 0, totalMonths: 0 };
+  }
+
+  // 각 경력의 기간을 월 단위 범위로 변환
+  const ranges: { start: number; end: number }[] = [];
+
+  for (const career of careers) {
+    if (!career.startDate) continue;
+
+    // startDate 파싱 (YYYY-MM 또는 YYYY-MM-DD 또는 YYYY)
+    const startParts = career.startDate.split("-");
+    const startYear = parseInt(startParts[0], 10);
+    const startMonth = startParts[1] ? parseInt(startParts[1], 10) : 1;
+
+    if (isNaN(startYear)) continue;
+
+    const startMonthIndex = startYear * 12 + startMonth;
+
+    let endMonthIndex: number;
+
+    if (career.isCurrent || !career.endDate) {
+      // 현재 진행 중인 경력은 현재 날짜까지
+      const now = new Date();
+      endMonthIndex = now.getFullYear() * 12 + (now.getMonth() + 1);
+    } else {
+      // endDate 파싱
+      const endParts = career.endDate.split("-");
+      const endYear = parseInt(endParts[0], 10);
+      const endMonth = endParts[1] ? parseInt(endParts[1], 10) : 12;
+
+      if (isNaN(endYear)) continue;
+
+      endMonthIndex = endYear * 12 + endMonth;
+    }
+
+    // 유효한 범위만 추가
+    if (endMonthIndex >= startMonthIndex) {
+      ranges.push({ start: startMonthIndex, end: endMonthIndex });
+    }
+  }
+
+  if (ranges.length === 0) {
+    return { years: 0, months: 0, totalMonths: 0 };
+  }
+
+  // 범위 정렬 (시작일 기준)
+  ranges.sort((a, b) => a.start - b.start);
+
+  // 중복 범위 병합
+  const mergedRanges: { start: number; end: number }[] = [];
+  let currentRange = { ...ranges[0] };
+
+  for (let i = 1; i < ranges.length; i++) {
+    const range = ranges[i];
+    if (range.start <= currentRange.end + 1) {
+      // 중복 또는 연속 → 병합
+      currentRange.end = Math.max(currentRange.end, range.end);
+    } else {
+      // 분리된 범위 → 저장 후 새 범위 시작
+      mergedRanges.push(currentRange);
+      currentRange = { ...range };
+    }
+  }
+  mergedRanges.push(currentRange);
+
+  // 총 월수 계산
+  const totalMonths = mergedRanges.reduce(
+    (sum, range) => sum + (range.end - range.start + 1),
+    0
+  );
+
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+
+  return { years, months, totalMonths };
+}
+
+/**
+ * 경력 기간을 "N년 M개월" 형식으로 포맷
+ */
+function formatExperience(exp: ExperienceDuration): string {
+  if (exp.totalMonths === 0) {
+    return "경력 없음";
+  }
+
+  if (exp.years === 0) {
+    return `${exp.months}개월`;
+  }
+
+  if (exp.months === 0) {
+    return `${exp.years}년`;
+  }
+
+  return `${exp.years}년 ${exp.months}개월`;
+}
+
 interface FieldConfidence {
   [key: string]: number;
 }
@@ -72,6 +185,12 @@ export default function CandidateReviewPanel({
   const fieldWarnings = useMemo(
     () => getFieldWarnings(fieldConfidence, candidate.warnings || []),
     [fieldConfidence, candidate.warnings]
+  );
+
+  // 경력에서 총 경력 기간 계산 (useMemo로 캐싱)
+  const calculatedExperience = useMemo(
+    () => calculateTotalExperience(candidate.careers || []),
+    [candidate.careers]
   );
 
   const hasChanges = Object.keys(changes).length > 0;
@@ -237,21 +356,22 @@ export default function CandidateReviewPanel({
         <div className="flex items-center gap-2 mb-4">
           <Briefcase className="w-5 h-5 text-neon-purple" />
           <h2 className="text-lg font-semibold text-white">경력</h2>
-          <span className="text-sm text-slate-400">
-            ({candidate.expYears}년)
-          </span>
         </div>
 
-        <EditableField
-          label="총 경력 연수"
-          fieldKey="expYears"
-          type="number"
-          value={getMergedValue("expYears")}
-          confidence={fieldConfidence.exp_years}
-          hasWarning={!!fieldWarnings.expYears}
-          warningMessage={fieldWarnings.expYears}
-          onSave={handleFieldChange}
-        />
+        {/* 총 경력 연수 - 읽기 전용 (경력에서 자동 계산) */}
+        <div className="mb-4">
+          <label className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1 block">
+            총 경력 연수
+          </label>
+          <div className="px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700">
+            <span className="text-sm text-white font-medium">
+              {formatExperience(calculatedExperience)}
+            </span>
+            <span className="text-xs text-slate-500 ml-2">
+              (경력 기간에서 자동 계산)
+            </span>
+          </div>
+        </div>
 
         {/* Career Timeline with Orbit Animation */}
         <CareerTimelineOrbit careers={candidate.careers || []} />

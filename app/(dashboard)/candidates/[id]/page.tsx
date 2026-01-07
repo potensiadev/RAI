@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -16,7 +16,26 @@ import {
 import { CandidateReviewPanel } from "@/components/review";
 import SplitViewer from "@/components/detail/SplitViewer";
 import VersionStack from "@/components/detail/VersionStack";
+import { useToast } from "@/components/ui/toast";
 import type { CandidateDetail, ConfidenceLevel } from "@/types";
+
+// ─────────────────────────────────────────────────
+// Error Types for Proper Handling
+// ─────────────────────────────────────────────────
+
+interface SaveError extends Error {
+  code?: string;
+  status?: number;
+  canRetry?: boolean;
+}
+
+function createSaveError(message: string, status: number, code?: string): SaveError {
+  const error = new Error(message) as SaveError;
+  error.status = status;
+  error.code = code;
+  error.canRetry = status >= 500 || status === 0; // 서버 오류나 네트워크 오류만 재시도
+  return error;
+}
 
 // Transform DB row to CandidateDetail
 function transformCandidate(row: Record<string, unknown>): CandidateDetail {
@@ -86,8 +105,12 @@ function transformCandidate(row: Record<string, unknown>): CandidateDetail {
 export default function CandidateDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const toast = useToast();
   const candidateId = params.id as string;
 
+  // ─────────────────────────────────────────────────
+  // State
+  // ─────────────────────────────────────────────────
   const [candidate, setCandidate] = useState<CandidateDetail | null>(null);
   const [fieldConfidence, setFieldConfidence] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -106,6 +129,12 @@ export default function CandidateDetailPage() {
     version: number;
     createdAt: string;
   }>>([]);
+
+  // ─────────────────────────────────────────────────
+  // Refs for concurrency control
+  // ─────────────────────────────────────────────────
+  const saveInFlightRef = useRef(false);
+  const lastSaveRequestRef = useRef<string | null>(null); // Idempotency key
 
   // Fetch PDF URL when split view is enabled
   useEffect(() => {
@@ -175,43 +204,136 @@ export default function CandidateDetailPage() {
     fetchCandidate();
   }, [fetchCandidate]);
 
-  // Save changes with Optimistic Update
-  const handleSave = async (updates: Partial<CandidateDetail>) => {
+  // ─────────────────────────────────────────────────
+  // Save with Optimistic Update + Proper Error Handling
+  // ─────────────────────────────────────────────────
+  const handleSave = useCallback(async (
+    updates: Partial<CandidateDetail>,
+    options?: { isRetry?: boolean }
+  ): Promise<void> => {
     if (!candidate) return;
 
-    // 1. 이전 상태 저장 (롤백용)
+    // ─────────────────────────────────────────────────
+    // 1. 연타 방지 (In-flight request check)
+    // ─────────────────────────────────────────────────
+    if (saveInFlightRef.current && !options?.isRetry) {
+      console.log("[Save] Request already in flight, ignoring");
+      return;
+    }
+
+    saveInFlightRef.current = true;
+
+    // 멱등성 키 생성 (동일 요청 중복 방지)
+    const idempotencyKey = options?.isRetry
+      ? lastSaveRequestRef.current
+      : `save-${candidateId}-${Date.now()}`;
+    lastSaveRequestRef.current = idempotencyKey;
+
+    // ─────────────────────────────────────────────────
+    // 2. 이전 상태 저장 (롤백용)
+    // ─────────────────────────────────────────────────
     const previousCandidate = { ...candidate };
 
-    // 2. Optimistic Update - UI 즉시 반영
+    // ─────────────────────────────────────────────────
+    // 3. Optimistic Update - UI 즉시 반영
+    // ─────────────────────────────────────────────────
     setCandidate(prev => prev ? { ...prev, ...updates } : prev);
     setIsSaving(true);
 
     try {
+      // 낙관적 락을 위해 현재 updatedAt 포함
+      const payload = {
+        ...updates,
+        _expectedUpdatedAt: candidate.updatedAt, // 동시 수정 충돌 방지
+      };
+
       const response = await fetch(`/api/candidates/${candidateId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
+        headers: {
+          "Content-Type": "application/json",
+          ...(idempotencyKey && { "X-Idempotency-Key": idempotencyKey }),
+        },
+        body: JSON.stringify(payload),
       });
 
+      // ─────────────────────────────────────────────────
+      // 4. 응답 처리
+      // ─────────────────────────────────────────────────
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error("저장 중 오류가 발생했습니다");
+        const errorMessage = data.error?.message || "저장 중 오류가 발생했습니다";
+        const errorCode = data.error?.code;
+        throw createSaveError(errorMessage, response.status, errorCode);
       }
 
-      // 3. 성공 - 이미 UI 반영됨, 서버 응답으로 최종 확정
-      const data = await response.json();
+      // ─────────────────────────────────────────────────
+      // 5. 성공 - 서버 응답으로 최종 동기화 (Source of Truth)
+      // ─────────────────────────────────────────────────
       if (data.data) {
-        // 서버에서 반환된 정확한 데이터로 동기화 (서버 계산 필드 포함)
         setCandidate(transformCandidate(data.data));
       }
+
+      toast.success("저장 완료", "변경사항이 저장되었습니다.");
+
     } catch (err) {
-      // 4. 실패 - 롤백
+      // ─────────────────────────────────────────────────
+      // 6. 실패 - 롤백 + 에러 타입별 처리
+      // ─────────────────────────────────────────────────
       console.error("Save error:", err);
       setCandidate(previousCandidate);
-      throw err;
+
+      const saveError = err as SaveError;
+      const status = saveError.status || 0;
+      const errorMessage = saveError.message || "저장 중 오류가 발생했습니다";
+
+      // 에러 타입별 토스트 메시지 + 재시도 버튼
+      if (status === 401) {
+        // Unauthorized - 로그인 필요
+        toast.error("인증 만료", "다시 로그인해주세요.");
+        router.push("/login");
+      } else if (status === 403) {
+        // Forbidden - 권한 없음 (롤백 필수, 재시도 불가)
+        toast.error("권한 없음", errorMessage);
+      } else if (status === 409) {
+        // Conflict - 동시 수정 충돌 (롤백 필수)
+        toast.error(
+          "수정 충돌",
+          errorMessage,
+          {
+            label: "새로고침",
+            onClick: () => {
+              fetchCandidate();
+            },
+          }
+        );
+      } else if (status === 404) {
+        // Not Found
+        toast.error("찾을 수 없음", "후보자가 삭제되었거나 존재하지 않습니다.");
+      } else if (saveError.canRetry) {
+        // Server Error or Network Error - 재시도 가능
+        toast.error(
+          "저장 실패",
+          errorMessage,
+          {
+            label: "다시 시도",
+            onClick: () => {
+              handleSave(updates, { isRetry: true });
+            },
+          }
+        );
+      } else {
+        // 기타 에러
+        toast.error("저장 실패", errorMessage);
+      }
+
+      throw err; // 상위로 전파 (CandidateReviewPanel에서 changes 복원)
+
     } finally {
       setIsSaving(false);
+      saveInFlightRef.current = false;
     }
-  };
+  }, [candidate, candidateId, toast, router, fetchCandidate]);
 
   // Fetch export usage
   const fetchExportUsage = useCallback(async () => {

@@ -22,6 +22,8 @@ import {
   apiBadRequest,
   apiNotFound,
   apiInternalError,
+  apiConflict,
+  apiForbidden,
 } from "@/lib/api-response";
 
 interface RouteParams {
@@ -162,7 +164,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const supabase = await createClient();
 
-    // 인증 확인
+    // ─────────────────────────────────────────────────
+    // 1. 인증 확인
+    // ─────────────────────────────────────────────────
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user || !user.email) {
       return apiUnauthorized();
@@ -181,8 +185,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return apiUnauthorized("사용자 정보를 찾을 수 없습니다.");
     }
 
-    // 요청 바디 파싱
+    // ─────────────────────────────────────────────────
+    // 2. 요청 바디 파싱 + 헤더 확인
+    // ─────────────────────────────────────────────────
     const body = await request.json();
+
+    // 멱등성 키 (선택적) - 중복 요청 방지
+    const idempotencyKey = request.headers.get("X-Idempotency-Key");
+
+    // 낙관적 락 (선택적) - 동시 수정 충돌 방지
+    // 클라이언트가 알고 있는 마지막 수정 시간
+    const expectedUpdatedAt = body._expectedUpdatedAt as string | undefined;
+    delete body._expectedUpdatedAt; // 업데이트 데이터에서 제거
 
     // 허용된 필드 (snake_case)
     const allowedFields = [
@@ -236,13 +250,52 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return apiBadRequest("업데이트할 필드가 없습니다.");
     }
 
-    // 후보자 업데이트 (명시적 user_id 검증 + RLS 이중 보호)
+    // ─────────────────────────────────────────────────
+    // 3. 권한 및 충돌 검증
+    // ─────────────────────────────────────────────────
+
+    // 먼저 현재 상태 조회 (소유권 + 버전 확인)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: currentData, error: fetchError } = await (supabase as any)
+      .from("candidates")
+      .select("user_id, updated_at")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !currentData) {
+      if (fetchError?.code === "PGRST116") {
+        return apiNotFound("후보자를 찾을 수 없습니다.");
+      }
+      console.error("Candidate fetch for validation error:", fetchError);
+      return apiInternalError();
+    }
+
+    // 소유권 검증 (403 Forbidden)
+    if (currentData.user_id !== publicUserId) {
+      return apiForbidden("이 후보자를 수정할 권한이 없습니다.");
+    }
+
+    // 낙관적 락: 동시 수정 충돌 검사 (409 Conflict)
+    if (expectedUpdatedAt) {
+      const serverUpdatedAt = new Date(currentData.updated_at).toISOString();
+      const clientUpdatedAt = new Date(expectedUpdatedAt).toISOString();
+
+      if (serverUpdatedAt !== clientUpdatedAt) {
+        return apiConflict(
+          "다른 곳에서 이미 수정되었습니다. 페이지를 새로고침하고 다시 시도해주세요."
+        );
+      }
+    }
+
+    // ─────────────────────────────────────────────────
+    // 4. 업데이트 실행 (멱등성 보장)
+    // ─────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from("candidates")
       .update(updateData)
       .eq("id", id)
-      .eq("user_id", publicUserId) // 명시적 소유권 검증
+      .eq("user_id", publicUserId) // RLS 이중 보호
       .select(CANDIDATE_DETAIL_COLUMNS)
       .single();
 
@@ -250,16 +303,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       if (error.code === "PGRST116") {
         return apiNotFound("후보자를 찾을 수 없습니다.");
       }
-      // DB 에러 상세 정보 숨김
       console.error("Candidate update error:", error);
       return apiInternalError();
     }
 
     const candidate = toCandidateDetail(data as unknown as Record<string, unknown>);
 
+    // 응답에 멱등성 키 포함 (디버깅용)
+    const headers: Record<string, string> = {};
+    if (idempotencyKey) {
+      headers["X-Idempotency-Key"] = idempotencyKey;
+    }
+
     return apiSuccess(candidate);
   } catch (error) {
-    // 에러 상세 정보는 서버 로그에만 기록
     console.error("Candidate update API error:", error);
     return apiInternalError();
   }

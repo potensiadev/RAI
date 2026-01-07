@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import {
   User,
   Briefcase,
@@ -64,6 +64,11 @@ export default function CandidateReviewPanel({
   const [changes, setChanges] = useState<Partial<CandidateDetail>>({});
   const [isSaving, setIsSaving] = useState(false);
 
+  // 연타 방지: 저장 버튼 클릭 후 일정 시간 동안 재클릭 방지
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const lastClickTimeRef = useRef<number>(0);
+  const DEBOUNCE_MS = 500; // 500ms 이내 재클릭 무시
+
   const fieldWarnings = useMemo(
     () => getFieldWarnings(fieldConfidence, candidate.warnings || []),
     [fieldConfidence, candidate.warnings]
@@ -81,20 +86,40 @@ export default function CandidateReviewPanel({
   const handleSave = async () => {
     if (!onSave || !hasChanges) return;
 
+    // ─────────────────────────────────────────────────
+    // 연타 방지 (Debounce)
+    // ─────────────────────────────────────────────────
+    const now = Date.now();
+    if (now - lastClickTimeRef.current < DEBOUNCE_MS) {
+      console.log("[ReviewPanel] Save click debounced");
+      return;
+    }
+    lastClickTimeRef.current = now;
+
+    // 이미 저장 중이면 무시
+    if (isSaving) {
+      console.log("[ReviewPanel] Already saving, ignoring");
+      return;
+    }
+
+    // ─────────────────────────────────────────────────
     // 1. 현재 변경사항 저장 (롤백용)
+    // ─────────────────────────────────────────────────
     const pendingChanges = { ...changes };
 
+    // ─────────────────────────────────────────────────
     // 2. 즉시 UI 반영 - 변경사항 배너 숨김
+    // ─────────────────────────────────────────────────
     setChanges({});
     setIsSaving(true);
 
     try {
       await onSave(pendingChanges);
-      // 3. 성공 - 부모 컴포넌트가 이미 optimistic update 완료
+      // 3. 성공 - 부모 컴포넌트가 toast 표시 + optimistic update 완료
     } catch (error) {
       // 4. 실패 - 변경사항 복원 (배너 다시 표시)
+      // 부모 컴포넌트가 이미 toast 표시 + 롤백 완료
       setChanges(pendingChanges);
-      console.error("Failed to save:", error);
     } finally {
       setIsSaving(false);
     }
@@ -139,11 +164,12 @@ export default function CandidateReviewPanel({
               초기화
             </button>
             <button
+              ref={saveButtonRef}
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || isLoading}
               className="px-4 py-2 rounded-lg bg-neon-cyan hover:bg-neon-cyan/80
                        text-slate-900 text-sm font-semibold transition-colors
-                       disabled:opacity-50 flex items-center gap-2"
+                       disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isSaving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

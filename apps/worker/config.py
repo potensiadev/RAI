@@ -56,7 +56,9 @@ class Settings(BaseSettings):
     # ─────────────────────────────────────────────────
     # 보안 (암호화)
     # ─────────────────────────────────────────────────
-    ENCRYPTION_KEY: str = "b0f7e07a3e89c6a52459f895bb2a2cd78d83e1492d64bb5702648c001e08cfa6"  # AES-256 암호화 키
+    # ENCRYPTION_KEY는 반드시 환경변수로 설정해야 함 (AES-256: 64자 hex string)
+    # 예: openssl rand -hex 32
+    ENCRYPTION_KEY: str = ""  # 환경변수 ENCRYPTION_KEY 필수
 
     # ─────────────────────────────────────────────────
     # 한컴 API (HWP 파싱 백업용, 선택)
@@ -89,6 +91,16 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# 프로덕션 환경에서 필수 설정 검증
+if settings.ENV == "production":
+    if not settings.ENCRYPTION_KEY or len(settings.ENCRYPTION_KEY) != 64:
+        raise ValueError(
+            "ENCRYPTION_KEY must be set in production (64-character hex string). "
+            "Generate with: openssl rand -hex 32"
+        )
+    if not settings.WEBHOOK_SECRET:
+        raise ValueError("WEBHOOK_SECRET must be set in production")
 
 # 싱글톤 인스턴스
 _settings_instance: Optional[Settings] = None

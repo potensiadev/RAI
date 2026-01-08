@@ -11,9 +11,13 @@ from typing import Optional
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
+import hashlib
+import hmac
+import secrets
 
 from config import settings, AnalysisMode
 
@@ -133,6 +137,65 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# ─────────────────────────────────────────────────
+# API 인증 미들웨어
+# ─────────────────────────────────────────────────
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(
+    api_key: str = Depends(api_key_header),
+    x_webhook_signature: Optional[str] = Header(None, alias="X-Webhook-Signature"),
+    request: Request = None,
+) -> bool:
+    """
+    API 키 또는 Webhook Signature 검증
+
+    프로덕션 환경에서는 다음 중 하나로 인증 필요:
+    1. X-API-Key 헤더 (WEBHOOK_SECRET과 일치)
+    2. X-Webhook-Signature 헤더 (HMAC-SHA256)
+
+    개발 환경에서는 인증 없이 허용
+    """
+    # 개발 환경에서는 인증 스킵
+    if settings.ENV == "development" or settings.DEBUG:
+        return True
+
+    # Webhook Secret이 설정되지 않은 경우
+    if not settings.WEBHOOK_SECRET:
+        logger.warning("WEBHOOK_SECRET not configured - rejecting request")
+        raise HTTPException(
+            status_code=500,
+            detail="Server misconfigured: WEBHOOK_SECRET required"
+        )
+
+    # 1. API Key 검증 (단순 비교)
+    if api_key:
+        if secrets.compare_digest(api_key, settings.WEBHOOK_SECRET):
+            return True
+
+    # 2. Webhook Signature 검증 (HMAC-SHA256)
+    if x_webhook_signature and request:
+        try:
+            body = await request.body()
+            expected_sig = hmac.new(
+                settings.WEBHOOK_SECRET.encode(),
+                body,
+                hashlib.sha256
+            ).hexdigest()
+
+            if secrets.compare_digest(x_webhook_signature, f"sha256={expected_sig}"):
+                return True
+        except Exception as e:
+            logger.warning(f"Webhook signature verification failed: {e}")
+
+    # 인증 실패
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid or missing API key"
+    )
+
 
 # 에이전트 및 파서 초기화
 router_agent = RouterAgent()
@@ -322,10 +385,21 @@ async def health_check(detailed: bool = False):
 async def debug_status():
     """
     디버그 엔드포인트 - LLM 및 서비스 설정 상태 확인
+
+    프로덕션 환경에서는 비활성화됩니다.
+    민감한 정보(API 키 prefix 등)는 노출하지 않습니다.
     """
+    # 프로덕션 환경에서는 비활성화
+    if settings.ENV == "production" and not settings.DEBUG:
+        raise HTTPException(
+            status_code=404,
+            detail="Not found"
+        )
+
     llm_manager = get_llm_manager()
     available_providers = llm_manager.get_available_providers()
 
+    # 민감한 정보 제거 - API 키 prefix 노출하지 않음
     return {
         "status": "healthy",
         "mode": settings.ANALYSIS_MODE.value,
@@ -334,19 +408,16 @@ async def debug_status():
         "llm_status": {
             "openai": {
                 "configured": bool(settings.OPENAI_API_KEY),
-                "key_prefix": settings.OPENAI_API_KEY[:10] + "..." if settings.OPENAI_API_KEY else None,
                 "client_ready": llm_manager.openai_client is not None,
                 "model": settings.OPENAI_MODEL,
             },
             "gemini": {
                 "configured": bool(settings.GEMINI_API_KEY),
-                "key_prefix": settings.GEMINI_API_KEY[:10] + "..." if settings.GEMINI_API_KEY else None,
                 "client_ready": llm_manager.gemini_client is not None,
                 "model": settings.GEMINI_MODEL,
             },
             "anthropic": {
                 "configured": bool(settings.ANTHROPIC_API_KEY),
-                "key_prefix": settings.ANTHROPIC_API_KEY[:10] + "..." if settings.ANTHROPIC_API_KEY else None,
                 "client_ready": llm_manager.anthropic_client is not None,
                 "model": settings.ANTHROPIC_MODEL,
             },
@@ -354,7 +425,6 @@ async def debug_status():
         "supabase_configured": bool(settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY),
         "redis_configured": bool(settings.REDIS_URL),
         "env": settings.ENV,
-        "debug": settings.DEBUG,
     }
 
 
@@ -362,7 +432,8 @@ async def debug_status():
 async def parse_file(
     file: UploadFile = File(...),
     user_id: str = Form(...),
-    job_id: Optional[str] = Form(None)
+    job_id: Optional[str] = Form(None),
+    _: bool = Depends(verify_api_key),  # API 인증 필수
 ):
     """
     파일 파싱 엔드포인트
@@ -515,7 +586,7 @@ class AnalyzeResponse(BaseModel):
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze_resume(request: AnalyzeRequest):
+async def analyze_resume(request: AnalyzeRequest, _: bool = Depends(verify_api_key)):
     """
     이력서 분석 엔드포인트
 
@@ -619,7 +690,7 @@ class ProcessResponse(BaseModel):
 
 
 @app.post("/process", response_model=ProcessResponse)
-async def process_resume(request: ProcessRequest):
+async def process_resume(request: ProcessRequest, _: bool = Depends(verify_api_key)):
     """
     이력서 전체 처리 파이프라인
 
@@ -833,7 +904,7 @@ class QueueStatusResponse(BaseModel):
 
 
 @app.get("/queue/status", response_model=QueueStatusResponse)
-async def queue_status():
+async def queue_status(_: bool = Depends(verify_api_key)):
     """Queue 상태 확인"""
     queue_service = get_queue_service()
 
@@ -851,7 +922,7 @@ async def queue_status():
 
 
 @app.post("/queue/enqueue", response_model=EnqueueResponse)
-async def enqueue_job(request: EnqueueRequest):
+async def enqueue_job(request: EnqueueRequest, _: bool = Depends(verify_api_key)):
     """
     Redis Queue에 작업 추가
 
@@ -898,7 +969,7 @@ async def enqueue_job(request: EnqueueRequest):
 
 
 @app.get("/queue/job/{rq_job_id}")
-async def get_job_status(rq_job_id: str):
+async def get_job_status(rq_job_id: str, _: bool = Depends(verify_api_key)):
     """RQ Job 상태 조회"""
     queue_service = get_queue_service()
 
@@ -1155,6 +1226,7 @@ async def run_pipeline(
 @app.post("/pipeline", response_model=PipelineResponse)
 async def pipeline_endpoint(
     request: PipelineRequest,
+    _: bool = Depends(verify_api_key),  # API 인증 필수
 ):
     """
     전체 파이프라인 엔드포인트 (동기 처리)
@@ -1225,7 +1297,7 @@ class DLQActionResponse(BaseModel):
 
 
 @app.get("/dlq/stats", response_model=DLQStatsResponse)
-async def dlq_stats():
+async def dlq_stats(_: bool = Depends(verify_api_key)):
     """
     DLQ 통계 조회
 
@@ -1250,6 +1322,7 @@ async def dlq_list(
     offset: int = 0,
     job_type: Optional[str] = None,
     user_id: Optional[str] = None,
+    _: bool = Depends(verify_api_key),
 ):
     """
     DLQ 항목 목록 조회
@@ -1296,7 +1369,7 @@ async def dlq_list(
 
 
 @app.get("/dlq/entry/{dlq_id}")
-async def dlq_get_entry(dlq_id: str):
+async def dlq_get_entry(dlq_id: str, _: bool = Depends(verify_api_key)):
     """
     단일 DLQ 항목 조회 (스택트레이스 포함)
 
@@ -1332,7 +1405,7 @@ async def dlq_get_entry(dlq_id: str):
 
 
 @app.post("/dlq/retry/{dlq_id}", response_model=DLQActionResponse)
-async def dlq_retry(dlq_id: str):
+async def dlq_retry(dlq_id: str, _: bool = Depends(verify_api_key)):
     """
     DLQ에서 작업 재시도
 
@@ -1369,7 +1442,7 @@ async def dlq_retry(dlq_id: str):
 
 
 @app.delete("/dlq/entry/{dlq_id}", response_model=DLQActionResponse)
-async def dlq_delete(dlq_id: str):
+async def dlq_delete(dlq_id: str, _: bool = Depends(verify_api_key)):
     """
     DLQ에서 항목 삭제
 
@@ -1404,7 +1477,7 @@ async def dlq_delete(dlq_id: str):
 
 
 @app.delete("/dlq/clear")
-async def dlq_clear(older_than_days: Optional[int] = None):
+async def dlq_clear(older_than_days: Optional[int] = None, _: bool = Depends(verify_api_key)):
     """
     DLQ 정리
 

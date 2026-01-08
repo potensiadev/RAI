@@ -34,21 +34,31 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const supabaseAny = supabase as any;
 
-    // 1. Job 상태를 failed로 업데이트
-    await supabaseAny
+    // 1. Job 상태를 failed로 업데이트 (user_id로 소유권 검증)
+    const { data: jobData, error: jobError } = await supabaseAny
       .from("processing_jobs")
       .update({
         status: "failed",
         error_message: "Upload cancelled or failed",
       })
-      .eq("id", jobId);
+      .eq("id", jobId)
+      .eq("user_id", user.id)  // IDOR 방지: 본인 소유 작업만 수정 가능
+      .select()
+      .single();
 
-    // 2. Candidate 삭제 (존재하는 경우)
+    // 소유권 검증 실패 시 (다른 사용자의 데이터 접근 시도)
+    if (jobError || !jobData) {
+      console.warn(`Unauthorized cleanup attempt: user=${user.id}, jobId=${jobId}`);
+      return apiBadRequest("작업을 찾을 수 없거나 권한이 없습니다.");
+    }
+
+    // 2. Candidate 삭제 (존재하는 경우) - user_id로 소유권 검증
     if (candidateId) {
       await supabaseAny
         .from("candidates")
         .delete()
-        .eq("id", candidateId);
+        .eq("id", candidateId)
+        .eq("user_id", user.id);  // IDOR 방지: 본인 소유 데이터만 삭제 가능
     }
 
     // 3. Storage 파일 삭제 (존재하는 경우)

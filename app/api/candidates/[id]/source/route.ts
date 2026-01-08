@@ -27,11 +27,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             return apiUnauthorized();
         }
 
-        // 후보자 조회 (source_file 가져오기)
+        // 후보자 조회 (source_file 가져오기) - user_id로 소유권 검증
         const { data: candidate, error: candidateError } = await supabase
             .from("candidates")
             .select("source_file, file_type")
             .eq("id", id)
+            .eq("user_id", user.id)  // IDOR 방지: 본인 소유 데이터만 접근 가능
             .single();
 
         if (candidateError || !candidate) {

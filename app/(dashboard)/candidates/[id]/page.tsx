@@ -17,6 +17,7 @@ import { CandidateReviewPanel } from "@/components/review";
 import SplitViewer from "@/components/detail/SplitViewer";
 import VersionStack from "@/components/detail/VersionStack";
 import { useToast } from "@/components/ui/toast";
+import DOMPurify from "dompurify";
 import type { CandidateDetail, ConfidenceLevel } from "@/types";
 
 // ─────────────────────────────────────────────────
@@ -395,10 +396,27 @@ export default function CandidateDetailPage() {
 
       const data = await response.json();
 
-      // Open print window with HTML
+      // Open print window with sanitized HTML (XSS 방지)
       const printWindow = window.open("", "_blank");
       if (printWindow) {
-        printWindow.document.write(data.data.html);
+        // DOMPurify로 HTML 살균 (스크립트, 이벤트 핸들러 등 제거)
+        const sanitizedHtml = DOMPurify.sanitize(data.data.html, {
+          ALLOWED_TAGS: [
+            "html", "head", "body", "style", "title", "meta", "link",
+            "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6",
+            "table", "thead", "tbody", "tr", "th", "td",
+            "ul", "ol", "li", "br", "hr", "strong", "em", "b", "i",
+            "img", "a", "section", "article", "header", "footer",
+          ],
+          ALLOWED_ATTR: [
+            "class", "id", "style", "href", "src", "alt", "title",
+            "colspan", "rowspan", "width", "height",
+          ],
+          ALLOW_DATA_ATTR: false,  // data-* 속성 차단
+          FORBID_TAGS: ["script", "iframe", "object", "embed", "form", "input"],
+          FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
+        });
+        printWindow.document.write(sanitizedHtml);
         printWindow.document.close();
         printWindow.focus();
         // Auto print after load

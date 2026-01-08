@@ -65,8 +65,21 @@ export default function SignupPage() {
       return;
     }
 
+    // 비밀번호 복잡도 검증
     if (password.length < 8) {
       setError("비밀번호는 8자 이상이어야 합니다.");
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setError("비밀번호에 대문자가 포함되어야 합니다.");
+      return;
+    }
+    if (!/[a-z]/.test(password)) {
+      setError("비밀번호에 소문자가 포함되어야 합니다.");
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setError("비밀번호에 숫자가 포함되어야 합니다.");
       return;
     }
 

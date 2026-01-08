@@ -7,6 +7,21 @@
 import { NextResponse } from "next/server";
 
 // ─────────────────────────────────────────────────
+// 보안 헤더 설정
+// ─────────────────────────────────────────────────
+
+/**
+ * API 응답용 보안 헤더
+ * - Cache-Control: 민감한 데이터 캐싱 방지
+ * - Pragma: HTTP/1.0 호환 캐시 방지
+ */
+const SECURITY_HEADERS: Record<string, string> = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
+
+// ─────────────────────────────────────────────────
 // 타입 정의
 // ─────────────────────────────────────────────────
 
@@ -74,7 +89,7 @@ export function apiSuccess<T>(
       data,
       meta,
     },
-    { status }
+    { status, headers: SECURITY_HEADERS }
   );
 }
 
@@ -89,10 +104,13 @@ export function apiCreated<T>(data: T, meta?: ApiMeta): NextResponse<ApiResponse
  * 빈 성공 응답 (204 대신 200 + success)
  */
 export function apiNoContent(): NextResponse<ApiResponse<null>> {
-  return NextResponse.json({
-    success: true,
-    data: null,
-  });
+  return NextResponse.json(
+    {
+      success: true,
+      data: null,
+    },
+    { headers: SECURITY_HEADERS }
+  );
 }
 
 // ─────────────────────────────────────────────────
@@ -117,7 +135,7 @@ export function apiError(
         details,
       },
     },
-    { status }
+    { status, headers: SECURITY_HEADERS }
   );
 }
 

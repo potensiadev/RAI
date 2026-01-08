@@ -56,3 +56,13 @@ export const STORAGE_UPLOAD_TIMEOUT = getEnvTimeout(
   'STORAGE_UPLOAD_TIMEOUT_MS',
   30000
 );
+
+/**
+ * 사용자당 최대 동시 업로드 수
+ * 환경변수: MAX_CONCURRENT_UPLOADS_PER_USER
+ * 기본값: 5
+ */
+export const MAX_CONCURRENT_UPLOADS = getEnvTimeout(
+  'MAX_CONCURRENT_UPLOADS_PER_USER',
+  5
+);

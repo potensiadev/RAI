@@ -25,10 +25,10 @@ import {
   type UserCreditsInfo,
   PLAN_CONFIG,
 } from "@/lib/file-validation";
-
-// Worker 타임아웃
-const WORKER_PIPELINE_TIMEOUT = 30000; // 30초
-const MAX_CONCURRENT_UPLOADS_PER_USER = 5;
+import {
+  WORKER_PIPELINE_TIMEOUT,
+  MAX_CONCURRENT_UPLOADS,
+} from "@/lib/config/timeouts";
 
 // App Router Route Segment Config
 export const runtime = "nodejs";
@@ -110,13 +110,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
     // ─────────────────────────────────────────────────
     const concurrentCheck = await checkConcurrentUploadLimit(
       publicUserId,
-      MAX_CONCURRENT_UPLOADS_PER_USER
+      MAX_CONCURRENT_UPLOADS
     );
     if (!concurrentCheck.allowed) {
       return NextResponse.json(
         {
           success: false,
-          error: `동시에 ${MAX_CONCURRENT_UPLOADS_PER_USER}개까지만 업로드할 수 있습니다. 진행 중인 업로드가 완료된 후 다시 시도해주세요.`,
+          error: `동시에 ${MAX_CONCURRENT_UPLOADS}개까지만 업로드할 수 있습니다. 진행 중인 업로드가 완료된 후 다시 시도해주세요.`,
           code: "CONCURRENT_LIMIT_EXCEEDED",
         },
         { status: 429 }

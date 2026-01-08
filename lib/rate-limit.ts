@@ -190,11 +190,21 @@ function isValidPublicIP(ip: string): boolean {
     return false;
   }
 
-  // 기본 IP 형식 검증
-  const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+  // IPv4 형식 및 범위 검증 (0-255)
+  const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+  const ipv4Match = ip.match(ipv4Regex);
+  if (ipv4Match) {
+    // 각 옥텟이 0-255 범위인지 확인
+    const octets = [ipv4Match[1], ipv4Match[2], ipv4Match[3], ipv4Match[4]];
+    return octets.every(octet => {
+      const num = parseInt(octet, 10);
+      return num >= 0 && num <= 255;
+    });
+  }
 
-  return ipv4Regex.test(ip) || ipv6Regex.test(ip);
+  // IPv6 형식 검증
+  const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+  return ipv6Regex.test(ip);
 }
 
 /**

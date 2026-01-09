@@ -215,11 +215,25 @@ export async function callWorkerPipeline(
   payload: Record<string, unknown>,
   onFailure?: (error: string, attempts: number) => Promise<void>
 ): Promise<FetchRetryResult> {
+  // Worker 인증을 위한 API Key
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  // 프로덕션 환경에서는 인증 헤더 필수
+  if (webhookSecret) {
+    headers["X-API-Key"] = webhookSecret;
+  } else {
+    console.warn("[Worker Pipeline] WEBHOOK_SECRET not set - Worker may reject request in production");
+  }
+
   const result = await fetchWithRetry(
     `${workerUrl}/pipeline`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload),
     },
     {

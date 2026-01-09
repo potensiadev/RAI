@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # Google Gemini
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.0-flash-preview"
+    GEMINI_MODEL: str = "gemini-2.0-flash"
 
     # Anthropic Claude (Phase 2)
     ANTHROPIC_API_KEY: str = ""

@@ -311,11 +311,22 @@ export function logRateLimitExceeded(context: {
   userId?: string;
   endpoint: string;
   limit: number;
+  plan?: string;
+  isAbuse?: boolean;
 }): void {
   logSecurityEvent({
     eventType: "rate_limit_exceeded",
     ...context,
   });
+
+  // 악용 의심 시 추가 경고
+  if (context.isAbuse) {
+    logger.warn(`[SECURITY] Potential abuse detected`, {
+      ...context,
+      securityEvent: true,
+      eventType: "suspicious_activity",
+    });
+  }
 }
 
 /**

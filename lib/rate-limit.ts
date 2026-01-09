@@ -43,36 +43,53 @@ interface RateLimitResult {
 // 기본 설정
 // ─────────────────────────────────────────────────
 
+// IP 기반 Rate Limit (사무실 공용 IP 대응)
+export const IP_RATE_LIMIT = {
+  limit: 50,
+  windowMs: 60 * 1000,
+  message: "요청이 너무 많아요. 1분 후 다시 시도해 주세요.",
+} as const;
+
+// 플랜별 Rate Limit (userId 기반)
+export const PLAN_RATE_LIMITS = {
+  free: { limit: 5, windowMs: 60 * 1000 },
+  starter: { limit: 5, windowMs: 60 * 1000 },
+  pro: { limit: 15, windowMs: 60 * 1000 },
+  enterprise: { limit: 30, windowMs: 60 * 1000 },
+} as const;
+
+export type PlanType = keyof typeof PLAN_RATE_LIMITS;
+
 export const RATE_LIMIT_CONFIGS = {
-  // 업로드 API: 분당 10회
+  // 업로드 API: IP 기반 분당 50회 (플랜별 userId 제한은 별도 적용)
   upload: {
-    limit: 10,
+    limit: 50,
     windowMs: 60 * 1000,
-    message: "Too many upload requests. Please try again later.",
+    message: "업로드 요청이 너무 많아요. 1분 후 다시 시도해 주세요.",
   },
   // 검색 API: 분당 30회
   search: {
     limit: 30,
     windowMs: 60 * 1000,
-    message: "Too many search requests. Please try again later.",
+    message: "검색 요청이 너무 많아요. 잠시 후 다시 시도해 주세요.",
   },
   // 일반 API: 분당 60회
   default: {
     limit: 60,
     windowMs: 60 * 1000,
-    message: "Too many requests. Please try again later.",
+    message: "요청이 너무 많아요. 잠시 후 다시 시도해 주세요.",
   },
   // 인증 API: 분당 5회 (브루트포스 방지)
   auth: {
     limit: 5,
     windowMs: 60 * 1000,
-    message: "Too many authentication attempts. Please try again later.",
+    message: "인증 시도가 너무 많아요. 1분 후 다시 시도해 주세요.",
   },
   // 내보내기 API: 시간당 20회
   export: {
     limit: 20,
     windowMs: 60 * 60 * 1000,
-    message: "Export limit reached. Please try again later.",
+    message: "내보내기 제한에 도달했어요. 잠시 후 다시 시도해 주세요.",
   },
 } as const;
 
@@ -329,18 +346,28 @@ export function getRateLimitHeaders(result: RateLimitResult): Record<string, str
 }
 
 /**
- * 레이트 제한 초과 응답 생성
+ * 레이트 제한 초과 응답 생성 (상세 정보 포함)
  */
 export function rateLimitExceededResponse(
   result: RateLimitResult,
-  message: string = "Too many requests"
+  message: string = "요청이 너무 많아요.",
+  plan?: PlanType
 ): NextResponse {
   const headers = getRateLimitHeaders(result);
+  const retryAfterSeconds = Math.ceil((result.reset - Date.now()) / 1000);
+
   return NextResponse.json(
     {
       success: false,
-      error: message,
-      retryAfter: Math.ceil((result.reset - Date.now()) / 1000),
+      error: {
+        code: "RATE_LIMIT_EXCEEDED",
+        message,
+        retryAfter: retryAfterSeconds,
+        limit: result.limit,
+        remaining: result.remaining,
+        resetAt: new Date(result.reset).toISOString(),
+        plan: plan || undefined,
+      },
     },
     {
       status: 429,
@@ -350,18 +377,136 @@ export function rateLimitExceededResponse(
 }
 
 // ─────────────────────────────────────────────────
+// 악용 감지 추적
+// ─────────────────────────────────────────────────
+
+const abuseTracker = new Map<string, { count: number; firstHit: number }>();
+const ABUSE_THRESHOLD = 5; // 연속 5회 Rate Limit 히트 시 악용 의심
+const ABUSE_WINDOW = 5 * 60 * 1000; // 5분 내 연속 히트
+
+function trackAbuse(identifier: string): boolean {
+  const now = Date.now();
+  const entry = abuseTracker.get(identifier);
+
+  if (!entry || now - entry.firstHit > ABUSE_WINDOW) {
+    abuseTracker.set(identifier, { count: 1, firstHit: now });
+    return false;
+  }
+
+  entry.count++;
+  return entry.count >= ABUSE_THRESHOLD;
+}
+
+// ─────────────────────────────────────────────────
 // API 래퍼 함수
 // ─────────────────────────────────────────────────
 
 /**
- * API 라우트에 레이트 제한 적용 (비동기 - Supabase 분산 지원)
- *
+ * IP 기반 Rate Limit 체크 (1단계)
+ */
+export async function checkIPRateLimit(
+  request: NextRequest
+): Promise<{ result: RateLimitResult; ip: string }> {
+  const ip = getClientIP(request);
+  const identifier = `ip:${ip}`;
+  const result = await checkRateLimitDistributed(identifier, IP_RATE_LIMIT);
+  return { result, ip };
+}
+
+/**
+ * 플랜별 userId Rate Limit 체크 (2단계)
+ */
+export async function checkUserRateLimit(
+  userId: string,
+  plan: PlanType = "free",
+  action: string = "upload"
+): Promise<RateLimitResult> {
+  const config = PLAN_RATE_LIMITS[plan] || PLAN_RATE_LIMITS.free;
+  const identifier = `user:${userId}:${action}`;
+  return checkRateLimitDistributed(identifier, {
+    ...config,
+    message: `업로드 요청이 너무 많아요. 1분 후 다시 시도해 주세요.`,
+  });
+}
+
+/**
+ * 이중 Rate Limit 적용 (IP → 인증 → userId)
+ * 
+ * 순서:
+ * 1. IP 기반 체크 (분당 50회) - 사무실 공용 IP 대응
+ * 2. 인증 확인 후 userId 기반 체크 (플랜별)
+ * 
  * @example
  * export async function POST(request: NextRequest) {
- *   const rateLimitResult = await withRateLimit(request, "upload");
+ *   const { user, plan } = await getAuthenticatedUser();
+ *   const rateLimitResult = await withDualRateLimit(request, user.id, plan);
  *   if (rateLimitResult) return rateLimitResult;
  *   // ... 나머지 로직
  * }
+ */
+export async function withDualRateLimit(
+  request: NextRequest,
+  userId: string,
+  plan: PlanType = "free",
+  action: string = "upload"
+): Promise<{ response: NextResponse | null; remaining: number | null }> {
+  const ip = getClientIP(request);
+
+  // 1단계: IP 기반 체크
+  const ipIdentifier = `ip:${ip}`;
+  const ipResult = await checkRateLimitDistributed(ipIdentifier, IP_RATE_LIMIT);
+
+  if (!ipResult.success) {
+    const isAbuse = trackAbuse(ipIdentifier);
+
+    // 보안 이벤트 로깅
+    logRateLimitExceeded({
+      ip,
+      userId,
+      endpoint: action,
+      limit: IP_RATE_LIMIT.limit,
+      isAbuse,
+    });
+
+    return {
+      response: rateLimitExceededResponse(ipResult, IP_RATE_LIMIT.message, plan),
+      remaining: null,
+    };
+  }
+
+  // 2단계: userId 기반 체크 (플랜별)
+  const userResult = await checkUserRateLimit(userId, plan, action);
+
+  if (!userResult.success) {
+    const userIdentifier = `user:${userId}:${action}`;
+    const isAbuse = trackAbuse(userIdentifier);
+
+    const planConfig = PLAN_RATE_LIMITS[plan];
+    const message = `업로드 제한에 도달했어요. 플랜 업그레이드로 더 많이 업로드할 수 있어요.`;
+
+    logRateLimitExceeded({
+      ip,
+      userId,
+      endpoint: action,
+      limit: planConfig.limit,
+      plan,
+      isAbuse,
+    });
+
+    return {
+      response: rateLimitExceededResponse(userResult, message, plan),
+      remaining: null,
+    };
+  }
+
+  return {
+    response: null,
+    remaining: userResult.remaining,
+  };
+}
+
+/**
+ * API 라우트에 레이트 제한 적용 (기존 호환성 유지)
  */
 export async function withRateLimit(
   request: NextRequest,
@@ -377,12 +522,15 @@ export async function withRateLimit(
   const result = await checkRateLimitDistributed(identifier, config);
 
   if (!result.success) {
+    const isAbuse = trackAbuse(identifier);
+
     // 보안 이벤트 로깅
     logRateLimitExceeded({
       ip,
       userId,
       endpoint: configKey,
       limit: config.limit,
+      isAbuse,
     });
     return rateLimitExceededResponse(result, config.message);
   }
@@ -394,11 +542,40 @@ export async function withRateLimit(
  * 특정 작업에 대한 사용자별 레이트 제한
  * (예: 내보내기, 파일 업로드 등)
  */
-export function withUserRateLimit(
+export function withUserRateLimitSync(
   userId: string,
   action: string,
   config: RateLimitConfig
 ): RateLimitResult {
   const identifier = `user:${userId}:${action}`;
   return checkRateLimit(identifier, config);
+}
+
+/**
+ * 남은 업로드 횟수 조회 (UI 표시용)
+ */
+export async function getRemainingUploads(
+  userId: string,
+  plan: PlanType = "free"
+): Promise<{ remaining: number; limit: number; resetAt: Date }> {
+  const config = PLAN_RATE_LIMITS[plan] || PLAN_RATE_LIMITS.free;
+  const identifier = `user:${userId}:upload`;
+
+  // 현재 상태만 조회 (카운트 증가 없이)
+  const entry = rateLimitCache.get(identifier);
+  const now = Date.now();
+
+  if (!entry || entry.resetTime < now) {
+    return {
+      remaining: config.limit,
+      limit: config.limit,
+      resetAt: new Date(now + config.windowMs),
+    };
+  }
+
+  return {
+    remaining: Math.max(0, config.limit - entry.count),
+    limit: config.limit,
+    resetAt: new Date(entry.resetTime),
+  };
 }

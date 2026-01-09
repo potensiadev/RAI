@@ -1080,6 +1080,225 @@ class DatabaseService:
             return False
 
 
+    # ─────────────────────────────────────────────────
+    # 실패 처리 (Soft Delete, 복원, 검증)
+    # ─────────────────────────────────────────────────
+
+    # 에러 코드 정의
+    ERROR_CODES = {
+        "PARSE_FAILED": "읽을 수 없는 파일이에요. 다른 형식(PDF, Word 등)으로 다시 업로드해 주세요.",
+        "ENCRYPTED": "비밀번호로 보호된 파일이에요. 비밀번호 해제 후 다시 업로드해 주세요.",
+        "SCANNED_IMAGE": "스캔 이미지로 된 파일이에요. 텍스트 문서를 업로드해 주세요.",
+        "TEXT_TOO_SHORT": "이력서 내용이 너무 짧아요. 파일 내용을 확인해 주세요.",
+        "LLM_TIMEOUT": "분석 시간이 오래 걸려 중단되었어요. 다시 시도해 주세요.",
+        "LLM_ERROR": "분석 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.",
+        "STORAGE_ERROR": "파일 저장에 실패했어요. 다시 시도해 주세요.",
+        "MISSING_REQUIRED_FIELDS": "이력서에서 필수 정보(이름, 연락처, 경력)를 찾을 수 없어요. 파일을 확인해 주세요.",
+        "UNKNOWN": "예상치 못한 문제가 발생했어요. 다시 시도해 주세요.",
+    }
+
+    def classify_error(self, technical_error: str) -> str:
+        """기술적 에러를 에러 코드로 분류"""
+        error_lower = technical_error.lower()
+
+        if any(kw in error_lower for kw in ["parse", "parsing failed", "file rejected", "unsupported"]):
+            return "PARSE_FAILED"
+        if any(kw in error_lower for kw in ["encrypt", "password", "protected"]):
+            return "ENCRYPTED"
+        if any(kw in error_lower for kw in ["scanned", "ocr", "image only"]):
+            return "SCANNED_IMAGE"
+        if any(kw in error_lower for kw in ["too short", "text length", "minimum"]):
+            return "TEXT_TOO_SHORT"
+        if any(kw in error_lower for kw in ["timeout", "timed out"]):
+            return "LLM_TIMEOUT"
+        if any(kw in error_lower for kw in ["llm", "analysis", "provider failed"]):
+            return "LLM_ERROR"
+        if any(kw in error_lower for kw in ["storage", "upload", "download"]):
+            return "STORAGE_ERROR"
+        if any(kw in error_lower for kw in ["required", "missing", "필수"]):
+            return "MISSING_REQUIRED_FIELDS"
+
+        return "UNKNOWN"
+
+    def get_user_message(self, error_code: str) -> str:
+        """에러 코드를 사용자 메시지로 변환"""
+        return self.ERROR_CODES.get(error_code, self.ERROR_CODES["UNKNOWN"])
+
+    def check_required_fields(self, data: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        """
+        필수 필드 검증 (이름 + 연락처 + 경력)
+
+        부분 성공 기준: 이름 + (전화 OR 이메일) + 경력 1개 이상
+
+        Returns:
+            (성공 여부, 누락된 필드 목록)
+        """
+        missing = []
+
+        # 이름 필수
+        if not data.get("name"):
+            missing.append("name")
+
+        # 연락처 (전화 OR 이메일 중 하나)
+        has_phone = bool(data.get("phone") or data.get("phone_masked"))
+        has_email = bool(data.get("email") or data.get("email_masked"))
+        if not has_phone and not has_email:
+            missing.append("contact")
+
+        # 경력 (careers 배열에 1개 이상)
+        careers = data.get("careers", [])
+        if not careers or len(careers) == 0:
+            missing.append("careers")
+
+        return (len(missing) == 0, missing)
+
+    def mark_candidate_deleted(
+        self,
+        candidate_id: str,
+        error_code: str,
+        error_message: str,
+    ) -> bool:
+        """
+        Soft Delete: 후보자를 삭제 상태로 표시
+
+        - status를 'deleted'로 변경
+        - 에러 코드와 메시지 저장
+        - 7일 후 배치 삭제 대상
+
+        Args:
+            candidate_id: 후보자 ID
+            error_code: 에러 코드 (PARSE_FAILED 등)
+            error_message: 사용자용 에러 메시지
+
+        Returns:
+            성공 여부
+        """
+        if not self.client:
+            return False
+
+        try:
+            from datetime import datetime
+
+            result = self.client.table("candidates").update({
+                "status": "deleted",
+                "error_code": error_code,
+                "error_message": error_message,
+                "deleted_at": datetime.utcnow().isoformat(),
+            }).eq("id", candidate_id).execute()
+
+            if result.data:
+                logger.info(f"[SoftDelete] Candidate {candidate_id} marked as deleted: {error_code}")
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to mark candidate as deleted: {e}")
+            return False
+
+    def restore_previous_version(
+        self,
+        current_candidate_id: str,
+        parent_id: Optional[str],
+    ) -> bool:
+        """
+        업데이트 실패 시 이전 버전 복원
+
+        - 현재 후보자 삭제 (Soft Delete)
+        - 이전 버전 is_latest=True로 복원
+
+        Args:
+            current_candidate_id: 현재 후보자 ID (삭제 대상)
+            parent_id: 이전 버전 후보자 ID (복원 대상)
+
+        Returns:
+            성공 여부
+        """
+        if not self.client or not parent_id:
+            return False
+
+        try:
+            # 1. 이전 버전 is_latest=True로 복원
+            restore_result = self.client.table("candidates").update({
+                "is_latest": True,
+            }).eq("id", parent_id).execute()
+
+            if not restore_result.data:
+                logger.error(f"Failed to restore parent version: {parent_id}")
+                return False
+
+            logger.info(f"[Restore] Previous version {parent_id} restored as is_latest=True")
+
+            # 2. 현재 후보자 Soft Delete (이미 mark_candidate_deleted에서 처리됨)
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to restore previous version: {e}")
+            return False
+
+    def handle_pipeline_failure(
+        self,
+        candidate_id: str,
+        job_id: str,
+        technical_error: str,
+        parent_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        파이프라인 실패 시 통합 처리
+
+        1. 에러 코드 분류
+        2. 사용자 메시지 생성
+        3. Soft Delete
+        4. 이전 버전 복원 (있는 경우)
+        5. processing_jobs 실패 상태 업데이트
+
+        Args:
+            candidate_id: 후보자 ID
+            job_id: 작업 ID
+            technical_error: 기술적 에러 메시지
+            parent_id: 이전 버전 ID (업데이트의 경우)
+
+        Returns:
+            {
+                "error_code": "PARSE_FAILED",
+                "user_message": "읽을 수 없는 파일이에요...",
+                "deleted": True,
+                "restored": True|False
+            }
+        """
+        # 1. 에러 분류
+        error_code = self.classify_error(technical_error)
+        user_message = self.get_user_message(error_code)
+
+        # 2. Soft Delete
+        deleted = self.mark_candidate_deleted(candidate_id, error_code, user_message)
+
+        # 3. 이전 버전 복원
+        restored = False
+        if parent_id:
+            restored = self.restore_previous_version(candidate_id, parent_id)
+
+        # 4. processing_jobs 실패 상태 업데이트
+        self.update_job_status(
+            job_id=job_id,
+            status="failed",
+            error_code=error_code,
+            error_message=user_message,
+        )
+
+        logger.info(
+            f"[FailureHandler] Candidate {candidate_id} failed: "
+            f"code={error_code}, deleted={deleted}, restored={restored}"
+        )
+
+        return {
+            "error_code": error_code,
+            "user_message": user_message,
+            "deleted": deleted,
+            "restored": restored,
+        }
+
+
 # 싱글톤 인스턴스
 _database_service: Optional[DatabaseService] = None
 

@@ -192,11 +192,27 @@ export default function UploadPage() {
           "The resource already exists": "동일한 파일이 이미 업로드되어 있습니다.",
           "Payload too large": "파일이 너무 큽니다. 50MB 이하의 파일을 선택해주세요.",
           "Invalid JWT": "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
+          "Bucket not found": "저장소 설정 오류입니다. 관리자에게 문의해주세요.",
+          "Object not found": "파일을 찾을 수 없습니다.",
+          "access denied": "파일 접근 권한이 없습니다.",
+          "quota exceeded": "저장 용량이 초과되었습니다.",
+          "network": "네트워크 연결을 확인해주세요.",
+          "timeout": "업로드 시간이 초과되었습니다. 다시 시도해주세요.",
         };
+
+        // 매핑된 메시지 찾기
         const friendlyMessage = Object.entries(storageErrorMap).find(
-          ([key]) => uploadError.message.includes(key)
+          ([key]) => uploadError.message.toLowerCase().includes(key.toLowerCase())
         )?.[1];
-        throw new Error(friendlyMessage || "파일 업로드 중 오류가 발생했습니다. 네트워크 연결을 확인하고 다시 시도해주세요.");
+
+        // 매핑된 메시지가 있으면 사용, 없으면 원본 에러 메시지 포함하여 안내
+        if (friendlyMessage) {
+          throw new Error(friendlyMessage);
+        } else {
+          // 기술적 에러 메시지를 사용자에게 보여주되, 맥락 추가
+          const originalMessage = uploadError.message || "알 수 없는 오류";
+          throw new Error(`파일 업로드에 실패했어요: ${originalMessage}`);
+        }
       }
 
       // Phase 3: Confirm - Worker 파이프라인 트리거

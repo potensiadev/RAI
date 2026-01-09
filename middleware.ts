@@ -110,9 +110,10 @@ export async function middleware(request: NextRequest) {
       if (!consentRecord?.third_party_data_guarantee) {
         return NextResponse.redirect(new URL("/consent", request.url));
       }
-    } catch {
-      // DB 오류 시 동의 페이지로
-      return NextResponse.redirect(new URL("/consent", request.url));
+    } catch (error) {
+      // DB 오류 시 로그만 남기고 요청 진행 허용 (사용자 경험 우선)
+      console.error("[Middleware] Consent check failed:", error);
+      // 동의 페이지로 리다이렉트하지 않고 요청 진행
     }
   }
 
@@ -134,7 +135,9 @@ export async function middleware(request: NextRequest) {
         .single() as { data: UserRow | null };
 
       if (consentProfile?.consents_completed) {
-        return NextResponse.redirect(new URL("/candidates", request.url));
+        // 원래 요청한 경로가 있으면 그곳으로, 없으면 candidates로
+        const nextUrl = request.nextUrl.searchParams.get("next") || "/candidates";
+        return NextResponse.redirect(new URL(nextUrl, request.url));
       }
     } catch {
       // DB 오류 시 그냥 동의 페이지 표시
@@ -154,7 +157,9 @@ export async function middleware(request: NextRequest) {
         .single() as { data: UserRow | null };
 
       if (authProfile?.consents_completed) {
-        return NextResponse.redirect(new URL("/candidates", request.url));
+        // next 파라미터가 있으면 해당 경로로, 없으면 candidates로
+        const nextUrl = request.nextUrl.searchParams.get("next") || "/candidates";
+        return NextResponse.redirect(new URL(nextUrl, request.url));
       } else {
         return NextResponse.redirect(new URL("/consent", request.url));
       }

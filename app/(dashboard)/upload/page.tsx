@@ -179,6 +179,27 @@ export default function UploadPage() {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
 
+      // 업로드 전 세션 확인 (디버깅 및 검증)
+      const { data: { user: clientUser } } = await supabase.auth.getUser();
+
+      if (!clientUser) {
+        throw new Error("로그인 세션이 만료되었습니다. 페이지를 새로고침하고 다시 로그인해주세요.");
+      }
+
+      // storagePath에서 user.id 추출하여 검증
+      // 경로 형식: uploads/{user.id}/{filename}
+      const pathParts = presign.storagePath.split('/');
+      const pathUserId = pathParts[1]; // uploads/{userId}/...
+
+      if (pathUserId !== clientUser.id) {
+        console.error("[Upload] User ID mismatch:", {
+          clientUserId: clientUser.id,
+          pathUserId: pathUserId,
+          storagePath: presign.storagePath,
+        });
+        throw new Error("세션 정보가 일치하지 않습니다. 페이지를 새로고침하고 다시 시도해주세요.");
+      }
+
       const { error: uploadError } = await supabase.storage
         .from("resumes")
         .upload(presign.storagePath, uploadFile.file, {
@@ -194,10 +215,18 @@ export default function UploadPage() {
           "Invalid JWT": "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
           "Bucket not found": "저장소 설정 오류입니다. 관리자에게 문의해주세요.",
           "Object not found": "파일을 찾을 수 없습니다.",
-          "access denied": "파일 접근 권한이 없습니다.",
+          "access denied": "파일 접근 권한이 없습니다. 다시 로그인해주세요.",
           "quota exceeded": "저장 용량이 초과되었습니다.",
           "network": "네트워크 연결을 확인해주세요.",
           "timeout": "업로드 시간이 초과되었습니다. 다시 시도해주세요.",
+          // RLS (Row Level Security) 관련 에러
+          "row-level security": "접근 권한이 없습니다. 다시 로그인해주세요.",
+          "violates row-level security policy": "접근 권한이 없습니다. 다시 로그인해주세요.",
+          "permission denied": "파일 업로드 권한이 없습니다. 다시 로그인해주세요.",
+          "unauthorized": "인증이 필요합니다. 다시 로그인해주세요.",
+          "not authenticated": "로그인이 필요합니다.",
+          "jwt expired": "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
+          "invalid token": "인증 정보가 유효하지 않습니다. 다시 로그인해주세요.",
         };
 
         // 매핑된 메시지 찾기

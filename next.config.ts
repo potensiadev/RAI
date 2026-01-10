@@ -8,6 +8,16 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "50mb",
     },
   },
+  // Exclude packages from bundling (have compatibility issues)
+  serverExternalPackages: ["pdf-parse", "pdf-to-png-converter", "pdfjs-dist"],
+  // Webpack configuration for pdf-parse compatibility
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      canvas: false,
+    };
+    return config;
+  },
 };
 
 // Sentry configuration options

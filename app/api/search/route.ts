@@ -24,6 +24,7 @@ import {
   type RiskLevel,
   type ChunkType,
 } from "@/types";
+import { getSkillSynonyms } from "@/lib/search/synonyms";
 
 // ─────────────────────────────────────────────────
 // 입력 검증 및 살균 유틸리티
@@ -165,6 +166,25 @@ export async function POST(request: NextRequest) {
           return apiBadRequest(`지역은 ${MAX_LOCATION_LENGTH}자 이하로 입력해주세요.`);
         }
       }
+
+      // 회사 필터 검증 (P0)
+      if (filters.companies !== undefined) {
+        if (!Array.isArray(filters.companies)) {
+          return apiBadRequest("회사 필터는 배열 형식이어야 합니다.");
+        }
+        if (filters.companies.length > 10) {
+          return apiBadRequest("회사는 최대 10개까지 선택할 수 있습니다.");
+        }
+      }
+
+      if (filters.excludeCompanies !== undefined) {
+        if (!Array.isArray(filters.excludeCompanies)) {
+          return apiBadRequest("제외 회사 필터는 배열 형식이어야 합니다.");
+        }
+        if (filters.excludeCompanies.length > 10) {
+          return apiBadRequest("제외 회사는 최대 10개까지 선택할 수 있습니다.");
+        }
+      }
     }
 
     // 검색어 검증
@@ -198,6 +218,23 @@ export async function POST(request: NextRequest) {
         // Step 1: 쿼리 임베딩 생성
         const queryEmbedding = await generateEmbedding(sanitizedQuery);
 
+        // Step 1.5: 스킬 동의어 확장 (기본적으로 활성화)
+        let expandedSkills: string[] | null = null;
+        if (filters?.skills && filters.skills.length > 0) {
+          const shouldExpand = filters.expandSynonyms !== false; // 기본값 true
+          if (shouldExpand) {
+            const allSkills = new Set<string>();
+            for (const skill of filters.skills) {
+              for (const synonym of getSkillSynonyms(skill)) {
+                allSkills.add(synonym);
+              }
+            }
+            expandedSkills = Array.from(allSkills);
+          } else {
+            expandedSkills = filters.skills;
+          }
+        }
+
         // Step 2: search_candidates RPC 함수 호출
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: rpcData, error: rpcError } = await (supabase as any).rpc(
@@ -208,8 +245,12 @@ export async function POST(request: NextRequest) {
             p_match_count: limit,
             p_exp_years_min: filters?.expYearsMin || null,
             p_exp_years_max: filters?.expYearsMax || null,
-            p_skills: filters?.skills?.length ? filters.skills : null,
+            p_skills: expandedSkills,
             p_location: filters?.location || null,
+            // 신규 필터 (P0)
+            p_companies: filters?.companies?.length ? filters.companies : null,
+            p_exclude_companies: filters?.excludeCompanies?.length ? filters.excludeCompanies : null,
+            p_education_level: filters?.educationLevel || null,
           }
         );
 
@@ -247,11 +288,39 @@ export async function POST(request: NextRequest) {
           queryBuilder = queryBuilder.lte("exp_years", filters.expYearsMax);
         }
         if (filters?.skills && filters.skills.length > 0) {
-          queryBuilder = queryBuilder.overlaps("skills", filters.skills);
+          // 동의어 확장 적용
+          const shouldExpand = filters.expandSynonyms !== false;
+          let skillsToSearch = filters.skills;
+          if (shouldExpand) {
+            const allSkills = new Set<string>();
+            for (const skill of filters.skills) {
+              for (const synonym of getSkillSynonyms(skill)) {
+                allSkills.add(synonym);
+              }
+            }
+            skillsToSearch = Array.from(allSkills);
+          }
+          queryBuilder = queryBuilder.overlaps("skills", skillsToSearch);
         }
         if (filters?.location) {
           const escapedLocation = escapeILikePattern(sanitizeString(filters.location));
           queryBuilder = queryBuilder.ilike("location_city", `%${escapedLocation}%`);
+        }
+        // 회사 필터 (Fallback)
+        if (filters?.companies && filters.companies.length > 0) {
+          const companyConditions = filters.companies
+            .map((c) => `last_company.ilike.%${escapeILikePattern(c)}%`)
+            .join(",");
+          queryBuilder = queryBuilder.or(companyConditions);
+        }
+        if (filters?.excludeCompanies && filters.excludeCompanies.length > 0) {
+          for (const company of filters.excludeCompanies) {
+            queryBuilder = queryBuilder.not(
+              "last_company",
+              "ilike",
+              `%${escapeILikePattern(company)}%`
+            );
+          }
         }
 
         const { data, error, count } = await queryBuilder
@@ -306,11 +375,39 @@ export async function POST(request: NextRequest) {
         queryBuilder = queryBuilder.lte("exp_years", filters.expYearsMax);
       }
       if (filters?.skills && filters.skills.length > 0) {
-        queryBuilder = queryBuilder.overlaps("skills", filters.skills);
+        // 동의어 확장 적용
+        const shouldExpand = filters.expandSynonyms !== false;
+        let skillsToSearch = filters.skills;
+        if (shouldExpand) {
+          const allSkills = new Set<string>();
+          for (const skill of filters.skills) {
+            for (const synonym of getSkillSynonyms(skill)) {
+              allSkills.add(synonym);
+            }
+          }
+          skillsToSearch = Array.from(allSkills);
+        }
+        queryBuilder = queryBuilder.overlaps("skills", skillsToSearch);
       }
       if (filters?.location) {
         const escapedLocation = escapeILikePattern(sanitizeString(filters.location));
         queryBuilder = queryBuilder.ilike("location_city", `%${escapedLocation}%`);
+      }
+      // 회사 필터 (Keyword Search)
+      if (filters?.companies && filters.companies.length > 0) {
+        const companyConditions = filters.companies
+          .map((c) => `last_company.ilike.%${escapeILikePattern(c)}%`)
+          .join(",");
+        queryBuilder = queryBuilder.or(companyConditions);
+      }
+      if (filters?.excludeCompanies && filters.excludeCompanies.length > 0) {
+        for (const company of filters.excludeCompanies) {
+          queryBuilder = queryBuilder.not(
+            "last_company",
+            "ilike",
+            `%${escapeILikePattern(company)}%`
+          );
+        }
       }
 
       const { data, error, count } = await queryBuilder

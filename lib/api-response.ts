@@ -59,6 +59,7 @@ export interface ApiMeta {
   page?: number;
   limit?: number;
   hasMore?: boolean;
+  message?: string;
 }
 
 /**

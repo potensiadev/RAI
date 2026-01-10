@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Upload, Users, BarChart3, ShieldAlert, Settings, Hexagon } from "lucide-react";
+import { Upload, Users, BarChart3, ShieldAlert, Settings, Hexagon, Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -10,6 +10,7 @@ import { FLOATING_PHYSICS } from "@/lib/physics";
 
 const NAV_ITEMS = [
     { icon: Users, label: "Candidates", href: "/candidates" },
+    { icon: Briefcase, label: "Positions", href: "/positions" },
     { icon: Upload, label: "Upload", href: "/upload" },
     { icon: BarChart3, label: "Analytics", href: "/analytics" },
     { icon: ShieldAlert, label: "Risk Management", href: "/risk", alert: true },

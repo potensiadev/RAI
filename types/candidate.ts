@@ -148,7 +148,11 @@ export interface SearchFilters {
   skills?: string[];
   location?: string;
   educationLevel?: string;
-  company?: string;
+  // 회사 필터 (P0)
+  companies?: string[];          // 포함할 회사 (OR 조건)
+  excludeCompanies?: string[];   // 제외할 회사
+  // 동의어 확장 옵션
+  expandSynonyms?: boolean;      // 스킬 동의어 확장 여부 (기본: true)
 }
 
 export interface SearchRequest {

@@ -38,6 +38,34 @@ export {
   toCandidatePartial,
 } from './candidate';
 
+// Position Types
+export type {
+  PositionStatus,
+  PositionPriority,
+  JobType,
+  MatchStage,
+  Position,
+  PositionListItem,
+  PositionCandidate,
+  ActivityType,
+  PositionActivity,
+  CreatePositionRequest,
+  UpdatePositionRequest,
+  PositionMatchesResponse,
+  UpdateMatchStageRequest,
+} from './position';
+
+export {
+  getScoreLevel,
+  getScoreColor,
+  getPriorityColor,
+  getStatusLabel,
+  getStageLabel,
+  toPosition,
+  toPositionListItem,
+  toPositionCandidate,
+} from './position';
+
 // Auth Types
 export type {
   PlanType,

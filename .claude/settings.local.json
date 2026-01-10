@@ -53,7 +53,12 @@
       "Bash(tests/lib/logger.test.ts )",
       "Bash(tests/lib/file-validation.test.ts)",
       "Bash(git check-ignore:*)",
-      "Bash(git -C \"D:\\\\RAI\" log --oneline --all --grep=\"security\\\\|vulnerability\\\\|medium\" -i)"
+      "Bash(git -C \"D:\\\\RAI\" log --oneline --all --grep=\"security\\\\|vulnerability\\\\|medium\" -i)",
+      "Bash(search \")",
+      "Bash(for i in 001 002 003 004 005 006 007 008 009 010 011 012 013 014 015 016 017 018 019)",
+      "Bash(do npx supabase migration repair --status applied $i)",
+      "Bash(done)",
+      "Bash(Select-String \"013\")"
     ]
   }
 }

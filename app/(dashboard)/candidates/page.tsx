@@ -167,7 +167,8 @@ export default function CandidatesPage() {
           .select("id")
           .eq("email", user.email)
           .single();
-        setUserId(userData?.id || user?.id);
+        const publicUserId = (userData as { id: string } | null)?.id;
+        setUserId(publicUserId || user?.id);
       } else {
         setUserId(user?.id);
       }

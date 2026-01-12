@@ -17,6 +17,8 @@ export type {
   SearchFilters,
   SearchRequest,
   SearchResponse,
+  FacetItem,
+  SearchFacets,
   ChunkType,
   CandidateChunk,
   ProcessingStatus,

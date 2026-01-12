@@ -162,14 +162,21 @@ export interface SearchRequest {
   offset?: number;
 }
 
+export interface FacetItem {
+  value: string;
+  count: number;
+}
+
+export interface SearchFacets {
+  skills: FacetItem[];
+  companies: FacetItem[];
+  locations: FacetItem[];
+}
+
 export interface SearchResponse {
   results: CandidateSearchResult[];
   total: number;
-  facets?: {
-    skills: { value: string; count: number }[];
-    companies: { value: string; count: number }[];
-    locations: { value: string; count: number }[];
-  };
+  facets?: SearchFacets;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

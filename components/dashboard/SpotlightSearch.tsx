@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { MAGNETIC_SPRING } from "@/lib/physics";
 import { useSearch } from "@/hooks";
 import SearchFilters from "./SearchFilters";
+import SearchHistory from "./SearchHistory";
+import { useSearchHistory } from "@/lib/hooks/useSearchHistory";
 import type { CandidateSearchResult, SearchFilters as FilterType, SearchFacets } from "@/types";
 
 interface SpotlightSearchProps {
@@ -29,8 +31,14 @@ export default function SpotlightSearch({
     const [isFocused, setIsFocused] = useState(false);
     const [internalFilters, setInternalFilters] = useState<FilterType>({});
     const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
+    const [currentFacets, setCurrentFacets] = useState<SearchFacets | undefined>(undefined);
+    const [parsedKeywords, setParsedKeywords] = useState<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
     const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Search History
+    const { addSearch } = useSearchHistory();
 
     // Use external filters if provided, otherwise use internal state
     const filters = externalFilters ?? internalFilters;
@@ -48,6 +56,7 @@ export default function SpotlightSearch({
             if (!searchQuery.trim()) {
                 onSearchResults?.([], false, undefined);
                 onSearchModeChange?.(false);
+                setParsedKeywords([]);
                 return;
             }
 
@@ -61,12 +70,28 @@ export default function SpotlightSearch({
                     limit: 50, // 더 많은 결과로 facet 정확도 향상
                 });
                 onSearchResults?.(response.results, false, response.facets);
+
+                // facets 저장 (SearchFilters에서 사용)
+                if (response.facets) {
+                    setCurrentFacets(response.facets);
+                }
+
+                // parsedKeywords 저장 (검색어 분리 결과 UI 표시)
+                if (response.parsedKeywords && response.parsedKeywords.length > 1) {
+                    setParsedKeywords(response.parsedKeywords);
+                } else {
+                    setParsedKeywords([]);
+                }
+
+                // 검색 성공 시 히스토리에 추가
+                addSearch(searchQuery, isSemantic ? "semantic" : "keyword");
             } catch (error) {
                 console.error("Search error:", error);
                 onSearchResults?.([], false, undefined);
+                setParsedKeywords([]);
             }
         },
-        [searchMutation, onSearchResults, onSearchModeChange, filters]
+        [searchMutation, onSearchResults, onSearchModeChange, filters, addSearch, isSemantic]
     );
 
     // 필터 변경 핸들러
@@ -98,7 +123,9 @@ export default function SpotlightSearch({
     const handleQueryChange = (newQuery: string) => {
         onQueryChange(newQuery);
 
+        // 쿼리가 있으면 히스토리 숨김
         if (newQuery.trim()) {
+            setShowHistory(false);
             debouncedSearch(newQuery);
         } else {
             // 쿼리가 비면 검색 모드 해제
@@ -107,7 +134,18 @@ export default function SpotlightSearch({
             }
             onSearchResults?.([], false, undefined);
             onSearchModeChange?.(false);
+            // 포커스 상태면 히스토리 표시
+            if (isFocused) {
+                setShowHistory(true);
+            }
         }
+    };
+
+    // 히스토리에서 선택
+    const handleHistorySelect = (selectedQuery: string) => {
+        onQueryChange(selectedQuery);
+        setShowHistory(false);
+        executeSearch(selectedQuery);
     };
 
     // Enter 키로 즉시 검색
@@ -193,14 +231,31 @@ export default function SpotlightSearch({
                         value={query}
                         onChange={(e) => handleQueryChange(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        onFocus={() => setIsFocused(true)}
-                        onBlur={() => setIsFocused(false)}
+                        onFocus={() => {
+                            setIsFocused(true);
+                            if (!query.trim()) {
+                                setShowHistory(true);
+                            }
+                        }}
+                        onBlur={() => {
+                            setIsFocused(false);
+                            // 히스토리는 클릭 감지 후 닫기 (약간의 딜레이)
+                            setTimeout(() => setShowHistory(false), 200);
+                        }}
                         placeholder={
                             isSemantic
                                 ? "Semantic Vector Search Active..."
                                 : "Search candidates by name, skills, or role..."
                         }
                         className="flex-1 bg-transparent border-none outline-none text-base text-white placeholder:text-slate-500 font-medium"
+                    />
+
+                    {/* Search History Dropdown */}
+                    <SearchHistory
+                        isVisible={showHistory && !query.trim()}
+                        onSelect={handleHistorySelect}
+                        onClose={() => setShowHistory(false)}
+                        inputRef={inputRef}
                     />
 
                     <div className="flex items-center gap-2">
@@ -228,9 +283,36 @@ export default function SpotlightSearch({
                         onFiltersChange={handleFiltersChange}
                         isOpen={isFiltersOpen}
                         onToggle={() => setIsFiltersOpen(!isFiltersOpen)}
+                        facets={currentFacets}
                     />
                 </div>
             </div>
+
+            {/* Parsed Keywords Display */}
+            <AnimatePresence>
+                {parsedKeywords.length > 1 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="flex justify-center mt-3"
+                    >
+                        <div className="flex items-center gap-2 text-sm">
+                            <span className="text-slate-500">검색어:</span>
+                            <div className="flex flex-wrap gap-1.5">
+                                {parsedKeywords.map((keyword, index) => (
+                                    <span
+                                        key={index}
+                                        className="px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded-md text-xs font-medium"
+                                    >
+                                        {keyword}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

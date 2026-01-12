@@ -31,11 +31,26 @@ import {
 } from "@/types";
 import { getSkillSynonyms } from "@/lib/search/synonyms";
 import {
+  groupSkillsForParallel,
+  executeParallelKeywordSearch,
+  executeJoinBasedSkillSearch,
+  shouldUseParallelQuery,
+  shouldUseJoinBasedSearch,
+} from "@/lib/search/parallel-query";
+import {
   generateCacheKey,
   getCacheStrategy,
   getSearchFromCache,
   setSearchCache,
 } from "@/lib/cache";
+import {
+  sanitizeSkillsArray,
+  sanitizeSkill,
+  parseSearchQuery,
+  MAX_SKILLS_ARRAY_SIZE,
+  MAX_KEYWORD_LENGTH,
+  MAX_QUERY_LENGTH,
+} from "@/lib/search/sanitize";
 
 // ─────────────────────────────────────────────────
 // Facet 계산 유틸리티
@@ -57,10 +72,10 @@ function calculateFacets(results: CandidateSearchResult[]): SearchFacets {
   };
 
   for (const candidate of results) {
-    // Skills facet
-    if (candidate.skills) {
-      for (const skill of candidate.skills) {
-        const normalizedSkill = skill.trim();
+    // Skills facet - sanitizeSkill 유틸 함수 사용
+    if (candidate.skills && Array.isArray(candidate.skills)) {
+      for (const skill of candidate.skills.slice(0, MAX_SKILLS_ARRAY_SIZE)) {
+        const normalizedSkill = sanitizeSkill(skill);
         if (normalizedSkill) {
           skillsMap.set(normalizedSkill, (skillsMap.get(normalizedSkill) || 0) + 1);
         }
@@ -163,7 +178,7 @@ function toSearchResult(
     role: (row.last_position as string) ?? "",
     company: (row.last_company as string) ?? "",
     expYears: (row.exp_years as number) ?? 0,
-    skills: (row.skills as string[]) ?? [],
+    skills: sanitizeSkillsArray(row.skills),
     photoUrl: row.photo_url as string | undefined,
     summary: row.summary as string | undefined,
     aiConfidence: confidencePercent,
@@ -275,10 +290,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 검색어 검증
-    const MAX_QUERY_LENGTH = 500;
-    const MAX_KEYWORD_LENGTH = 50;
-
+    // 검색어 검증 (상수는 @/lib/search/sanitize에서 import)
     if (!query || query.trim().length === 0) {
       return apiBadRequest("검색어를 입력해주세요.");
     }
@@ -326,66 +338,118 @@ export async function POST(request: NextRequest) {
     // 검색 시작 시간 (성능 측정)
     const searchStartTime = Date.now();
 
+    // 파싱된 키워드 (UI에 표시용)
+    const parsedKeywords = parseSearchQuery(sanitizedQuery);
+
     let results: CandidateSearchResult[] = [];
     let total = 0;
 
     if (isSemanticSearch) {
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       // Semantic Search (Vector) with OpenAI Embeddings
+      // 병렬 RPC 함수 사용 (스킬 2개 이상일 때)
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
       try {
         // Step 1: 쿼리 임베딩 생성
         const queryEmbedding = await generateEmbedding(sanitizedQuery);
 
-        // Step 1.5: 스킬 동의어 확장 (기본적으로 활성화)
-        let expandedSkills: string[] | null = null;
-        if (filters?.skills && filters.skills.length > 0) {
-          const shouldExpand = filters.expandSynonyms !== false; // 기본값 true
-          if (shouldExpand) {
-            const allSkills = new Set<string>();
-            for (const skill of filters.skills) {
-              for (const synonym of getSkillSynonyms(skill)) {
-                allSkills.add(synonym);
-              }
+        // Step 1.5: 스킬 필터 확인 및 병렬 쿼리 결정
+        const shouldExpand = filters?.expandSynonyms !== false;
+        const useParallel = shouldUseParallelQuery(filters?.skills);
+
+        if (useParallel && filters?.skills) {
+          // ─────────────────────────────────────────────────
+          // 병렬 RPC 검색 (스킬 그룹별 분리)
+          // ─────────────────────────────────────────────────
+          const skillGroups = groupSkillsForParallel(filters.skills, shouldExpand);
+
+          // 최대 5개 그룹으로 패딩
+          const paddedGroups: (string[] | null)[] = [null, null, null, null, null];
+          for (let i = 0; i < Math.min(skillGroups.length, 5); i++) {
+            paddedGroups[i] = skillGroups[i];
+          }
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: rpcData, error: rpcError } = await (supabase as any).rpc(
+            "search_candidates_parallel",
+            {
+              p_user_id: user.id,
+              p_query_embedding: queryEmbedding,
+              p_match_count: limit,
+              p_exp_years_min: filters?.expYearsMin || null,
+              p_exp_years_max: filters?.expYearsMax || null,
+              p_skill_group_1: paddedGroups[0],
+              p_skill_group_2: paddedGroups[1],
+              p_skill_group_3: paddedGroups[2],
+              p_skill_group_4: paddedGroups[3],
+              p_skill_group_5: paddedGroups[4],
+              p_location: filters?.location || null,
+              p_companies: filters?.companies?.length ? filters.companies : null,
+              p_exclude_companies: filters?.excludeCompanies?.length ? filters.excludeCompanies : null,
+              p_education_level: filters?.educationLevel || null,
             }
-            expandedSkills = Array.from(allSkills);
-          } else {
-            expandedSkills = filters.skills;
+          );
+
+          if (rpcError) {
+            console.error("Parallel vector search RPC error:", rpcError);
+            throw rpcError;
           }
-        }
 
-        // Step 2: search_candidates RPC 함수 호출
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: rpcData, error: rpcError } = await (supabase as any).rpc(
-          "search_candidates",
-          {
-            p_user_id: user.id,
-            p_query_embedding: queryEmbedding,
-            p_match_count: limit,
-            p_exp_years_min: filters?.expYearsMin || null,
-            p_exp_years_max: filters?.expYearsMax || null,
-            p_skills: expandedSkills,
-            p_location: filters?.location || null,
-            // 신규 필터 (P0)
-            p_companies: filters?.companies?.length ? filters.companies : null,
-            p_exclude_companies: filters?.excludeCompanies?.length ? filters.excludeCompanies : null,
-            p_education_level: filters?.educationLevel || null,
+          results = (rpcData || []).map((row: Record<string, unknown>) => {
+            const matchScore = (row.match_score as number) || 0;
+            return toSearchResult(row, matchScore);
+          });
+
+          total = results.length;
+        } else {
+          // ─────────────────────────────────────────────────
+          // 기존 RPC 검색 (스킬 필터 없거나 1개일 때)
+          // ─────────────────────────────────────────────────
+          let expandedSkills: string[] | null = null;
+          if (filters?.skills && filters.skills.length > 0) {
+            if (shouldExpand) {
+              const allSkills = new Set<string>();
+              for (const skill of filters.skills) {
+                for (const synonym of getSkillSynonyms(skill)) {
+                  allSkills.add(synonym);
+                }
+              }
+              expandedSkills = Array.from(allSkills);
+            } else {
+              expandedSkills = filters.skills;
+            }
           }
-        );
 
-        if (rpcError) {
-          console.error("Vector search RPC error:", rpcError);
-          throw rpcError;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: rpcData, error: rpcError } = await (supabase as any).rpc(
+            "search_candidates",
+            {
+              p_user_id: user.id,
+              p_query_embedding: queryEmbedding,
+              p_match_count: limit,
+              p_exp_years_min: filters?.expYearsMin || null,
+              p_exp_years_max: filters?.expYearsMax || null,
+              p_skills: expandedSkills,
+              p_location: filters?.location || null,
+              p_companies: filters?.companies?.length ? filters.companies : null,
+              p_exclude_companies: filters?.excludeCompanies?.length ? filters.excludeCompanies : null,
+              p_education_level: filters?.educationLevel || null,
+            }
+          );
+
+          if (rpcError) {
+            console.error("Vector search RPC error:", rpcError);
+            throw rpcError;
+          }
+
+          results = (rpcData || []).map((row: Record<string, unknown>) => {
+            const matchScore = (row.match_score as number) || 0;
+            return toSearchResult(row, matchScore);
+          });
+
+          total = results.length;
         }
-
-        // RPC 결과를 CandidateSearchResult로 변환
-        results = (rpcData || []).map((row: Record<string, unknown>) => {
-          const matchScore = (row.match_score as number) || 0;
-          return toSearchResult(row, matchScore);
-        });
-
-        total = results.length;
       } catch (embeddingError) {
         // 임베딩 생성 실패 시 텍스트 검색으로 Fallback
         console.warn("Embedding failed, falling back to text search:", embeddingError);
@@ -462,90 +526,160 @@ export async function POST(request: NextRequest) {
     } else {
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       // Keyword Search (RDB)
+      // 병렬 쿼리 적용 (스킬 2개 이상일 때)
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-      // 키워드 분리 및 개별 키워드 길이 제한 + SQL Injection 방지
-      const keywords = sanitizedQuery
-        .split(",")
-        .map(k => sanitizeString(k, MAX_KEYWORD_LENGTH))
-        .filter(Boolean);
+      // 키워드 분리: parseSearchQuery 유틸 함수 사용
+      // Mixed Language Query 지원: 공백, 쉼표, 한글+영문 경계로 분리
+      // 예: "React개발자" → ["React", "개발자"], "시니어Developer" → ["시니어", "Developer"]
+      const keywords = parseSearchQuery(sanitizedQuery);
 
-      let queryBuilder = supabase
-        .from("candidates")
-        .select("*", { count: "exact" })
-        .eq("user_id", user.id)
-        .eq("status", "completed")
-        .eq("is_latest", true);
+      // 스킬 필터가 2개 이상일 때 병렬 쿼리 사용
+      const useParallel = shouldUseParallelQuery(filters?.skills);
+      const shouldExpand = filters?.expandSynonyms !== false;
+      // JOIN 기반 검색 사용 여부 (Phase 2 최적화)
+      const useJoinBased = shouldUseJoinBasedSearch();
 
-      // 키워드 검색: 스킬, 직책, 회사명에서 검색 (SQL Injection 방지)
-      if (keywords.length > 0) {
-        const orConditions = keywords.map(keyword => {
-          const escapedKeyword = escapeILikePattern(keyword);
-          const sanitizedKeyword = sanitizeArrayValue(keyword);
-          return `skills.cs.{${sanitizedKeyword}},last_position.ilike.%${escapedKeyword}%,last_company.ilike.%${escapedKeyword}%,name.ilike.%${escapedKeyword}%`;
-        }).join(",");
-        queryBuilder = queryBuilder.or(orConditions);
-      }
+      if (useParallel && filters?.skills) {
+        // ─────────────────────────────────────────────────
+        // 스킬 기반 최적화 쿼리 실행
+        // - Phase 2: JOIN 기반 (skill_synonyms 테이블)
+        // - Phase 1: 병렬 쿼리 (스킬 그룹별 분리)
+        // ─────────────────────────────────────────────────
+        const parallelResult = useJoinBased
+          ? await executeJoinBasedSkillSearch(supabase, {
+              userId: user.id,
+              skills: filters.skills,
+              expYearsMin: filters.expYearsMin,
+              expYearsMax: filters.expYearsMax,
+              location: filters.location,
+              companies: filters.companies,
+              excludeCompanies: filters.excludeCompanies,
+              limit: limit,
+            })
+          : await executeParallelKeywordSearch(supabase, {
+              userId: user.id,
+              skills: filters.skills,
+              expandSynonyms: shouldExpand,
+              expYearsMin: filters.expYearsMin,
+              expYearsMax: filters.expYearsMax,
+              location: filters.location,
+              companies: filters.companies,
+              excludeCompanies: filters.excludeCompanies,
+              limit: limit,
+            });
 
-      // RDB 필터 적용
-      if (filters?.expYearsMin) {
-        queryBuilder = queryBuilder.gte("exp_years", filters.expYearsMin);
-      }
-      if (filters?.expYearsMax) {
-        queryBuilder = queryBuilder.lte("exp_years", filters.expYearsMax);
-      }
-      if (filters?.skills && filters.skills.length > 0) {
-        // 동의어 확장 적용
-        const shouldExpand = filters.expandSynonyms !== false;
-        let skillsToSearch = filters.skills;
-        if (shouldExpand) {
-          const allSkills = new Set<string>();
-          for (const skill of filters.skills) {
-            for (const synonym of getSkillSynonyms(skill)) {
-              allSkills.add(synonym);
+        // 키워드로 추가 필터링 (있는 경우)
+        // Mixed Language Query: 각 키워드에 동의어 확장 적용
+        let filteredResults = parallelResult.results;
+        if (keywords.length > 0) {
+          filteredResults = parallelResult.results.filter(row => {
+            return keywords.some(keyword => {
+              // 키워드의 동의어 목록 가져오기 (예: "개발자" -> ["developer", "Engineer", ...])
+              const synonyms = getSkillSynonyms(keyword);
+              const lowerSynonyms = synonyms.map(s => s.toLowerCase());
+
+              return lowerSynonyms.some(lowerKeyword => (
+                row.skills?.some(s => s && typeof s === "string" && s.toLowerCase().includes(lowerKeyword)) ||
+                row.last_position?.toLowerCase().includes(lowerKeyword) ||
+                row.last_company?.toLowerCase().includes(lowerKeyword) ||
+                row.name?.toLowerCase().includes(lowerKeyword)
+              ));
+            });
+          });
+        }
+
+        results = filteredResults.map((row, index) => {
+          const score = Math.max(0.7, 0.98 - index * 0.02);
+          return toSearchResult(row as unknown as Record<string, unknown>, score);
+        });
+
+        total = results.length;
+      } else {
+        // ─────────────────────────────────────────────────
+        // 기존 단일 쿼리 (스킬 필터 없거나 1개일 때)
+        // ─────────────────────────────────────────────────
+        let queryBuilder = supabase
+          .from("candidates")
+          .select("*", { count: "exact" })
+          .eq("user_id", user.id)
+          .eq("status", "completed")
+          .eq("is_latest", true);
+
+        // 키워드 검색: 스킬, 직책, 회사명에서 검색 (SQL Injection 방지)
+        // Mixed Language Query: 각 키워드에 동의어 확장 적용
+        if (keywords.length > 0) {
+          const orConditions = keywords.flatMap(keyword => {
+            // 키워드의 동의어 목록 가져오기
+            const synonyms = getSkillSynonyms(keyword);
+            return synonyms.map(syn => {
+              const escapedKeyword = escapeILikePattern(syn);
+              const sanitizedKeyword = sanitizeArrayValue(syn);
+              return `skills.cs.{${sanitizedKeyword}},last_position.ilike.%${escapedKeyword}%,last_company.ilike.%${escapedKeyword}%,name.ilike.%${escapedKeyword}%`;
+            });
+          }).join(",");
+          queryBuilder = queryBuilder.or(orConditions);
+        }
+
+        // RDB 필터 적용
+        if (filters?.expYearsMin) {
+          queryBuilder = queryBuilder.gte("exp_years", filters.expYearsMin);
+        }
+        if (filters?.expYearsMax) {
+          queryBuilder = queryBuilder.lte("exp_years", filters.expYearsMax);
+        }
+        if (filters?.skills && filters.skills.length > 0) {
+          // 동의어 확장 적용
+          let skillsToSearch = filters.skills;
+          if (shouldExpand) {
+            const allSkills = new Set<string>();
+            for (const skill of filters.skills) {
+              for (const synonym of getSkillSynonyms(skill)) {
+                allSkills.add(synonym);
+              }
             }
+            skillsToSearch = Array.from(allSkills);
           }
-          skillsToSearch = Array.from(allSkills);
+          queryBuilder = queryBuilder.overlaps("skills", skillsToSearch);
         }
-        queryBuilder = queryBuilder.overlaps("skills", skillsToSearch);
-      }
-      if (filters?.location) {
-        const escapedLocation = escapeILikePattern(sanitizeString(filters.location));
-        queryBuilder = queryBuilder.ilike("location_city", `%${escapedLocation}%`);
-      }
-      // 회사 필터 (Keyword Search)
-      if (filters?.companies && filters.companies.length > 0) {
-        const companyConditions = filters.companies
-          .map((c) => `last_company.ilike.%${escapeILikePattern(c)}%`)
-          .join(",");
-        queryBuilder = queryBuilder.or(companyConditions);
-      }
-      if (filters?.excludeCompanies && filters.excludeCompanies.length > 0) {
-        for (const company of filters.excludeCompanies) {
-          queryBuilder = queryBuilder.not(
-            "last_company",
-            "ilike",
-            `%${escapeILikePattern(company)}%`
-          );
+        if (filters?.location) {
+          const escapedLocation = escapeILikePattern(sanitizeString(filters.location));
+          queryBuilder = queryBuilder.ilike("location_city", `%${escapedLocation}%`);
         }
+        // 회사 필터 (Keyword Search)
+        if (filters?.companies && filters.companies.length > 0) {
+          const companyConditions = filters.companies
+            .map((c) => `last_company.ilike.%${escapeILikePattern(c)}%`)
+            .join(",");
+          queryBuilder = queryBuilder.or(companyConditions);
+        }
+        if (filters?.excludeCompanies && filters.excludeCompanies.length > 0) {
+          for (const company of filters.excludeCompanies) {
+            queryBuilder = queryBuilder.not(
+              "last_company",
+              "ilike",
+              `%${escapeILikePattern(company)}%`
+            );
+          }
+        }
+
+        const { data, error, count } = await queryBuilder
+          .order("confidence_score", { ascending: false })
+          .range(offset, offset + limit - 1);
+
+        if (error) {
+          console.error("Keyword search error:", error);
+          return apiInternalError();
+        }
+
+        // 키워드 매칭 기반 점수 계산
+        results = (data || []).map((row, index) => {
+          const score = Math.max(0.7, 0.98 - index * 0.02);
+          return toSearchResult(row as Record<string, unknown>, score);
+        });
+
+        total = count ?? 0;
       }
-
-      const { data, error, count } = await queryBuilder
-        .order("confidence_score", { ascending: false })
-        .range(offset, offset + limit - 1);
-
-      if (error) {
-        console.error("Keyword search error:", error);
-        return apiInternalError();
-      }
-
-      // 키워드 매칭 기반 점수 계산
-      results = (data || []).map((row, index) => {
-        const score = Math.max(0.7, 0.98 - index * 0.02);
-        return toSearchResult(row as Record<string, unknown>, score);
-      });
-
-      total = count ?? 0;
     }
 
     // Facet 계산 (필터 적용 후 결과 기준)
@@ -555,6 +689,7 @@ export async function POST(request: NextRequest) {
       results,
       total,
       facets,
+      parsedKeywords,  // 한영 혼합 쿼리 분리 결과 (UI 표시용)
     };
 
     // 검색 소요 시간

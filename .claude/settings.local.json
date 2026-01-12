@@ -62,7 +62,11 @@
       "Bash(git stash:*)",
       "WebFetch(domain:rai-lyart.vercel.app)",
       "Bash(vercel:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(npx tsx:*)",
+      "Bash(cd:*)",
+      "Bash(npm run test:*)"
     ]
   }
 }

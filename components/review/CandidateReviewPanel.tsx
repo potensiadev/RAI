@@ -13,6 +13,7 @@ import {
   Phone,
   Mail,
   MapPin,
+  Shield,
 } from "lucide-react";
 import EditableField from "./EditableField";
 import CareerTimelineOrbit from "@/components/detail/CareerTimelineOrbit";
@@ -262,6 +263,11 @@ export default function CandidateReviewPanel({
 
   return (
     <div className="space-y-6">
+      {/* Field Confidence Summary - PRD P2 */}
+      {Object.keys(fieldConfidence).length > 0 && (
+        <FieldConfidenceSummary fieldConfidence={fieldConfidence} />
+      )}
+
       {/* Save Actions */}
       {hasChanges && (
         <div className="flex items-center justify-between p-4 rounded-xl bg-blue-500/10 border border-blue-500/30">
@@ -519,5 +525,117 @@ function ProjectItem({ project }: { project: Project }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Field Confidence Summary Component - PRD P2
+function FieldConfidenceSummary({ fieldConfidence }: { fieldConfidence: Record<string, number> }) {
+  // 필드 이름 한글화
+  const fieldLabels: Record<string, string> = {
+    name: "이름",
+    birth_year: "출생연도",
+    phone: "전화번호",
+    email: "이메일",
+    address: "주소",
+    skills: "스킬",
+    exp_years: "경력 연수",
+    last_company: "최근 회사",
+    last_position: "최근 직책",
+    education_level: "학력",
+    education_school: "학교",
+    education_major: "전공",
+    summary: "요약",
+    careers: "경력 이력",
+  };
+
+  // 신뢰도별 색상
+  const getConfidenceConfig = (conf: number) => {
+    if (conf >= 0.95) return { color: "text-emerald-400", bg: "bg-emerald-400", label: "높음" };
+    if (conf >= 0.8) return { color: "text-yellow-400", bg: "bg-yellow-400", label: "보통" };
+    return { color: "text-red-400", bg: "bg-red-400", label: "낮음" };
+  };
+
+  // 평균 신뢰도 계산
+  const values = Object.values(fieldConfidence);
+  const avgConfidence = values.length > 0
+    ? values.reduce((a, b) => a + b, 0) / values.length
+    : 0;
+
+  // 신뢰도별 필드 분류
+  const highConfFields = Object.entries(fieldConfidence).filter(([, v]) => v >= 0.95);
+  const medConfFields = Object.entries(fieldConfidence).filter(([, v]) => v >= 0.8 && v < 0.95);
+  const lowConfFields = Object.entries(fieldConfidence).filter(([, v]) => v < 0.8);
+
+  return (
+    <section className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Shield className="w-5 h-5 text-primary" />
+          <h2 className="text-sm font-semibold text-white">AI 분석 신뢰도</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">평균</span>
+          <span className={`text-sm font-mono ${getConfidenceConfig(avgConfidence).color}`}>
+            {Math.round(avgConfidence * 100)}%
+          </span>
+        </div>
+      </div>
+
+      {/* 신뢰도 분포 */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span className="text-xs text-emerald-400">높음 (95%+)</span>
+          </div>
+          <p className="text-lg font-semibold text-white mt-1">{highConfFields.length}개</p>
+        </div>
+        <div className="p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-yellow-400" />
+            <span className="text-xs text-yellow-400">보통 (80-94%)</span>
+          </div>
+          <p className="text-lg font-semibold text-white mt-1">{medConfFields.length}개</p>
+        </div>
+        <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-red-400" />
+            <span className="text-xs text-red-400">낮음 (&lt;80%)</span>
+          </div>
+          <p className="text-lg font-semibold text-white mt-1">{lowConfFields.length}개</p>
+        </div>
+      </div>
+
+      {/* 낮은 신뢰도 필드 상세 (80% 미만인 경우에만 표시) */}
+      {lowConfFields.length > 0 && (
+        <div className="mt-3 p-3 rounded-lg bg-red-500/5 border border-red-500/20">
+          <p className="text-xs text-red-400 mb-2 font-medium">검토가 필요한 필드:</p>
+          <div className="space-y-2">
+            {lowConfFields.map(([key, value]) => {
+              const config = getConfidenceConfig(value);
+              return (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400">
+                    {fieldLabels[key] || key}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {/* Progress bar */}
+                    <div className="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${config.bg}`}
+                        style={{ width: `${Math.round(value * 100)}%` }}
+                      />
+                    </div>
+                    <span className={`text-xs font-mono ${config.color}`}>
+                      {Math.round(value * 100)}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

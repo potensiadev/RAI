@@ -5,11 +5,20 @@
  * Query Params:
  * - includeSimilarNames: true/false (기본 false) - 유사 이름 중복 포함 여부
  * - nameThreshold: 0.0-1.0 (기본 0.7) - 유사 이름 임계값
+ * - enhanced: true/false (기본 false) - 향상된 중복 감지 (동명이인 구분)
+ * - definiteThreshold: 0.0-1.0 (기본 0.9) - 확실한 중복 임계값
+ * - potentialThreshold: 0.0-1.0 (기본 0.6) - 잠재적 중복 임계값
  */
 
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { apiSuccess, apiUnauthorized, apiInternalError } from "@/lib/api-response";
+import {
+  findDuplicateGroups,
+  explainDuplicate,
+  type CandidateForDuplicateCheck,
+  type DuplicatePair,
+} from "@/lib/candidates/duplicate-detector";
 
 interface DuplicateGroup {
   hash: string;
@@ -40,6 +49,20 @@ export async function GET(request: NextRequest) {
     const includeSimilarNames = searchParams.get("includeSimilarNames") === "true";
     const nameThresholdParam = searchParams.get("nameThreshold");
     const nameThreshold = nameThresholdParam ? parseFloat(nameThresholdParam) : 0.7;
+
+    // 향상된 중복 감지 모드 (동명이인 구분)
+    const enhanced = searchParams.get("enhanced") === "true";
+    const definiteThreshold = parseFloat(searchParams.get("definiteThreshold") || "0.9");
+    const potentialThreshold = parseFloat(searchParams.get("potentialThreshold") || "0.6");
+
+    // 향상된 모드: 복합 필드 비교로 동명이인 구분
+    if (enhanced) {
+      return handleEnhancedDuplicateDetection(
+        supabase,
+        user.id,
+        { definite: definiteThreshold, potential: potentialThreshold, nameSimilarity: nameThreshold }
+      );
+    }
 
     // 전화번호 해시 기준 중복 조회
     const { data: phoneData, error: phoneError } = await supabase
@@ -235,6 +258,95 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Duplicates API error:", error);
+    return apiInternalError();
+  }
+}
+
+/**
+ * 향상된 중복 감지 핸들러 (동명이인 구분)
+ */
+async function handleEnhancedDuplicateDetection(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  thresholds: { definite: number; potential: number; nameSimilarity: number }
+) {
+  try {
+    // 모든 후보자 조회 (중복 감지에 필요한 필드만)
+    const { data: candidates, error } = await supabase
+      .from("candidates")
+      .select("id, name, email, phone, last_company, last_position, location_city, created_at, source_file")
+      .eq("user_id", userId)
+      .eq("is_latest", true)
+      .eq("status", "completed")
+      .not("name", "is", null);
+
+    if (error) {
+      console.error("Enhanced duplicates query error:", error);
+      return apiInternalError();
+    }
+
+    if (!candidates || candidates.length === 0) {
+      return apiSuccess({
+        enhanced: true,
+        definite: [],
+        potential: [],
+        homonyms: [],
+        summary: {
+          totalCandidates: 0,
+          definiteCount: 0,
+          potentialCount: 0,
+          homonymCount: 0,
+        },
+      });
+    }
+
+    // 중복 그룹 찾기
+    const { definite, potential, homonyms } = findDuplicateGroups(
+      candidates as CandidateForDuplicateCheck[],
+      thresholds
+    );
+
+    // 결과 포맷팅
+    const formatPair = (pair: DuplicatePair) => ({
+      candidate1: {
+        id: pair.candidate1.id,
+        name: pair.candidate1.name,
+        last_company: pair.candidate1.last_company,
+        last_position: pair.candidate1.last_position,
+        created_at: pair.candidate1.created_at,
+      },
+      candidate2: {
+        id: pair.candidate2.id,
+        name: pair.candidate2.name,
+        last_company: pair.candidate2.last_company,
+        last_position: pair.candidate2.last_position,
+        created_at: pair.candidate2.created_at,
+      },
+      similarity: {
+        overall: Math.round(pair.similarity.overall * 100),
+        name: Math.round(pair.similarity.nameScore * 100),
+        email: Math.round(pair.similarity.emailScore * 100),
+        phone: Math.round(pair.similarity.phoneScore * 100),
+        company: Math.round(pair.similarity.companyScore * 100),
+      },
+      explanation: explainDuplicate(pair),
+    });
+
+    return apiSuccess({
+      enhanced: true,
+      definite: definite.map(formatPair),
+      potential: potential.map(formatPair),
+      homonyms: homonyms.slice(0, 50).map(formatPair), // 동명이인은 최대 50개만
+      summary: {
+        totalCandidates: candidates.length,
+        definiteCount: definite.length,
+        potentialCount: potential.length,
+        homonymCount: homonyms.length,
+      },
+    });
+  } catch (error) {
+    console.error("Enhanced duplicates error:", error);
     return apiInternalError();
   }
 }

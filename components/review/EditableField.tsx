@@ -85,6 +85,14 @@ export default function EditableField({
     return "text-red-400";
   };
 
+  // Confidence bar color
+  const getConfidenceBarColor = (conf?: number) => {
+    if (!conf) return "bg-slate-500";
+    if (conf >= 0.95) return "bg-emerald-400";
+    if (conf >= 0.8) return "bg-yellow-400";
+    return "bg-red-400";
+  };
+
   return (
     <div className="group relative">
       {/* Label Row */}
@@ -93,14 +101,24 @@ export default function EditableField({
           {label}
         </label>
 
-        {/* Confidence Badge */}
+        {/* Confidence Badge with Progress Bar */}
         {confidence !== undefined && (
-          <span
-            className={`text-xs font-mono ${getConfidenceColor(confidence)}`}
+          <div
+            className="flex items-center gap-1.5"
             title={`AI 신뢰도: ${Math.round(confidence * 100)}%`}
           >
-            {Math.round(confidence * 100)}%
-          </span>
+            {/* Progress Bar */}
+            <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${getConfidenceBarColor(confidence)}`}
+                style={{ width: `${Math.round(confidence * 100)}%` }}
+              />
+            </div>
+            {/* Percentage Text */}
+            <span className={`text-xs font-mono ${getConfidenceColor(confidence)}`}>
+              {Math.round(confidence * 100)}%
+            </span>
+          </div>
         )}
 
         {/* Warning Badge */}

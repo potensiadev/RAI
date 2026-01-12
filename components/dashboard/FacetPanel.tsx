@@ -28,6 +28,11 @@ interface FacetSectionProps {
   maxItems?: number;
 }
 
+/**
+ * FacetSection: 동적 facet 항목 표시
+ * - 선택된 항목은 count가 0이어도 표시 유지 (PRD P1)
+ * - 0 count 항목은 비활성화 스타일 적용
+ */
 function FacetSection({
   title,
   icon,
@@ -39,10 +44,30 @@ function FacetSection({
   const [isExpanded, setIsExpanded] = useState(true);
   const [showAll, setShowAll] = useState(false);
 
-  const displayItems = showAll ? items : items.slice(0, maxItems);
-  const hasMore = items.length > maxItems;
+  // 선택된 항목 중 현재 facets에 없는 것들을 추가 (count: 0)
+  const selectedNotInFacets = selectedItems.filter(
+    (selected) => !items.some((item) => item.value === selected)
+  );
+  const selectedItemsWithZero: FacetItem[] = selectedNotInFacets.map((value) => ({
+    value,
+    count: 0,
+  }));
 
-  if (items.length === 0) return null;
+  // 선택된 항목을 맨 앞에 배치, 그 다음 나머지 facet 항목
+  const mergedItems = [
+    // 선택된 항목 (facets에 있는 것)
+    ...items.filter((item) => selectedItems.includes(item.value)),
+    // 선택된 항목 (facets에 없는 것, count: 0)
+    ...selectedItemsWithZero,
+    // 선택되지 않은 항목 (count > 0만)
+    ...items.filter((item) => !selectedItems.includes(item.value) && item.count > 0),
+  ];
+
+  const displayItems = showAll ? mergedItems : mergedItems.slice(0, maxItems);
+  const hasMore = mergedItems.length > maxItems;
+
+  // 모든 항목이 없거나, 선택된 것도 없고 count도 모두 0이면 숨김
+  if (mergedItems.length === 0) return null;
 
   return (
     <div className="mb-4">
@@ -53,7 +78,7 @@ function FacetSection({
         <div className="flex items-center gap-2">
           {icon}
           <span>{title}</span>
-          <span className="text-xs text-slate-500">({items.length})</span>
+          <span className="text-xs text-slate-500">({mergedItems.length})</span>
         </div>
         {isExpanded ? (
           <ChevronUp className="w-4 h-4" />
@@ -73,13 +98,19 @@ function FacetSection({
             <div className="space-y-1 mt-1">
               {displayItems.map((item) => {
                 const isSelected = selectedItems.includes(item.value);
+                const isZeroCount = item.count === 0;
+                const isDisabled = isZeroCount && !isSelected;
+
                 return (
                   <button
                     key={item.value}
                     onClick={() => onItemClick(item.value)}
+                    disabled={isDisabled}
                     className={`flex items-center justify-between w-full px-2 py-1.5 rounded-lg text-sm transition-colors ${
                       isSelected
                         ? "bg-primary/20 text-primary border border-primary/30"
+                        : isZeroCount
+                        ? "text-slate-600 cursor-not-allowed opacity-50"
                         : "text-slate-400 hover:text-white hover:bg-slate-700/50"
                     }`}
                   >
@@ -87,7 +118,9 @@ function FacetSection({
                     <span
                       className={`text-xs px-1.5 py-0.5 rounded ${
                         isSelected
-                          ? "bg-primary/30 text-primary"
+                          ? isZeroCount
+                            ? "bg-yellow-500/20 text-yellow-400"
+                            : "bg-primary/30 text-primary"
                           : "bg-slate-700 text-slate-500"
                       }`}
                     >
@@ -101,7 +134,7 @@ function FacetSection({
                   onClick={() => setShowAll(!showAll)}
                   className="w-full px-2 py-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
                 >
-                  {showAll ? "접기" : `+${items.length - maxItems}개 더 보기`}
+                  {showAll ? "접기" : `+${mergedItems.length - maxItems}개 더 보기`}
                 </button>
               )}
             </div>
@@ -190,12 +223,18 @@ export default function FacetPanel({
     }
   };
 
-  const expYearsItems: { range: string; label: string; count: number }[] = [
+  // 경력 연수 항목 - 선택된 항목은 count가 0이어도 표시 (PRD P1)
+  const allExpYearsItems: { range: string; label: string; count: number }[] = [
     { range: "0-3", label: "0-3년", count: facets.expYears["0-3"] },
     { range: "3-5", label: "3-5년", count: facets.expYears["3-5"] },
     { range: "5-10", label: "5-10년", count: facets.expYears["5-10"] },
     { range: "10+", label: "10년+", count: facets.expYears["10+"] },
-  ].filter((item) => item.count > 0);
+  ];
+
+  // 선택되었거나 count > 0인 항목만 표시
+  const expYearsItems = allExpYearsItems.filter(
+    (item) => item.count > 0 || isExpRangeSelected(item.range)
+  );
 
   const hasActiveFilters =
     (filters.skills?.length || 0) > 0 ||
@@ -239,20 +278,33 @@ export default function FacetPanel({
             <span>Experience</span>
           </div>
           <div className="flex flex-wrap gap-1.5 mt-1">
-            {expYearsItems.map((item) => (
-              <button
-                key={item.range}
-                onClick={() => handleExpYearsClick(item.range)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors ${
-                  isExpRangeSelected(item.range)
-                    ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                    : "bg-slate-700/50 text-slate-400 hover:text-white border border-slate-600"
-                }`}
-              >
-                <span>{item.label}</span>
-                <span className="text-slate-500">({item.count})</span>
-              </button>
-            ))}
+            {expYearsItems.map((item) => {
+              const isSelected = isExpRangeSelected(item.range);
+              const isZeroCount = item.count === 0;
+              const isDisabled = isZeroCount && !isSelected;
+
+              return (
+                <button
+                  key={item.range}
+                  onClick={() => handleExpYearsClick(item.range)}
+                  disabled={isDisabled}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors ${
+                    isSelected
+                      ? isZeroCount
+                        ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                        : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                      : isZeroCount
+                      ? "bg-slate-700/30 text-slate-600 border border-slate-700 cursor-not-allowed opacity-50"
+                      : "bg-slate-700/50 text-slate-400 hover:text-white border border-slate-600"
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  <span className={isZeroCount && isSelected ? "text-yellow-500" : "text-slate-500"}>
+                    ({item.count})
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

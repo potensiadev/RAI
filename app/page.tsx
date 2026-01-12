@@ -13,6 +13,8 @@ import {
   FileSearch,
   Lock,
   CheckCircle,
+  Menu,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import DeepSpaceBackground from "@/components/layout/DeepSpaceBackground";
@@ -156,8 +158,16 @@ function StatItem({ value, label, delay }: { value: string; label: string; delay
   );
 }
 
+// Navigation links
+const navLinks = [
+  { href: "/products", label: "Products" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/support", label: "Support" },
+];
+
 export default function LandingPage() {
   const [mounted, setMounted] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
 
@@ -177,6 +187,17 @@ export default function LandingPage() {
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [mouseX, mouseY]);
+
+  // Close mobile menu on resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const features = [
     {
@@ -238,16 +259,31 @@ export default function LandingPage() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="flex items-center justify-between px-8 py-6 max-w-7xl mx-auto"
+          className="flex items-center justify-between px-6 md:px-8 py-6 max-w-7xl mx-auto"
         >
-          <div className="flex items-center gap-3">
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
               <Sparkles className="w-5 h-5 text-primary" />
             </div>
             <span className="text-xl font-bold text-white">RAI</span>
+          </Link>
+
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center gap-8">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="text-sm text-slate-300 hover:text-white transition-colors"
+              >
+                {link.label}
+              </Link>
+            ))}
           </div>
 
-          <div className="flex items-center gap-4">
+          {/* Desktop Auth Buttons */}
+          <div className="hidden md:flex items-center gap-4">
             <Link
               href="/login"
               className="px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors"
@@ -262,7 +298,56 @@ export default function LandingPage() {
               시작하기
             </Link>
           </div>
+
+          {/* Mobile Menu Button */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="md:hidden p-2 text-slate-300 hover:text-white transition-colors"
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
         </motion.nav>
+
+        {/* Mobile Menu */}
+        <motion.div
+          initial={false}
+          animate={{
+            height: mobileMenuOpen ? "auto" : 0,
+            opacity: mobileMenuOpen ? 1 : 0,
+          }}
+          transition={{ duration: 0.3 }}
+          className="md:hidden overflow-hidden"
+        >
+          <div className="px-6 pb-6 space-y-4">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className="block py-2 text-slate-300 hover:text-white transition-colors"
+              >
+                {link.label}
+              </Link>
+            ))}
+            <div className="pt-4 border-t border-white/10 space-y-3">
+              <Link
+                href="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block py-2 text-slate-300 hover:text-white transition-colors"
+              >
+                로그인
+              </Link>
+              <Link
+                href="/signup"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block py-3 px-4 rounded-lg bg-primary text-white text-center font-medium"
+              >
+                시작하기
+              </Link>
+            </div>
+          </div>
+        </motion.div>
 
         {/* Hero Section */}
         <section className="relative px-8 pt-20 pb-32 max-w-7xl mx-auto">

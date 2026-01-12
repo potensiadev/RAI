@@ -11,13 +11,14 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import type { SearchFilters as FilterType } from "@/types";
+import type { SearchFilters as FilterType, SearchFacets } from "@/types";
 
 interface SearchFiltersProps {
   filters: FilterType;
   onFiltersChange: (filters: FilterType) => void;
   isOpen: boolean;
   onToggle: () => void;
+  facets?: SearchFacets; // 선택적 facets - 제공되면 count 표시
 }
 
 // 일반적인 스킬 목록
@@ -58,8 +59,27 @@ export default function SearchFilters({
   onFiltersChange,
   isOpen,
   onToggle,
+  facets,
 }: SearchFiltersProps) {
   const [localFilters, setLocalFilters] = useState<FilterType>(filters);
+
+  // facets에서 스킬 count 가져오기
+  const getSkillCount = (skill: string): number | undefined => {
+    if (!facets) return undefined;
+    const found = facets.skills.find(
+      (s) => s.value.toLowerCase() === skill.toLowerCase()
+    );
+    return found?.count;
+  };
+
+  // facets에서 지역 count 가져오기
+  const getLocationCount = (location: string): number | undefined => {
+    if (!facets) return undefined;
+    const found = facets.locations.find(
+      (l) => l.value.includes(location) || location.includes(l.value)
+    );
+    return found?.count;
+  };
 
   const handleSkillToggle = (skill: string) => {
     const currentSkills = localFilters.skills || [];
@@ -193,19 +213,36 @@ export default function SearchFilters({
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {LOCATIONS.map((location) => (
-                  <button
-                    key={location}
-                    onClick={() => handleLocationChange(location)}
-                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                      localFilters.location === location
-                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                        : "bg-slate-700/50 text-slate-400 hover:text-white border border-slate-600"
-                    }`}
-                  >
-                    {location}
-                  </button>
-                ))}
+                {LOCATIONS.map((location) => {
+                  const count = getLocationCount(location);
+                  const isSelected = localFilters.location === location;
+                  const isZeroCount = facets && count === 0;
+                  const isDisabled = isZeroCount && !isSelected;
+
+                  return (
+                    <button
+                      key={location}
+                      onClick={() => handleLocationChange(location)}
+                      disabled={isDisabled}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
+                        isSelected
+                          ? isZeroCount
+                            ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                            : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                          : isDisabled
+                          ? "bg-slate-700/30 text-slate-600 border border-slate-700 cursor-not-allowed opacity-50"
+                          : "bg-slate-700/50 text-slate-400 hover:text-white border border-slate-600"
+                      }`}
+                    >
+                      <span>{location}</span>
+                      {count !== undefined && (
+                        <span className={`text-[10px] ${isSelected ? "text-emerald-300" : "text-slate-500"}`}>
+                          ({count})
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -218,19 +255,36 @@ export default function SearchFilters({
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {COMMON_SKILLS.map((skill) => (
-                  <button
-                    key={skill}
-                    onClick={() => handleSkillToggle(skill)}
-                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                      (localFilters.skills || []).includes(skill)
-                        ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                        : "bg-slate-700/50 text-slate-400 hover:text-white border border-slate-600"
-                    }`}
-                  >
-                    {skill}
-                  </button>
-                ))}
+                {COMMON_SKILLS.map((skill) => {
+                  const count = getSkillCount(skill);
+                  const isSelected = (localFilters.skills || []).includes(skill);
+                  const isZeroCount = facets && count === 0;
+                  const isDisabled = isZeroCount && !isSelected;
+
+                  return (
+                    <button
+                      key={skill}
+                      onClick={() => handleSkillToggle(skill)}
+                      disabled={isDisabled}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
+                        isSelected
+                          ? isZeroCount
+                            ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                            : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                          : isDisabled
+                          ? "bg-slate-700/30 text-slate-600 border border-slate-700 cursor-not-allowed opacity-50"
+                          : "bg-slate-700/50 text-slate-400 hover:text-white border border-slate-600"
+                      }`}
+                    >
+                      <span>{skill}</span>
+                      {count !== undefined && (
+                        <span className={`text-[10px] ${isSelected ? "text-yellow-300" : "text-slate-500"}`}>
+                          ({count})
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </motion.div>

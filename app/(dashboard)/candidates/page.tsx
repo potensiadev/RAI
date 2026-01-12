@@ -15,6 +15,7 @@ import {
   Code,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // Progressive Loading: ProcessingCard
 import ProcessingCard from "@/components/dashboard/ProcessingCard";
@@ -383,9 +384,15 @@ export default function CandidatesPage() {
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       ) : filteredCandidates.length === 0 ? (
-        <div className="text-center py-20 text-slate-400">
-          {searchQuery ? "검색 결과가 없습니다" : "등록된 후보자가 없습니다"}
-        </div>
+        <EmptyState
+          variant={searchQuery ? "search-results" : "candidates"}
+          title={searchQuery ? "검색 결과가 없습니다" : undefined}
+          description={searchQuery ? "다른 조건으로 검색해보세요." : undefined}
+          cta={!searchQuery ? {
+            label: "이력서 업로드",
+            href: "/dashboard",
+          } : undefined}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredCandidates.map((candidate) => {

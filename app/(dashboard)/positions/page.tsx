@@ -19,6 +19,7 @@ import {
   Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { PositionStatus, PositionPriority } from "@/types/position";
 
 interface Position {
@@ -272,21 +273,20 @@ export default function PositionsPage() {
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       ) : filteredPositions.length === 0 ? (
-        <div className="text-center py-20">
-          <Briefcase className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-          <p className="text-slate-400 mb-4">
-            {searchQuery || statusFilter !== "all" ? "검색 결과가 없습니다" : "등록된 포지션이 없습니다"}
-          </p>
-          {!searchQuery && statusFilter === "all" && (
-            <Link
-              href="/positions/new"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              첫 포지션 등록하기
-            </Link>
-          )}
-        </div>
+        <EmptyState
+          variant={searchQuery || statusFilter !== "all" ? "search-results" : "positions"}
+          title={searchQuery || statusFilter !== "all" ? "검색 결과가 없습니다" : undefined}
+          description={searchQuery || statusFilter !== "all"
+            ? "다른 조건으로 검색해보세요."
+            : undefined}
+          cta={!searchQuery && statusFilter === "all" ? {
+            label: "첫 포지션 등록하기",
+            href: "/positions/new",
+          } : statusFilter !== "all" ? {
+            label: "전체 보기",
+            onClick: () => setStatusFilter("all"),
+          } : undefined}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredPositions.map((position) => {

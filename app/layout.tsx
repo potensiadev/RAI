@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { QueryProvider } from "@/providers/QueryProvider";
+import { ToastProviderWrapper } from "@/providers/ToastProviderWrapper";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +35,9 @@ export default function RootLayout({
         )}
       >
         <QueryProvider>
-          {children}
+          <ToastProviderWrapper>
+            {children}
+          </ToastProviderWrapper>
         </QueryProvider>
       </body>
     </html>

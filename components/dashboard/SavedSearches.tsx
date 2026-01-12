@@ -14,6 +14,9 @@ import {
   Loader2,
 } from "lucide-react";
 import type { SearchFilters } from "@/types";
+import { useToast } from "@/components/ui/toast";
+import { EmptyState } from "@/components/ui/empty-state";
+import { DeleteConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface SavedSearch {
   id: string;
@@ -43,6 +46,9 @@ export default function SavedSearches({
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newSearchName, setNewSearchName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SavedSearch | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const toast = useToast();
 
   // 저장된 검색 목록 조회
   const fetchSavedSearches = useCallback(async () => {
@@ -92,13 +98,17 @@ export default function SavedSearches({
         await fetchSavedSearches();
         setShowSaveDialog(false);
         setNewSearchName("");
+        toast.success("검색이 저장되었습니다", `"${newSearchName.trim()}" 저장 완료`);
       } else {
         const data = await response.json();
-        setError(data.error?.message || "저장에 실패했습니다.");
+        const errorMsg = data.error?.message || "저장에 실패했습니다.";
+        setError(errorMsg);
+        toast.error("저장 실패", errorMsg);
       }
     } catch (err) {
       console.error("Failed to save search:", err);
       setError("저장 중 오류가 발생했습니다.");
+      toast.error("저장 실패", "네트워크 오류가 발생했습니다.");
     } finally {
       setIsSaving(false);
     }
@@ -118,24 +128,40 @@ export default function SavedSearches({
     // 검색 적용
     onLoadSearch(search.query || "", search.filters);
     setIsOpen(false);
+    toast.info("검색 적용됨", `"${search.name}" 검색이 적용되었습니다.`);
   };
 
-  // 저장된 검색 삭제
-  const handleDeleteSearch = async (id: string, e: React.MouseEvent) => {
+  // 삭제 다이얼로그 열기
+  const openDeleteDialog = (search: SavedSearch, e: React.MouseEvent) => {
     e.stopPropagation();
+    setDeleteTarget(search);
+  };
 
-    if (!confirm("이 저장된 검색을 삭제하시겠습니까?")) return;
+  // 저장된 검색 삭제 실행
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    setIsDeleting(true);
+    const searchName = deleteTarget.name;
+    const searchId = deleteTarget.id;
 
     try {
-      const response = await fetch(`/api/saved-searches/${id}`, {
+      const response = await fetch(`/api/saved-searches/${searchId}`, {
         method: "DELETE",
       });
 
       if (response.ok) {
-        setSavedSearches((prev) => prev.filter((s) => s.id !== id));
+        setSavedSearches((prev) => prev.filter((s) => s.id !== searchId));
+        toast.success("검색이 삭제되었습니다", `"${searchName}" 삭제 완료`);
+        setDeleteTarget(null);
+      } else {
+        toast.error("삭제 실패", "검색을 삭제할 수 없습니다.");
       }
     } catch (err) {
       console.error("Failed to delete saved search:", err);
+      toast.error("삭제 실패", "네트워크 오류가 발생했습니다.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -292,13 +318,14 @@ export default function SavedSearches({
                   <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
                 </div>
               ) : savedSearches.length === 0 ? (
-                <div className="text-center py-8">
-                  <Bookmark className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                  <p className="text-sm text-slate-500">저장된 검색이 없습니다</p>
-                  <p className="text-xs text-slate-600 mt-1">
-                    자주 사용하는 검색을 저장해보세요
-                  </p>
-                </div>
+                <EmptyState
+                  variant="saved-searches"
+                  className="py-8"
+                  cta={canSave ? {
+                    label: "현재 검색 저장",
+                    onClick: () => setShowSaveDialog(true),
+                  } : undefined}
+                />
               ) : (
                 <div className="space-y-2">
                   {savedSearches.map((search) => (
@@ -328,7 +355,7 @@ export default function SavedSearches({
                             {search.useCount}회
                           </div>
                           <button
-                            onClick={(e) => handleDeleteSearch(search.id, e)}
+                            onClick={(e) => openDeleteDialog(search, e)}
                             className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -343,6 +370,16 @@ export default function SavedSearches({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* 삭제 확인 다이얼로그 */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        itemName={deleteTarget?.name}
+        itemType="저장된 검색"
+        onConfirm={handleConfirmDelete}
+        isLoading={isDeleting}
+      />
     </div>
   );
 }

@@ -100,6 +100,19 @@ export const SKILL_SYNONYMS: Record<string, string[]> = {
   Figma: ["figma", "피그마"],
   Jira: ["jira", "지라"],
   Confluence: ["confluence", "컨플루언스"],
+
+  // Korean Job Titles (Mixed Language Query Support)
+  개발자: ["developer", "Developer", "엔지니어", "Engineer", "프로그래머", "programmer"],
+  시니어: ["senior", "Senior", "Sr", "sr.", "경력"],
+  주니어: ["junior", "Junior", "Jr", "jr.", "신입"],
+  리드: ["lead", "Lead", "팀장", "테크리드", "Tech Lead"],
+  프론트엔드: ["frontend", "Frontend", "Front-end", "front-end", "FE", "프론트"],
+  백엔드: ["backend", "Backend", "Back-end", "back-end", "BE", "서버"],
+  풀스택: ["fullstack", "Fullstack", "Full-stack", "full-stack", "풀스택개발자"],
+  데브옵스: ["devops", "DevOps", "SRE", "sre", "인프라"],
+  데이터: ["data", "Data", "데이터엔지니어", "Data Engineer"],
+  머신러닝: ["ML", "ml", "Machine Learning", "machine learning", "기계학습"],
+  인공지능: ["AI", "ai", "Artificial Intelligence", "artificial intelligence"],
 };
 
 // 동의어 -> 정규화된 스킬명 역방향 매핑

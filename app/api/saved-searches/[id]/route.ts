@@ -147,6 +147,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return apiForbidden("이 검색을 수정할 권한이 없습니다.");
     }
 
+    // 입력 길이 검증
+    if (body.name && body.name.length > 100) {
+      return apiBadRequest("검색 이름은 100자 이내로 입력해주세요.");
+    }
+
+    if (body.query && body.query.length > 5000) {
+      return apiBadRequest("검색 쿼리는 5000자 이내로 입력해주세요.");
+    }
+
     // 이름 변경 시 중복 검사
     if (body.name && body.name.trim().length > 0) {
       const { data: duplicate } = await supabase

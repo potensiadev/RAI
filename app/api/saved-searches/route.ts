@@ -139,6 +139,11 @@ export async function POST(request: NextRequest) {
       return apiBadRequest("검색 이름은 100자 이내로 입력해주세요.");
     }
 
+    // 쿼리 길이 제한 (5000자)
+    if (body.query && body.query.length > 5000) {
+      return apiBadRequest("검색 쿼리는 5000자 이내로 입력해주세요.");
+    }
+
     // 중복 이름 검사
     const { data: existing } = await supabase
       .from("saved_searches")

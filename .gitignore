@@ -51,3 +51,6 @@ venv/
 
 # misc
 nul
+
+# Claude temp files
+tmpclaude-*

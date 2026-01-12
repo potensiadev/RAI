@@ -205,8 +205,10 @@ async function convertPdfToImages(buffer: Buffer): Promise<string[]> {
 
   const base64Images: string[] = [];
   for (const page of pngPages) {
-    const base64 = page.content.toString("base64");
-    base64Images.push(`data:image/png;base64,${base64}`);
+    if (page.content) {
+      const base64 = page.content.toString("base64");
+      base64Images.push(`data:image/png;base64,${base64}`);
+    }
   }
 
   console.log(`Converted ${base64Images.length} pages to images`);

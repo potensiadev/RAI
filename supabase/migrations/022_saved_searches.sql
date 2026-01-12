@@ -5,7 +5,7 @@
 
 -- 1. saved_searches 테이블 생성
 CREATE TABLE IF NOT EXISTS saved_searches (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
   name TEXT NOT NULL,                    -- 검색 이름 (사용자 지정)

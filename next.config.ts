@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
   },
   // Exclude packages from bundling (have compatibility issues)
   serverExternalPackages: ["pdf-parse", "pdf-to-png-converter", "pdfjs-dist"],
+  // Turbopack configuration (empty to acknowledge webpack config)
+  turbopack: {},
   // Webpack configuration for pdf-parse compatibility
   webpack: (config) => {
     config.resolve.alias = {

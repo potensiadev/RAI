@@ -6,6 +6,7 @@ import {
   apiBadRequest,
   apiInternalError,
 } from "@/lib/api-response";
+import { invalidateUserSearchCache } from "@/lib/cache";
 
 // NextResponse는 Health check GET에서 사용
 
@@ -143,6 +144,25 @@ export async function POST(request: NextRequest) {
         `[Webhook] Job completed: candidate=${payload.result.candidate_id}, ` +
         `is_update=${payload.result.is_update}, parent_id=${payload.result.parent_id}`
       );
+
+      // ─────────────────────────────────────────────────
+      // 검색 캐시 무효화 (새 후보자 추가/수정 시)
+      // ─────────────────────────────────────────────────
+      try {
+        const { data: candidateData } = await supabase
+          .from("candidates")
+          .select("user_id")
+          .eq("id", payload.result.candidate_id)
+          .single();
+
+        if (candidateData?.user_id) {
+          await invalidateUserSearchCache(candidateData.user_id);
+          console.log(`[Webhook] Search cache invalidated for user: ${candidateData.user_id.slice(0, 8)}`);
+        }
+      } catch (cacheError) {
+        // 캐시 무효화 실패는 로그만 남기고 계속 진행
+        console.warn("[Webhook] Cache invalidation failed:", cacheError);
+      }
     }
 
     if (payload.status === "failed") {

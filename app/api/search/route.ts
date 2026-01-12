@@ -1,9 +1,11 @@
 /**
  * POST /api/search
  * 하이브리드 검색 (RDB 필터 + Vector 검색)
- * - Step 1: RDB 필터 (exp_years, skills, location)
- * - Step 2: Vector 검색 (필터된 후보자 대상)
+ * - Step 1: 캐시 확인 (Redis)
+ * - Step 2: RDB 필터 (exp_years, skills, location)
+ * - Step 3: Vector 검색 (필터된 후보자 대상)
  * - 청크 타입별 가중치 적용
+ * - 결과 캐싱 (SWR 패턴)
  */
 
 import { NextRequest } from "next/server";
@@ -28,6 +30,12 @@ import {
   type ChunkType,
 } from "@/types";
 import { getSkillSynonyms } from "@/lib/search/synonyms";
+import {
+  generateCacheKey,
+  getCacheStrategy,
+  getSearchFromCache,
+  setSearchCache,
+} from "@/lib/cache";
 
 // ─────────────────────────────────────────────────
 // Facet 계산 유틸리티
@@ -283,8 +291,40 @@ export async function POST(request: NextRequest) {
     // 검색어 정제: 앞뒤 공백 제거
     const sanitizedQuery = query.trim();
 
+    // ─────────────────────────────────────────────────
+    // 캐시 확인 (Redis)
+    // ─────────────────────────────────────────────────
+    const hasFilters = !!(
+      filters?.expYearsMin !== undefined ||
+      filters?.expYearsMax !== undefined ||
+      (filters?.skills && filters.skills.length > 0) ||
+      filters?.location ||
+      (filters?.companies && filters.companies.length > 0) ||
+      (filters?.excludeCompanies && filters.excludeCompanies.length > 0)
+    );
+
+    const cacheKey = generateCacheKey(user.id, sanitizedQuery, filters);
+    const cacheStrategy = getCacheStrategy(sanitizedQuery, hasFilters);
+
+    // 캐시에서 조회
+    const cachedResult = await getSearchFromCache(cacheKey, cacheStrategy);
+    if (cachedResult && !cachedResult.isStale) {
+      // 캐시 히트 - 즉시 반환
+      const response = cachedResult.data;
+      return apiSuccess(response, {
+        total: response.total,
+        page: Math.floor(offset / limit) + 1,
+        limit,
+        cached: true,
+        cacheAge: cachedResult.cacheAge,
+      });
+    }
+
     // 검색 모드 결정: 10자 이상이면 Semantic(Vector), 아니면 Keyword(RDB)
     const isSemanticSearch = sanitizedQuery.length > 10;
+
+    // 검색 시작 시간 (성능 측정)
+    const searchStartTime = Date.now();
 
     let results: CandidateSearchResult[] = [];
     let total = 0;
@@ -517,10 +557,21 @@ export async function POST(request: NextRequest) {
       facets,
     };
 
+    // 검색 소요 시간
+    const responseTime = Date.now() - searchStartTime;
+
+    // ─────────────────────────────────────────────────
+    // 결과 캐싱 (비동기, 응답 차단 안 함)
+    // ─────────────────────────────────────────────────
+    setSearchCache(cacheKey, response, sanitizedQuery, filters, cacheStrategy)
+      .catch((err) => console.error("[SearchCache] Cache save error:", err));
+
     return apiSuccess(response, {
       total,
       page: Math.floor(offset / limit) + 1,
       limit,
+      cached: false,
+      responseTime,
     });
   } catch (error) {
     console.error("Search API error:", error);

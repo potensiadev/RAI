@@ -1,13 +1,15 @@
 /**
- * Search Result Caching with Redis
+ * Search Result Caching with Upstash Redis (REST API)
  *
  * 헤드헌터 검색 경험 최적화를 위한 캐싱 전략:
  * - 인기 검색어: 10분 캐시 + 5분 stale-while-revalidate
  * - 일반 검색: 5분 캐시 + 1분 stale-while-revalidate
  * - 필터 조합: 3분 캐시 + 1분 stale-while-revalidate
+ *
+ * Upstash REST SDK 사용 - Serverless/Edge 환경 최적화
  */
 
-import { createClient, RedisClientType } from 'redis';
+import { Redis } from '@upstash/redis';
 import type { SearchResponse, SearchFilters } from '@/types';
 
 // ─────────────────────────────────────────────────
@@ -34,66 +36,28 @@ interface CacheResult {
 }
 
 // ─────────────────────────────────────────────────
-// Redis Client Singleton
+// Upstash Redis Client (Lazy Initialization)
 // ─────────────────────────────────────────────────
 
-let redisClient: RedisClientType | null = null;
-let connectionPromise: Promise<RedisClientType | null> | null = null;
+let redisClient: Redis | null = null;
 
-async function getRedisClient(): Promise<RedisClientType | null> {
-  const redisUrl = process.env.REDIS_URL;
+function getRedisClient(): Redis | null {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-  if (!redisUrl) {
-    console.warn('[SearchCache] REDIS_URL not configured, caching disabled');
+  if (!url || !token) {
+    // 환경변수 미설정 시 캐싱 비활성화 (정상 동작)
     return null;
   }
 
-  // 이미 연결된 클라이언트가 있으면 반환
-  if (redisClient?.isOpen) {
-    return redisClient;
+  if (!redisClient) {
+    redisClient = new Redis({
+      url,
+      token,
+    });
   }
 
-  // 연결 중이면 기다림
-  if (connectionPromise) {
-    return connectionPromise;
-  }
-
-  // 새 연결 시작
-  connectionPromise = (async () => {
-    try {
-      const client = createClient({
-        url: redisUrl,
-        socket: {
-          connectTimeout: 5000,
-          reconnectStrategy: (retries) => {
-            if (retries > 3) {
-              console.error('[SearchCache] Redis reconnection failed after 3 attempts');
-              return new Error('Redis reconnection failed');
-            }
-            return Math.min(retries * 100, 3000);
-          },
-        },
-      });
-
-      client.on('error', (err) => {
-        console.error('[SearchCache] Redis client error:', err.message);
-      });
-
-      client.on('connect', () => {
-        console.log('[SearchCache] Redis connected');
-      });
-
-      await client.connect();
-      redisClient = client as RedisClientType;
-      return redisClient;
-    } catch (error) {
-      console.error('[SearchCache] Redis connection failed:', error);
-      connectionPromise = null;
-      return null;
-    }
-  })();
-
-  return connectionPromise;
+  return redisClient;
 }
 
 // ─────────────────────────────────────────────────
@@ -138,7 +102,7 @@ const POPULAR_QUERIES = new Set([
 
   // Data & AI
   'data', 'ml', 'machine learning', 'ai', '데이터', 'data engineer',
-  'python', 'pytorch', 'tensorflow',
+  'pytorch', 'tensorflow',
 
   // General
   '개발자', 'developer', 'engineer', 'senior', 'junior', 'lead',
@@ -265,13 +229,11 @@ export async function getSearchFromCache(
   strategy: CacheConfig
 ): Promise<CacheResult | null> {
   try {
-    const client = await getRedisClient();
+    const client = getRedisClient();
     if (!client) return null;
 
-    const cachedStr = await client.get(key);
-    if (!cachedStr) return null;
-
-    const cached: CachedData = JSON.parse(cachedStr);
+    const cached = await client.get<CachedData>(key);
+    if (!cached) return null;
 
     const now = Date.now();
     const age = now - cached.timestamp;
@@ -312,7 +274,7 @@ export async function setSearchCache(
   strategy: CacheConfig
 ): Promise<void> {
   try {
-    const client = await getRedisClient();
+    const client = getRedisClient();
     if (!client) return;
 
     const cacheData: CachedData = {
@@ -325,7 +287,7 @@ export async function setSearchCache(
     // TTL + stale 시간만큼 저장
     const totalTtl = strategy.ttl + strategy.staleWhileRevalidate;
 
-    await client.setEx(key, totalTtl, JSON.stringify(cacheData));
+    await client.setex(key, totalTtl, cacheData);
   } catch (error) {
     console.error('[SearchCache] Set error:', error);
     // 캐시 실패는 무시 (검색은 정상 동작)
@@ -338,15 +300,25 @@ export async function setSearchCache(
  */
 export async function invalidateUserSearchCache(userId: string): Promise<void> {
   try {
-    const client = await getRedisClient();
+    const client = getRedisClient();
     if (!client) return;
 
     const pattern = `search:${userId.slice(0, 8)}:*`;
-    const keys = await client.keys(pattern);
 
-    if (keys.length > 0) {
-      await client.del(keys);
-      console.log(`[SearchCache] Invalidated ${keys.length} cache entries for user ${userId.slice(0, 8)}`);
+    // Upstash scan으로 키 검색 (cursor는 string 타입)
+    let cursor = "0";
+    const keysToDelete: string[] = [];
+
+    do {
+      const result = await client.scan(cursor, { match: pattern, count: 100 });
+      cursor = String(result[0]);
+      keysToDelete.push(...result[1]);
+    } while (cursor !== "0");
+
+    if (keysToDelete.length > 0) {
+      // 배치 삭제
+      await Promise.all(keysToDelete.map(key => client.del(key)));
+      console.log(`[SearchCache] Invalidated ${keysToDelete.length} cache entries for user ${userId.slice(0, 8)}`);
     }
   } catch (error) {
     console.error('[SearchCache] Invalidation error:', error);
@@ -428,15 +400,21 @@ export async function getCacheStats(userId: string): Promise<{
   oldestCache?: number;
 }> {
   try {
-    const client = await getRedisClient();
+    const client = getRedisClient();
     if (!client) return { totalKeys: 0 };
 
     const pattern = `search:${userId.slice(0, 8)}:*`;
-    const keys = await client.keys(pattern);
 
-    return {
-      totalKeys: keys.length,
-    };
+    let cursor = "0";
+    let totalKeys = 0;
+
+    do {
+      const result = await client.scan(cursor, { match: pattern, count: 100 });
+      cursor = String(result[0]);
+      totalKeys += result[1].length;
+    } while (cursor !== "0");
+
+    return { totalKeys };
   } catch (error) {
     console.error('[SearchCache] Stats error:', error);
     return { totalKeys: 0 };
@@ -447,6 +425,14 @@ export async function getCacheStats(userId: string): Promise<{
  * Redis 연결 상태 확인
  */
 export async function isCacheEnabled(): Promise<boolean> {
-  const client = await getRedisClient();
-  return client !== null && client.isOpen;
+  try {
+    const client = getRedisClient();
+    if (!client) return false;
+
+    // Upstash ping
+    const result = await client.ping();
+    return result === 'PONG';
+  } catch {
+    return false;
+  }
 }

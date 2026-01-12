@@ -7,13 +7,15 @@ import { cn } from "@/lib/utils";
 import { MAGNETIC_SPRING } from "@/lib/physics";
 import { useSearch } from "@/hooks";
 import SearchFilters from "./SearchFilters";
-import type { CandidateSearchResult, SearchFilters as FilterType } from "@/types";
+import type { CandidateSearchResult, SearchFilters as FilterType, SearchFacets } from "@/types";
 
 interface SpotlightSearchProps {
     query: string;
     onQueryChange: (query: string) => void;
-    onSearchResults?: (results: CandidateSearchResult[], isSearching: boolean) => void;
+    onSearchResults?: (results: CandidateSearchResult[], isSearching: boolean, facets?: SearchFacets) => void;
     onSearchModeChange?: (isSearchMode: boolean) => void;
+    onFiltersChange?: (filters: FilterType) => void;
+    filters?: FilterType;
 }
 
 export default function SpotlightSearch({
@@ -21,12 +23,18 @@ export default function SpotlightSearch({
     onQueryChange,
     onSearchResults,
     onSearchModeChange,
+    onFiltersChange,
+    filters: externalFilters,
 }: SpotlightSearchProps) {
     const [isFocused, setIsFocused] = useState(false);
-    const [filters, setFilters] = useState<FilterType>({});
+    const [internalFilters, setInternalFilters] = useState<FilterType>({});
     const [isFiltersOpen, setIsFiltersOpen] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Use external filters if provided, otherwise use internal state
+    const filters = externalFilters ?? internalFilters;
+    const setFilters = onFiltersChange ?? setInternalFilters;
 
     // React Query mutation
     const searchMutation = useSearch();
@@ -38,24 +46,24 @@ export default function SpotlightSearch({
     const executeSearch = useCallback(
         async (searchQuery: string, searchFilters?: FilterType) => {
             if (!searchQuery.trim()) {
-                onSearchResults?.([], false);
+                onSearchResults?.([], false, undefined);
                 onSearchModeChange?.(false);
                 return;
             }
 
             onSearchModeChange?.(true);
-            onSearchResults?.([], true); // 로딩 시작
+            onSearchResults?.([], true, undefined); // 로딩 시작
 
             try {
                 const response = await searchMutation.mutateAsync({
                     query: searchQuery,
                     filters: searchFilters || filters,
-                    limit: 20,
+                    limit: 50, // 더 많은 결과로 facet 정확도 향상
                 });
-                onSearchResults?.(response.results, false);
+                onSearchResults?.(response.results, false, response.facets);
             } catch (error) {
                 console.error("Search error:", error);
-                onSearchResults?.([], false);
+                onSearchResults?.([], false, undefined);
             }
         },
         [searchMutation, onSearchResults, onSearchModeChange, filters]
@@ -97,7 +105,7 @@ export default function SpotlightSearch({
             if (debounceRef.current) {
                 clearTimeout(debounceRef.current);
             }
-            onSearchResults?.([], false);
+            onSearchResults?.([], false, undefined);
             onSearchModeChange?.(false);
         }
     };

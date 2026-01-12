@@ -20,11 +20,91 @@ import {
   type SearchRequest,
   type SearchResponse,
   type CandidateSearchResult,
+  type SearchFacets,
+  type FacetItem,
+  type ExpYearsFacet,
   getConfidenceLevel,
   type RiskLevel,
   type ChunkType,
 } from "@/types";
 import { getSkillSynonyms } from "@/lib/search/synonyms";
+
+// ─────────────────────────────────────────────────
+// Facet 계산 유틸리티
+// ─────────────────────────────────────────────────
+
+/**
+ * 검색 결과에서 facet 데이터 계산
+ * 필터 적용 후 결과 기준으로 계산하여 일관성 보장
+ */
+function calculateFacets(results: CandidateSearchResult[]): SearchFacets {
+  const skillsMap = new Map<string, number>();
+  const companiesMap = new Map<string, number>();
+  const locationsMap = new Map<string, number>();
+  const expYears: ExpYearsFacet = {
+    "0-3": 0,
+    "3-5": 0,
+    "5-10": 0,
+    "10+": 0,
+  };
+
+  for (const candidate of results) {
+    // Skills facet
+    if (candidate.skills) {
+      for (const skill of candidate.skills) {
+        const normalizedSkill = skill.trim();
+        if (normalizedSkill) {
+          skillsMap.set(normalizedSkill, (skillsMap.get(normalizedSkill) || 0) + 1);
+        }
+      }
+    }
+
+    // Companies facet (from last company)
+    if (candidate.company) {
+      const normalizedCompany = candidate.company.trim();
+      if (normalizedCompany) {
+        companiesMap.set(normalizedCompany, (companiesMap.get(normalizedCompany) || 0) + 1);
+      }
+    }
+
+    // Experience years facet
+    const exp = candidate.expYears || 0;
+    if (exp < 3) {
+      expYears["0-3"]++;
+    } else if (exp < 5) {
+      expYears["3-5"]++;
+    } else if (exp < 10) {
+      expYears["5-10"]++;
+    } else {
+      expYears["10+"]++;
+    }
+  }
+
+  // Map을 FacetItem 배열로 변환 (count 내림차순 정렬)
+  const sortByCount = (a: FacetItem, b: FacetItem) => b.count - a.count;
+
+  const skills: FacetItem[] = Array.from(skillsMap.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort(sortByCount)
+    .slice(0, 30); // 상위 30개
+
+  const companies: FacetItem[] = Array.from(companiesMap.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort(sortByCount)
+    .slice(0, 20); // 상위 20개
+
+  const locations: FacetItem[] = Array.from(locationsMap.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort(sortByCount)
+    .slice(0, 15); // 상위 15개
+
+  return {
+    skills,
+    companies,
+    locations,
+    expYears,
+  };
+}
 
 // ─────────────────────────────────────────────────
 // 입력 검증 및 살균 유틸리티
@@ -428,9 +508,13 @@ export async function POST(request: NextRequest) {
       total = count ?? 0;
     }
 
+    // Facet 계산 (필터 적용 후 결과 기준)
+    const facets = calculateFacets(results);
+
     const response: SearchResponse = {
       results,
       total,
+      facets,
     };
 
     return apiSuccess(response, {

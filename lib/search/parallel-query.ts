@@ -60,13 +60,22 @@ export async function groupSkillsForParallel(
   skills: string[],
   expandSynonyms: boolean = true
 ): Promise<string[][]> {
+  // Defense in depth: null/undefined/empty 필터링 (BUG-003)
+  const sanitizedSkills = skills.filter(
+    (s): s is string => typeof s === 'string' && s.trim().length > 0
+  );
+
+  if (sanitizedSkills.length === 0) {
+    return [];
+  }
+
   // DB 기반 동의어 확장 (하드코딩 제거)
   let allSkills: string[];
   if (expandSynonyms) {
-    const expandedSet = await expandSkillsFromDB(skills);
+    const expandedSet = await expandSkillsFromDB(sanitizedSkills);
     allSkills = Array.from(expandedSet);
   } else {
-    allSkills = [...skills];
+    allSkills = [...sanitizedSkills];
   }
 
   // 스킬 수가 적으면 그룹화하지 않음
@@ -113,13 +122,17 @@ export async function executeParallelKeywordSearch(
     limit = 50,
   } = options;
 
-  // 스킬이 없으면 빈 결과 반환
-  if (!skills || skills.length === 0) {
+  // Defense in depth: null/undefined/empty 필터링 (BUG-003)
+  const sanitizedSkills = skills?.filter(
+    (s): s is string => typeof s === 'string' && s.trim().length > 0
+  ) || [];
+
+  if (sanitizedSkills.length === 0) {
     return { results: [], total: 0 };
   }
 
   // 스킬을 병렬 쿼리 그룹으로 분리 (DB 기반 동의어 확장)
-  const skillGroups = await groupSkillsForParallel(skills, expandSynonyms);
+  const skillGroups = await groupSkillsForParallel(sanitizedSkills, expandSynonyms);
 
   // 각 그룹에 대해 쿼리 생성
   const queryPromises = skillGroups.map(async (skillGroup) => {
@@ -230,15 +243,19 @@ export async function executeJoinBasedSkillSearch(
     limit = 50,
   } = options;
 
-  // 스킬이 없으면 빈 결과 반환
-  if (!skills || skills.length === 0) {
+  // Defense in depth: null/undefined/empty 필터링 (BUG-003)
+  const sanitizedSkills = skills?.filter(
+    (s): s is string => typeof s === 'string' && s.trim().length > 0
+  ) || [];
+
+  if (sanitizedSkills.length === 0) {
     return { results: [], total: 0 };
   }
 
   try {
     const { data, error } = await supabase.rpc("search_candidates_by_skills", {
       p_user_id: userId,
-      p_skills: skills,
+      p_skills: sanitizedSkills,
       p_match_count: limit,
       p_exp_years_min: expYearsMin ?? null,
       p_exp_years_max: expYearsMax ?? null,

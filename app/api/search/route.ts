@@ -250,17 +250,26 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 스킬 배열 검증
+      // 스킬 배열 검증 및 살균 (BUG-003 fix: null/undefined/empty 필터링)
       if (filters.skills) {
         if (!Array.isArray(filters.skills)) {
           return apiBadRequest("스킬은 배열 형식이어야 합니다.");
         }
+
+        // null, undefined, 빈 문자열 필터링 및 trim 적용
+        filters.skills = filters.skills
+          .filter((skill): skill is string =>
+            typeof skill === 'string' && skill.trim().length > 0
+          )
+          .map(skill => skill.trim());
+
         if (filters.skills.length > MAX_SKILLS_COUNT) {
           return apiBadRequest(`스킬은 최대 ${MAX_SKILLS_COUNT}개까지 선택할 수 있습니다.`);
         }
+
         // 각 스킬 문자열 길이 검증
         for (const skill of filters.skills) {
-          if (typeof skill !== "string" || skill.length > 50) {
+          if (skill.length > 50) {
             return apiBadRequest("스킬명은 50자 이하의 문자열이어야 합니다.");
           }
         }

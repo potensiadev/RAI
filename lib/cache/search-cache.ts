@@ -218,6 +218,51 @@ export function getCacheStrategy(
 }
 
 // ─────────────────────────────────────────────────
+// Lock Utilities (Cache Stampede Prevention)
+// ─────────────────────────────────────────────────
+
+/**
+ * 분산 락 획득 (SETNX 패턴)
+ * Cache stampede 방지를 위해 동시 요청 중 하나만 DB 조회
+ */
+async function acquireLock(key: string, ttlSeconds: number = 5): Promise<boolean> {
+  try {
+    const client = getRedisClient();
+    if (!client) return true; // Redis 없으면 락 불필요
+
+    const lockKey = `lock:${key}`;
+    const result = await client.set(lockKey, '1', { nx: true, ex: ttlSeconds });
+    return result === 'OK';
+  } catch (error) {
+    console.error('[SearchCache] Lock acquire error:', error);
+    return true; // 락 실패 시 진행 허용 (가용성 우선)
+  }
+}
+
+/**
+ * 분산 락 해제
+ */
+async function releaseLock(key: string): Promise<void> {
+  try {
+    const client = getRedisClient();
+    if (!client) return;
+
+    const lockKey = `lock:${key}`;
+    await client.del(lockKey);
+  } catch (error) {
+    console.error('[SearchCache] Lock release error:', error);
+    // 락 해제 실패는 TTL로 자동 해제되므로 무시
+  }
+}
+
+/**
+ * 지연 유틸리티
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ─────────────────────────────────────────────────
 // Cache Operations
 // ─────────────────────────────────────────────────
 
@@ -326,8 +371,9 @@ export async function invalidateUserSearchCache(userId: string): Promise<void> {
 }
 
 /**
- * Stale-While-Revalidate 패턴 구현
- * 캐시가 stale이면 백그라운드에서 갱신
+ * Stale-While-Revalidate 패턴 구현 (Cache Stampede 방지)
+ * - 캐시가 stale이면 백그라운드에서 갱신
+ * - 동시 요청 시 SETNX 락으로 하나의 요청만 DB 조회
  */
 export async function getSearchWithSWR(
   key: string,
@@ -347,16 +393,53 @@ export async function getSearchWithSWR(
     return cached;
   }
 
-  // 3. 캐시 없으면 새로 조회
-  const data = await fetchFn();
+  // 3. 캐시 미스 - 락 획득 시도 (Cache Stampede 방지)
+  const lockAcquired = await acquireLock(key);
 
-  // 4. 결과 캐싱
-  await setSearchCache(key, data, query, filters, strategy);
+  if (!lockAcquired) {
+    // 다른 요청이 처리 중 - 잠시 대기 후 캐시 재확인
+    await delay(100);
+    const retryCache = await getSearchFromCache(key, strategy);
+    if (retryCache) {
+      return retryCache;
+    }
 
-  return {
-    data,
-    fromCache: false,
-  };
+    // 여전히 캐시 없음 - 한 번 더 대기 후 재확인
+    await delay(150);
+    const finalRetry = await getSearchFromCache(key, strategy);
+    if (finalRetry) {
+      return finalRetry;
+    }
+
+    // 최종 fallback: 락 없이 진행 (가용성 우선)
+    console.warn('[SearchCache] Lock wait timeout, proceeding without lock');
+  }
+
+  try {
+    // 4. Double-check: 대기 중 다른 요청이 캐시를 채웠을 수 있음
+    if (lockAcquired) {
+      const doubleCheck = await getSearchFromCache(key, strategy);
+      if (doubleCheck) {
+        return doubleCheck;
+      }
+    }
+
+    // 5. DB 조회
+    const data = await fetchFn();
+
+    // 6. 결과 캐싱
+    await setSearchCache(key, data, query, filters, strategy);
+
+    return {
+      data,
+      fromCache: false,
+    };
+  } finally {
+    // 7. 락 해제 (획득한 경우에만)
+    if (lockAcquired) {
+      await releaseLock(key);
+    }
+  }
 }
 
 /**

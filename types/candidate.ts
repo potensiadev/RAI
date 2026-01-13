@@ -187,6 +187,8 @@ export interface SearchResponse {
   facets?: SearchFacets;
   /** 파싱된 검색 키워드 (한영 혼합 쿼리 분리 결과) */
   parsedKeywords?: string[];
+  /** 오타 보정 결과 (UI 제안용) */
+  typoCorrected?: string;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

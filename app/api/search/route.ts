@@ -55,6 +55,7 @@ import {
   MAX_QUERY_LENGTH,
 } from "@/lib/search/sanitize";
 import { recordSearchMetrics } from "@/lib/observability/metrics";
+import { engToKor, korToEng } from "@/lib/search/typo";
 
 
 // ─────────────────────────────────────────────────
@@ -317,6 +318,32 @@ export async function POST(request: NextRequest) {
     // 검색어 정제: 앞뒤 공백 제거
     const sanitizedQuery = query.trim();
 
+    // 오타 보정 (한영/영한 변환)
+    // 1. 영문(ASCII) 위주면 -> 한글 변환 시도 (rksr -> 간식)
+    // 2. 한글 위주면 -> 영문 변환 시도 (key -> ㅏ됴?) - 보통 영문타자가 한글로 되는 경우가 많음
+    // 3. 둘 다 섞여 있거나 애매하면 둘 다 생성
+
+    // 간단한 휴리스틱: 한글이 하나도 없으면 영->한 시도
+    const hasKorean = /[가-힣]/.test(sanitizedQuery);
+    const correctedQueries: string[] = [];
+
+    if (!hasKorean) {
+      // 영 -> 한 변환 (예: rksr -> 간식)
+      const kor = engToKor(sanitizedQuery);
+      if (kor !== sanitizedQuery) {
+        correctedQueries.push(kor);
+      }
+    } else {
+      // 한 -> 영 변환 (예: ㅎ -> g) - 주로 약어 검색 등
+      // 너무 긴 문장은 변환하지 않음 (성능 및 노이즈 방지)
+      if (sanitizedQuery.length <= 10) {
+        const eng = korToEng(sanitizedQuery);
+        if (eng !== sanitizedQuery) {
+          correctedQueries.push(eng);
+        }
+      }
+    }
+
     // ─────────────────────────────────────────────────
     // 캐시 확인 (Redis)
     // ─────────────────────────────────────────────────
@@ -489,8 +516,15 @@ export async function POST(request: NextRequest) {
         }));
 
         // Fallback 텍스트 검색에서도 SQL Injection 방지
-
         const escapedQuery = escapeILikePattern(sanitizedQuery);
+
+        let orCondition = `summary.ilike.%${escapedQuery}%,last_position.ilike.%${escapedQuery}%`;
+
+        // 오타 보정 검색어 추가
+        for (const corrected of correctedQueries) {
+          const escapedCorrected = escapeILikePattern(corrected);
+          orCondition += `,summary.ilike.%${escapedCorrected}%,last_position.ilike.%${escapedCorrected}%`;
+        }
 
         let queryBuilder = supabase
           .from("candidates")
@@ -498,7 +532,7 @@ export async function POST(request: NextRequest) {
           .eq("user_id", user.id)
           .eq("status", "completed")
           .eq("is_latest", true)
-          .or(`summary.ilike.%${escapedQuery}%,last_position.ilike.%${escapedQuery}%`);
+          .or(orCondition);
 
         if (filters?.expYearsMin) {
           queryBuilder = queryBuilder.gte("exp_years", filters.expYearsMin);
@@ -558,7 +592,17 @@ export async function POST(request: NextRequest) {
       // 키워드 분리: parseSearchQuery 유틸 함수 사용
       // Mixed Language Query 지원: 공백, 쉼표, 한글+영문 경계로 분리
       // 예: "React개발자" → ["React", "개발자"], "시니어Developer" → ["시니어", "Developer"]
-      const keywords = parseSearchQuery(sanitizedQuery);
+      let keywords = parseSearchQuery(sanitizedQuery);
+
+      // 오타 보정된 쿼리도 키워드로 분리하여 추가
+      for (const corrected of correctedQueries) {
+        const correctedKeywords = parseSearchQuery(corrected);
+        for (const k of correctedKeywords) {
+          if (!keywords.includes(k)) {
+            keywords.push(k);
+          }
+        }
+      }
 
       // 스킬 필터가 2개 이상일 때 병렬 쿼리 사용
       const useParallel = shouldUseParallelQuery(filters?.skills);
@@ -719,6 +763,7 @@ export async function POST(request: NextRequest) {
       total,
       facets,
       parsedKeywords,  // 한영 혼합 쿼리 분리 결과 (UI 표시용)
+      typoCorrected: correctedQueries.length > 0 ? correctedQueries[0] : undefined // 오타 보정 결과 제안
     };
 
     // 검색 소요 시간

@@ -31,6 +31,13 @@ import {
   apiInvalidFileType,
 } from "@/lib/api-response";
 
+// Security headers expected in all responses
+const SECURITY_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
+
 describe("API Response Utilities", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -47,7 +54,7 @@ describe("API Response Utilities", () => {
 
       expect(NextResponse.json).toHaveBeenCalledWith(
         { success: true, data, meta: undefined },
-        { status: 200 }
+        { status: 200, headers: SECURITY_HEADERS }
       );
     });
 
@@ -58,7 +65,7 @@ describe("API Response Utilities", () => {
 
       expect(NextResponse.json).toHaveBeenCalledWith(
         { success: true, data, meta },
-        { status: 200 }
+        { status: 200, headers: SECURITY_HEADERS }
       );
     });
 
@@ -67,7 +74,7 @@ describe("API Response Utilities", () => {
 
       expect(NextResponse.json).toHaveBeenCalledWith(
         expect.objectContaining({ success: true }),
-        { status: 202 }
+        { status: 202, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -79,7 +86,7 @@ describe("API Response Utilities", () => {
 
       expect(NextResponse.json).toHaveBeenCalledWith(
         { success: true, data, meta: undefined },
-        { status: 201 }
+        { status: 201, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -88,10 +95,13 @@ describe("API Response Utilities", () => {
     it("빈 성공 응답", () => {
       apiNoContent();
 
-      expect(NextResponse.json).toHaveBeenCalledWith({
-        success: true,
-        data: null,
-      });
+      expect(NextResponse.json).toHaveBeenCalledWith(
+        {
+          success: true,
+          data: null,
+        },
+        { headers: SECURITY_HEADERS }
+      );
     });
   });
 
@@ -112,7 +122,7 @@ describe("API Response Utilities", () => {
             details: undefined,
           },
         },
-        { status: 400 }
+        { status: 400, headers: SECURITY_HEADERS }
       );
     });
 
@@ -128,7 +138,7 @@ describe("API Response Utilities", () => {
             details: { field: "email" },
           },
         },
-        { status: 400 }
+        { status: 400, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -145,7 +155,7 @@ describe("API Response Utilities", () => {
             message: "잘못된 요청입니다.",
           }),
         }),
-        { status: 400 }
+        { status: 400, headers: SECURITY_HEADERS }
       );
     });
 
@@ -158,7 +168,7 @@ describe("API Response Utilities", () => {
             message: "파일이 누락되었습니다.",
           }),
         }),
-        { status: 400 }
+        { status: 400, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -173,7 +183,7 @@ describe("API Response Utilities", () => {
             code: "UNAUTHORIZED",
           }),
         }),
-        { status: 401 }
+        { status: 401, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -188,7 +198,7 @@ describe("API Response Utilities", () => {
             code: "FORBIDDEN",
           }),
         }),
-        { status: 403 }
+        { status: 403, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -204,7 +214,7 @@ describe("API Response Utilities", () => {
             message: "후보자를 찾을 수 없습니다.",
           }),
         }),
-        { status: 404 }
+        { status: 404, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -219,7 +229,7 @@ describe("API Response Utilities", () => {
             code: "INSUFFICIENT_CREDITS",
           }),
         }),
-        { status: 402 }
+        { status: 402, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -235,7 +245,7 @@ describe("API Response Utilities", () => {
             message: "이미 존재하는 후보자입니다.",
           }),
         }),
-        { status: 409 }
+        { status: 409, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -250,7 +260,7 @@ describe("API Response Utilities", () => {
             code: "RATE_LIMIT_EXCEEDED",
           }),
         }),
-        { status: 429 }
+        { status: 429, headers: SECURITY_HEADERS }
       );
     });
 
@@ -263,7 +273,7 @@ describe("API Response Utilities", () => {
             details: { retryAfter: 60 },
           }),
         }),
-        { status: 429 }
+        { status: 429, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -278,7 +288,7 @@ describe("API Response Utilities", () => {
             code: "INTERNAL_ERROR",
           }),
         }),
-        { status: 500 }
+        { status: 500, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -293,7 +303,7 @@ describe("API Response Utilities", () => {
             code: "SERVICE_UNAVAILABLE",
           }),
         }),
-        { status: 503 }
+        { status: 503, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -313,7 +323,7 @@ describe("API Response Utilities", () => {
             message: "파일이 손상되었습니다.",
           }),
         }),
-        { status: 400 }
+        { status: 400, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -329,7 +339,7 @@ describe("API Response Utilities", () => {
             message: "파일 크기가 50MB를 초과합니다.",
           }),
         }),
-        { status: 400 }
+        { status: 400, headers: SECURITY_HEADERS }
       );
     });
 
@@ -342,7 +352,7 @@ describe("API Response Utilities", () => {
             message: "파일 크기가 100MB를 초과합니다.",
           }),
         }),
-        { status: 400 }
+        { status: 400, headers: SECURITY_HEADERS }
       );
     });
   });
@@ -358,7 +368,7 @@ describe("API Response Utilities", () => {
             message: "지원하지 않는 파일 형식입니다. 허용: .pdf, .docx, .hwp",
           }),
         }),
-        { status: 400 }
+        { status: 400, headers: SECURITY_HEADERS }
       );
     });
   });

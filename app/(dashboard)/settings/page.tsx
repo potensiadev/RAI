@@ -1,23 +1,25 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
-  Settings,
   User,
   CreditCard,
   Bell,
-  Shield,
   LogOut,
   Loader2,
   Check,
-  ChevronRight,
   Mail,
   Building2,
+  Sparkles,
+  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
-import { useCredits } from "@/hooks";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCredits, useInvalidateCredits } from "@/hooks";
+import { openCheckout } from "@/lib/paddle/client";
+import { PLAN_CONFIG, type PlanId } from "@/lib/paddle/config";
+import { useToast } from "@/components/ui/toast";
 
 interface UserProfile {
   id: string;
@@ -32,6 +34,7 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUpgrading, setIsUpgrading] = useState(false);
   const [activeTab, setActiveTab] = useState<"profile" | "subscription" | "notifications">("profile");
 
   // Form states
@@ -40,9 +43,22 @@ export default function SettingsPage() {
 
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const toast = useToast();
 
   // Credits from API (synchronized with CreditCounter)
   const { data: creditsData, isLoading: creditsLoading } = useCredits();
+  const invalidateCredits = useInvalidateCredits();
+
+  // Handle checkout success
+  useEffect(() => {
+    if (searchParams.get("checkout") === "success") {
+      toast.success("결제 완료", "구독이 성공적으로 활성화되었습니다!");
+      invalidateCredits(); // Refresh credits data
+      // Clean up URL
+      router.replace("/settings");
+    }
+  }, [searchParams, toast, invalidateCredits, router]);
 
   useEffect(() => {
     fetchProfile();
@@ -123,6 +139,47 @@ export default function SettingsPage() {
     await supabase.auth.signOut();
     router.push("/login");
   };
+
+  // Paddle 결제 시작
+  const handleUpgrade = useCallback(async (planId: PlanId) => {
+    if (!profile || isUpgrading) return;
+
+    const targetPlan = PLAN_CONFIG[planId];
+    if (!targetPlan.priceId) {
+      toast.error("오류", "무료 플랜으로의 다운그레이드는 지원되지 않습니다.");
+      return;
+    }
+
+    setIsUpgrading(true);
+
+    try {
+      // API에서 checkout 정보 가져오기
+      const response = await fetch("/api/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error?.message || "결제 요청 실패");
+      }
+
+      const { data } = await response.json();
+
+      // Paddle Checkout 열기
+      await openCheckout({
+        priceId: data.priceId,
+        customerId: data.customerId,
+        email: data.email,
+      });
+    } catch (error) {
+      console.error("Upgrade error:", error);
+      toast.error("결제 오류", error instanceof Error ? error.message : "결제를 시작할 수 없습니다.");
+    } finally {
+      setIsUpgrading(false);
+    }
+  }, [profile, isUpgrading, toast]);
 
   const tabs = [
     { id: "profile", label: "프로필", icon: User },
@@ -307,32 +364,77 @@ export default function SettingsPage() {
               <div className="space-y-4">
                 <h3 className="font-medium text-white">플랜 변경</h3>
                 <div className="grid grid-cols-3 gap-4">
-                  {[
-                    { id: "starter", name: "Starter", price: "무료", credits: 50 },
-                    { id: "pro", name: "Pro", price: "₩49,000/월", credits: 150 },
-                    { id: "enterprise", name: "Enterprise", price: "문의", credits: 300 },
-                  ].map((planOption) => {
-                    const currentPlan = creditsData?.plan || profile.plan;
-                    const isCurrentPlan = currentPlan === planOption.id;
+                  {Object.entries(PLAN_CONFIG).map(([id, planConfig]) => {
+                    const currentPlan = (creditsData?.plan || profile.plan) as PlanId;
+                    const isCurrentPlan = currentPlan === id;
+                    const planOrder: PlanId[] = ['starter', 'pro', 'enterprise'];
+                    const canUpgrade = planOrder.indexOf(id as PlanId) > planOrder.indexOf(currentPlan);
+
                     return (
                       <div
-                        key={planOption.id}
+                        key={id}
                         className={cn(
-                          "p-4 rounded-xl border transition-colors",
+                          "p-4 rounded-xl border transition-all relative",
                           isCurrentPlan
                             ? "bg-primary/20 border-primary"
-                            : "bg-white/5 border-white/10 hover:border-white/30"
+                            : canUpgrade
+                              ? "bg-white/5 border-white/10 hover:border-primary/50 hover:bg-primary/5"
+                              : "bg-white/5 border-white/10 opacity-60"
                         )}
                       >
-                        <h4 className="font-semibold text-white">{planOption.name}</h4>
-                        <p className="text-xl font-bold text-primary mt-2">{planOption.price}</p>
-                        <p className="text-sm text-slate-400 mt-1">월 {planOption.credits}건</p>
-                        {isCurrentPlan && (
-                          <span className="inline-flex items-center gap-1 mt-3 text-xs text-primary">
+                        {id === 'pro' && !isCurrentPlan && (
+                          <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-gradient-to-r from-primary to-purple-500 rounded-full text-xs font-semibold text-white flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" />
+                            인기
+                          </div>
+                        )}
+
+                        <h4 className="font-semibold text-white">{planConfig.name}</h4>
+                        <p className="text-xl font-bold text-primary mt-2">{planConfig.priceDisplay}</p>
+                        <p className="text-sm text-slate-400 mt-1">월 {planConfig.credits}건</p>
+
+                        {/* Features */}
+                        <ul className="mt-3 space-y-1">
+                          {planConfig.features.slice(0, 3).map((feature, idx) => (
+                            <li key={idx} className="text-xs text-slate-400 flex items-start gap-1">
+                              <Check className="w-3 h-3 text-primary shrink-0 mt-0.5" />
+                              <span>{feature}</span>
+                            </li>
+                          ))}
+                        </ul>
+
+                        {isCurrentPlan ? (
+                          <span className="inline-flex items-center gap-1 mt-4 text-xs text-primary font-medium">
                             <Check className="w-3 h-3" />
                             현재 플랜
                           </span>
-                        )}
+                        ) : canUpgrade && planConfig.priceId ? (
+                          <button
+                            onClick={() => handleUpgrade(id as PlanId)}
+                            disabled={isUpgrading}
+                            className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+                                     bg-primary hover:bg-primary/90 text-white text-sm font-medium
+                                     transition-colors disabled:opacity-50"
+                          >
+                            {isUpgrading ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                업그레이드
+                                <ArrowRight className="w-3 h-3" />
+                              </>
+                            )}
+                          </button>
+                        ) : id === 'enterprise' && canUpgrade ? (
+                          <a
+                            href="mailto:sales@rai.com?subject=Enterprise 플랜 문의"
+                            className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+                                     bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
+                          >
+                            문의하기
+                            <ArrowRight className="w-3 h-3" />
+                          </a>
+                        ) : null}
                       </div>
                     );
                   })}

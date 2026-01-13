@@ -190,18 +190,39 @@ export default function CandidateDetailPage() {
         setFieldConfidence(data.field_confidence);
       }
 
-      // Set versions (mock data - 실제로는 API에서 가져와야 함)
-      if (transformedCandidate.version > 1) {
-        const mockVersions = Array.from({ length: transformedCandidate.version }, (_, i) => ({
-          id: i === transformedCandidate.version - 1 ? transformedCandidate.id : `${transformedCandidate.id}-v${i + 1}`,
-          version: i + 1,
-          createdAt: new Date(Date.now() - (transformedCandidate.version - i - 1) * 7 * 24 * 60 * 60 * 1000).toISOString(),
-        }));
-        setVersions(mockVersions);
-      } else {
+      // Fetch real version history from API
+      try {
+        const versionsResponse = await fetch(`/api/candidates/${candidateId}/versions`);
+        if (versionsResponse.ok) {
+          const versionsData = await versionsResponse.json();
+          if (versionsData.data?.versions && versionsData.data.versions.length > 0) {
+            setVersions(versionsData.data.versions.map((v: { id: string; version: number; createdAt: string }) => ({
+              id: v.id,
+              version: v.version,
+              createdAt: v.createdAt,
+            })));
+          } else {
+            // Fallback: current version only
+            setVersions([{
+              id: transformedCandidate.id,
+              version: transformedCandidate.version,
+              createdAt: transformedCandidate.createdAt,
+            }]);
+          }
+        } else {
+          // API error fallback
+          setVersions([{
+            id: transformedCandidate.id,
+            version: transformedCandidate.version,
+            createdAt: transformedCandidate.createdAt,
+          }]);
+        }
+      } catch (versionErr) {
+        console.error("Failed to fetch version history:", versionErr);
+        // Error fallback
         setVersions([{
           id: transformedCandidate.id,
-          version: 1,
+          version: transformedCandidate.version,
           createdAt: transformedCandidate.createdAt,
         }]);
       }

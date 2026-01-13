@@ -1,0 +1,250 @@
+/**
+ * POST /api/webhooks/paddle
+ * Paddle Webhook 처리
+ *
+ * 지원 이벤트:
+ * - subscription.created: 새 구독 생성
+ * - subscription.updated: 구독 업데이트 (업그레이드/다운그레이드)
+ * - subscription.canceled: 구독 취소
+ * - subscription.past_due: 결제 실패
+ * - subscription.activated: 구독 활성화
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { PADDLE_CONFIG, getPlanByPriceId } from "@/lib/paddle/config";
+import crypto from "crypto";
+
+// Service Role 클라이언트 (webhook은 인증 없이 호출됨)
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+interface PaddleWebhookEvent {
+  event_type: string;
+  event_id: string;
+  occurred_at: string;
+  data: {
+    id: string; // subscription_id
+    status: string;
+    customer_id: string;
+    items: Array<{
+      price: {
+        id: string;
+        product_id: string;
+      };
+    }>;
+    current_billing_period?: {
+      ends_at: string;
+    };
+    scheduled_change?: {
+      action: string;
+      effective_at: string;
+    } | null;
+    custom_data?: {
+      email?: string;
+    };
+  };
+}
+
+/**
+ * Paddle 서명 검증
+ */
+function verifyPaddleSignature(
+  rawBody: string,
+  signature: string | null
+): boolean {
+  if (!signature || !PADDLE_CONFIG.webhookSecret) {
+    console.error("[Paddle Webhook] Missing signature or secret");
+    return false;
+  }
+
+  try {
+    // Paddle signature format: ts=timestamp;h1=hash
+    const parts = signature.split(";");
+    const tsMatch = parts.find(p => p.startsWith("ts="));
+    const h1Match = parts.find(p => p.startsWith("h1="));
+
+    if (!tsMatch || !h1Match) {
+      console.error("[Paddle Webhook] Invalid signature format");
+      return false;
+    }
+
+    const timestamp = tsMatch.replace("ts=", "");
+    const providedHash = h1Match.replace("h1=", "");
+
+    // 5분 이상 된 요청 거부
+    const eventTime = parseInt(timestamp, 10);
+    const now = Math.floor(Date.now() / 1000);
+    if (now - eventTime > 300) {
+      console.error("[Paddle Webhook] Request too old");
+      return false;
+    }
+
+    // HMAC 계산
+    const signedPayload = `${timestamp}:${rawBody}`;
+    const expectedHash = crypto
+      .createHmac("sha256", PADDLE_CONFIG.webhookSecret)
+      .update(signedPayload)
+      .digest("hex");
+
+    return crypto.timingSafeEqual(
+      Buffer.from(providedHash),
+      Buffer.from(expectedHash)
+    );
+  } catch (error) {
+    console.error("[Paddle Webhook] Signature verification error:", error);
+    return false;
+  }
+}
+
+/**
+ * 이메일로 사용자 찾기
+ */
+async function findUserByEmail(email: string) {
+  const { data, error } = await supabaseAdmin
+    .from("users")
+    .select("id, email, plan")
+    .eq("email", email)
+    .single();
+
+  if (error) {
+    console.error("[Paddle Webhook] User lookup error:", error);
+    return null;
+  }
+
+  return data as { id: string; email: string; plan: string } | null;
+}
+
+/**
+ * Paddle Customer ID로 사용자 찾기
+ */
+async function findUserByCustomerId(customerId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("users")
+    .select("id, email, plan")
+    .eq("paddle_customer_id", customerId)
+    .single();
+
+  if (error && error.code !== "PGRST116") {
+    console.error("[Paddle Webhook] User lookup by customer ID error:", error);
+  }
+
+  return data as { id: string; email: string; plan: string } | null;
+}
+
+/**
+ * 구독 상태 업데이트
+ */
+async function updateSubscription(
+  userId: string,
+  updates: {
+    plan?: string;
+    paddle_customer_id?: string;
+    paddle_subscription_id?: string;
+    subscription_status?: string;
+    current_period_end?: string;
+    cancel_at_period_end?: boolean;
+  }
+) {
+  const { error } = await supabaseAdmin
+    .from("users")
+    .update(updates)
+    .eq("id", userId);
+
+  if (error) {
+    console.error("[Paddle Webhook] Subscription update error:", error);
+    throw error;
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const rawBody = await request.text();
+    const signature = request.headers.get("paddle-signature");
+
+    // 서명 검증 (프로덕션에서만)
+    if (PADDLE_CONFIG.environment === "production") {
+      if (!verifyPaddleSignature(rawBody, signature)) {
+        console.error("[Paddle Webhook] Invalid signature");
+        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      }
+    }
+
+    const event = JSON.parse(rawBody) as PaddleWebhookEvent;
+    const { event_type, event_id, data } = event;
+
+    console.log(`[Paddle Webhook] Received: ${event_type} (${event_id})`);
+
+    // 사용자 찾기
+    let user = await findUserByCustomerId(data.customer_id);
+
+    // Customer ID로 찾지 못하면 이메일로 시도
+    if (!user && data.custom_data?.email) {
+      user = await findUserByEmail(data.custom_data.email);
+    }
+
+    if (!user) {
+      console.error("[Paddle Webhook] User not found for customer:", data.customer_id);
+      // 사용자를 찾지 못해도 200 반환 (재시도 방지)
+      return NextResponse.json({ received: true, warning: "User not found" });
+    }
+
+    // Price ID로 플랜 결정
+    const priceId = data.items?.[0]?.price?.id;
+    const plan = priceId ? getPlanByPriceId(priceId) : null;
+
+    switch (event_type) {
+      case "subscription.created":
+      case "subscription.activated":
+        await updateSubscription(user.id, {
+          plan: plan?.id || "pro",
+          paddle_customer_id: data.customer_id,
+          paddle_subscription_id: data.id,
+          subscription_status: "active",
+          current_period_end: data.current_billing_period?.ends_at ?? undefined,
+          cancel_at_period_end: false,
+        });
+        console.log(`[Paddle Webhook] Subscription activated for ${user.email}: ${plan?.id || "pro"}`);
+        break;
+
+      case "subscription.updated":
+        await updateSubscription(user.id, {
+          plan: plan?.id || user.plan,
+          subscription_status: data.status === "active" ? "active" : data.status,
+          current_period_end: data.current_billing_period?.ends_at ?? undefined,
+          cancel_at_period_end: data.scheduled_change?.action === "cancel",
+        });
+        console.log(`[Paddle Webhook] Subscription updated for ${user.email}: ${data.status}`);
+        break;
+
+      case "subscription.canceled":
+        await updateSubscription(user.id, {
+          subscription_status: "canceled",
+          cancel_at_period_end: true,
+        });
+        console.log(`[Paddle Webhook] Subscription canceled for ${user.email}`);
+        break;
+
+      case "subscription.past_due":
+        await updateSubscription(user.id, {
+          subscription_status: "past_due",
+        });
+        console.log(`[Paddle Webhook] Subscription past due for ${user.email}`);
+        break;
+
+      default:
+        console.log(`[Paddle Webhook] Unhandled event type: ${event_type}`);
+    }
+
+    return NextResponse.json({ received: true, event_type });
+  } catch (error) {
+    console.error("[Paddle Webhook] Processing error:", error);
+    // 500 반환 시 Paddle이 재시도함
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}

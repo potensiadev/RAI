@@ -11,11 +11,11 @@ import { validateMagicBytes } from "@/lib/file-validation";
 import { withRateLimit } from "@/lib/rate-limit";
 import { callWorkerPipelineAsync } from "@/lib/fetch-retry";
 import {
-  apiSuccess,
-  apiUnauthorized,
-  apiBadRequest,
-  apiInternalError,
-  apiFileValidationError,
+    apiSuccess,
+    apiUnauthorized,
+    apiBadRequest,
+    apiInternalError,
+    apiFileValidationError,
 } from "@/lib/api-response";
 
 // Worker URL
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
             user_id: userId,
             job_id: jobId,
             candidate_id: candidateId,
-            mode: plan === "enterprise" ? "phase_2" : "phase_1",
+            mode: plan === "pro" ? "phase_2" : "phase_1", // Pro: 3-Way Cross-Check
         };
 
         console.log("[Upload Confirm] Calling Worker pipeline with retry:", {

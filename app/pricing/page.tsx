@@ -21,27 +21,27 @@ const navLinks = [
   { href: "/support", label: "Support" },
 ];
 
-// Pricing plans
+// Pricing plans (types/auth.ts 기준)
 const plans = [
   {
     name: "Starter",
     description: "개인 헤드헌터 또는 소규모 팀을 위한 플랜",
-    price: "49,000",
+    price: "79,000",
     period: "월",
     icon: Zap,
     highlight: false,
     features: [
-      "월 100건 이력서 분석",
-      "2-Way AI Cross-Check",
+      "월 50건 이력서 분석",
+      "2-Way AI Cross-Check (GPT + Gemini)",
       "기본 시맨틱 검색",
-      "블라인드 내보내기",
+      "블라인드 내보내기 (월 30회)",
       "이메일 지원",
       "기본 리스크 대시보드",
     ],
     notIncluded: [
+      "3-Way AI Cross-Check",
       "팀 협업 기능",
       "API 액세스",
-      "커스텀 템플릿",
       "우선 지원",
     ],
     cta: "Starter 시작하기",
@@ -56,10 +56,10 @@ const plans = [
     highlight: true,
     badge: "인기",
     features: [
-      "월 500건 이력서 분석",
-      "2-Way AI Cross-Check",
+      "월 150건 이력서 분석",
+      "3-Way AI Cross-Check (GPT + Gemini + Claude)",
       "고급 시맨틱 검색 + 필터",
-      "블라인드 내보내기",
+      "무제한 블라인드 내보내기",
       "우선 이메일 + 채팅 지원",
       "전체 리스크 대시보드",
       "팀 협업 (최대 5명)",
@@ -69,9 +69,10 @@ const plans = [
     ],
     notIncluded: [],
     cta: "Professional 시작하기",
-    ctaLink: "/signup?plan=professional",
+    ctaLink: "/signup?plan=pro",
   },
 ];
+
 
 // FAQ items
 const faqs = [
@@ -141,11 +142,10 @@ export default function PricingPage() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`text-sm transition-colors ${
-                  link.href === "/pricing"
+                className={`text-sm transition-colors ${link.href === "/pricing"
                     ? "text-white font-medium"
                     : "text-slate-300 hover:text-white"
-                }`}
+                  }`}
               >
                 {link.label}
               </Link>
@@ -193,11 +193,10 @@ export default function PricingPage() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`block py-2 transition-colors ${
-                  link.href === "/pricing"
+                className={`block py-2 transition-colors ${link.href === "/pricing"
                     ? "text-white font-medium"
                     : "text-slate-300 hover:text-white"
-                }`}
+                  }`}
               >
                 {link.label}
               </Link>
@@ -250,11 +249,10 @@ export default function PricingPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className={`relative rounded-2xl p-8 ${
-                  plan.highlight
+                className={`relative rounded-2xl p-8 ${plan.highlight
                     ? "bg-gradient-to-b from-primary/20 via-primary/10 to-transparent border-2 border-primary/40"
                     : "bg-white/[0.03] border border-white/[0.08]"
-                }`}
+                  }`}
               >
                 {/* Badge */}
                 {plan.badge && (
@@ -268,16 +266,14 @@ export default function PricingPage() {
                 {/* Plan Icon & Name */}
                 <div className="flex items-center gap-3 mb-4">
                   <div
-                    className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      plan.highlight
+                    className={`w-10 h-10 rounded-lg flex items-center justify-center ${plan.highlight
                         ? "bg-primary/30 border border-primary/50"
                         : "bg-white/10 border border-white/20"
-                    }`}
+                      }`}
                   >
                     <plan.icon
-                      className={`w-5 h-5 ${
-                        plan.highlight ? "text-primary" : "text-slate-300"
-                      }`}
+                      className={`w-5 h-5 ${plan.highlight ? "text-primary" : "text-slate-300"
+                        }`}
                     />
                   </div>
                   <div>
@@ -313,11 +309,10 @@ export default function PricingPage() {
                 {/* CTA Button */}
                 <Link
                   href={plan.ctaLink}
-                  className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl font-medium transition-all ${
-                    plan.highlight
+                  className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl font-medium transition-all ${plan.highlight
                       ? "bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25"
                       : "bg-white/10 hover:bg-white/20 text-white border border-white/10"
-                  }`}
+                    }`}
                 >
                   {plan.cta}
                   <ArrowRight className="w-4 h-4" />

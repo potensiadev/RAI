@@ -54,9 +54,9 @@ export const IP_RATE_LIMIT = {
 export const PLAN_RATE_LIMITS = {
   free: { limit: 5, windowMs: 60 * 1000 },
   starter: { limit: 5, windowMs: 60 * 1000 },
-  pro: { limit: 15, windowMs: 60 * 1000 },
-  enterprise: { limit: 30, windowMs: 60 * 1000 },
+  pro: { limit: 30, windowMs: 60 * 1000 }, // Pro 플랜: 더 높은 한도
 } as const;
+
 
 export type PlanType = keyof typeof PLAN_RATE_LIMITS;
 

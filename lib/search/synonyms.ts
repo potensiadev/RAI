@@ -30,7 +30,8 @@ export const SKILL_SYNONYMS: Record<string, string[]> = {
   Scala: ["scala", "스칼라"],
 
   // Backend Frameworks
-  "Node.js": ["NodeJS", "Nodejs", "node.js", "node", "노드"],
+  "Node.js": ["NodeJS", "Nodejs", "node.js", "node", "nodejs", "노드"],
+
   Express: ["Express.js", "ExpressJS", "express"],
   NestJS: ["Nest.js", "nest", "네스트"],
   Django: ["django", "장고"],

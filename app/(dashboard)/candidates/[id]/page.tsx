@@ -18,7 +18,9 @@ import SplitViewer from "@/components/detail/SplitViewer";
 import VersionStack from "@/components/detail/VersionStack";
 import { useToast } from "@/components/ui/toast";
 import DOMPurify from "dompurify";
+import { sanitizeExternalUrl } from "@/lib/security/url-validator";
 import type { CandidateDetail, ConfidenceLevel } from "@/types";
+
 
 // ─────────────────────────────────────────────────
 // Error Types for Proper Handling
@@ -488,13 +490,14 @@ export default function CandidateDetailPage() {
     );
   }
 
-  // Issue #3: Check if GitHub/LinkedIn URLs exist
-  const hasGithub = !!candidate.githubUrl;
-  const hasLinkedin = !!candidate.linkedinUrl;
-  const hasPortfolio = !!candidate.portfolioUrl;
-  const hasExternalLinks = hasGithub || hasLinkedin || hasPortfolio;
+  // Issue #3: Check if GitHub/LinkedIn URLs exist (with security validation)
+  const safePortfolioUrl = sanitizeExternalUrl(candidate.portfolioUrl);
+  const safeGithubUrl = sanitizeExternalUrl(candidate.githubUrl);
+  const safeLinkedinUrl = sanitizeExternalUrl(candidate.linkedinUrl);
+  const hasExternalLinks = safePortfolioUrl || safeGithubUrl || safeLinkedinUrl;
 
   return (
+
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
@@ -520,10 +523,10 @@ export default function CandidateDetailPage() {
 
         {/* Actions - Issue #3: Conditional rendering with layout adjustment */}
         <div className="flex items-center gap-2">
-          {/* External Links - Only show if URLs exist */}
-          {hasPortfolio && (
+          {/* External Links - Only show if URLs exist and are safe */}
+          {safePortfolioUrl && (
             <a
-              href={candidate.portfolioUrl}
+              href={safePortfolioUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
@@ -533,9 +536,9 @@ export default function CandidateDetailPage() {
               <Globe className="w-5 h-5" />
             </a>
           )}
-          {hasGithub && (
+          {safeGithubUrl && (
             <a
-              href={candidate.githubUrl}
+              href={safeGithubUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
@@ -545,9 +548,9 @@ export default function CandidateDetailPage() {
               <Github className="w-5 h-5" />
             </a>
           )}
-          {hasLinkedin && (
+          {safeLinkedinUrl && (
             <a
-              href={candidate.linkedinUrl}
+              href={safeLinkedinUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
@@ -557,6 +560,7 @@ export default function CandidateDetailPage() {
               <Linkedin className="w-5 h-5" />
             </a>
           )}
+
 
           {/* Blind Export Button */}
           <button

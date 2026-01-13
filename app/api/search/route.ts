@@ -54,6 +54,8 @@ import {
   MAX_KEYWORD_LENGTH,
   MAX_QUERY_LENGTH,
 } from "@/lib/search/sanitize";
+import { recordSearchMetrics } from "@/lib/observability/metrics";
+
 
 // ─────────────────────────────────────────────────
 // Facet 계산 유틸리티
@@ -344,8 +346,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 검색 모드 결정: 10자 이상이면 Semantic(Vector), 아니면 Keyword(RDB)
-    const isSemanticSearch = sanitizedQuery.length > 10;
+    // 검색 모드 결정: 3자 이상이면 Semantic(Vector/AI), 2자 이하만 Keyword(RDB)
+    // Phase 1: AI-Only 전환 - DB 동의어 의존성 최소화
+    const isSemanticSearch = sanitizedQuery.length >= 3;
+
 
     // 검색 시작 시간 (성능 측정)
     const searchStartTime = Date.now();
@@ -416,16 +420,30 @@ export async function POST(request: NextRequest) {
           total = results.length;
         } else {
           // ─────────────────────────────────────────────────
-          // 기존 RPC 검색 (스킬 필터 없거나 1개일 때)
+          // Semantic Search with Relaxed Filtering (Boost Mode)
+          // "Filter Trap" 해결: AI 모드에서는 필터를 '제외'가 아닌 '가산점'으로 처리
           // ─────────────────────────────────────────────────
+
           let expandedSkills: string[] | null = null;
+          let boostSkills: string[] = [];
+
           if (filters?.skills && filters.skills.length > 0) {
-            if (shouldExpand) {
-              // DB 기반 동의어 확장 (하드코딩 제거)
-              const allSkills = await expandSkillsFromDB(filters.skills);
-              expandedSkills = Array.from(allSkills);
+            // 원본 스킬은 부스트용으로 저장
+            boostSkills = filters.skills;
+
+            // AI Semantic 모드에서는 RPC에 필터를 전달하지 않음 (Strict Filtering 방지)
+            // 대신 검색 범위를 넓혀서 가져온 뒤 JS에서 Re-ranking 수행
+            if (!isSemanticSearch) {
+              if (shouldExpand) {
+                const allSkills = await expandSkillsFromDB(filters.skills);
+                expandedSkills = Array.from(allSkills);
+              } else {
+                expandedSkills = filters.skills;
+              }
             } else {
-              expandedSkills = filters.skills;
+              // Semantic Mode: 필터 해제 + 검색 범위 확대
+              // limit을 3배로 늘려서 후보군 확보
+              limit = limit * 3;
             }
           }
 
@@ -438,12 +456,13 @@ export async function POST(request: NextRequest) {
               p_match_count: limit,
               p_exp_years_min: filters?.expYearsMin || null,
               p_exp_years_max: filters?.expYearsMax || null,
-              p_skills: expandedSkills,
+              p_skills: expandedSkills, // Semantic 모드에서는 null
               p_location: filters?.location || null,
               p_companies: filters?.companies?.length ? filters.companies : null,
               p_exclude_companies: filters?.excludeCompanies?.length ? filters.excludeCompanies : null,
               p_education_level: filters?.educationLevel || null,
             }
+
           );
 
           if (rpcError) {
@@ -460,9 +479,17 @@ export async function POST(request: NextRequest) {
         }
       } catch (embeddingError) {
         // 임베딩 생성 실패 시 텍스트 검색으로 Fallback
-        console.warn("Embedding failed, falling back to text search:", embeddingError);
+        // P0: Structured logging for observability
+        console.log(JSON.stringify({
+          timestamp: new Date().toISOString(),
+          service: 'search',
+          event: 'fallback_triggered',
+          reason: embeddingError instanceof Error ? embeddingError.message : 'Unknown',
+          query_length: sanitizedQuery.length,
+        }));
 
         // Fallback 텍스트 검색에서도 SQL Injection 방지
+
         const escapedQuery = escapeILikePattern(sanitizedQuery);
 
         let queryBuilder = supabase
@@ -480,15 +507,11 @@ export async function POST(request: NextRequest) {
           queryBuilder = queryBuilder.lte("exp_years", filters.expYearsMax);
         }
         if (filters?.skills && filters.skills.length > 0) {
-          // DB 기반 동의어 확장 적용 (하드코딩 제거)
-          const shouldExpand = filters.expandSynonyms !== false;
-          let skillsToSearch = filters.skills;
-          if (shouldExpand) {
-            const allSkills = await expandSkillsFromDB(filters.skills);
-            skillsToSearch = Array.from(allSkills);
-          }
-          queryBuilder = queryBuilder.overlaps("skills", skillsToSearch);
+          // P0: Fallback에서는 DB 의존 없이 순수 텍스트 매칭
+          // AI-Only 아키텍처에서 Fallback은 최소 기능만 제공
+          queryBuilder = queryBuilder.overlaps("skills", filters.skills);
         }
+
         if (filters?.location) {
           const escapedLocation = escapeILikePattern(sanitizeString(filters.location));
           queryBuilder = queryBuilder.ilike("location_city", `%${escapedLocation}%`);
@@ -551,26 +574,26 @@ export async function POST(request: NextRequest) {
         // ─────────────────────────────────────────────────
         const parallelResult = useJoinBased
           ? await executeJoinBasedSkillSearch(supabase, {
-              userId: user.id,
-              skills: filters.skills,
-              expYearsMin: filters.expYearsMin,
-              expYearsMax: filters.expYearsMax,
-              location: filters.location,
-              companies: filters.companies,
-              excludeCompanies: filters.excludeCompanies,
-              limit: limit,
-            })
+            userId: user.id,
+            skills: filters.skills,
+            expYearsMin: filters.expYearsMin,
+            expYearsMax: filters.expYearsMax,
+            location: filters.location,
+            companies: filters.companies,
+            excludeCompanies: filters.excludeCompanies,
+            limit: limit,
+          })
           : await executeParallelKeywordSearch(supabase, {
-              userId: user.id,
-              skills: filters.skills,
-              expandSynonyms: shouldExpand,
-              expYearsMin: filters.expYearsMin,
-              expYearsMax: filters.expYearsMax,
-              location: filters.location,
-              companies: filters.companies,
-              excludeCompanies: filters.excludeCompanies,
-              limit: limit,
-            });
+            userId: user.id,
+            skills: filters.skills,
+            expandSynonyms: shouldExpand,
+            expYearsMin: filters.expYearsMin,
+            expYearsMax: filters.expYearsMax,
+            location: filters.location,
+            companies: filters.companies,
+            excludeCompanies: filters.excludeCompanies,
+            limit: limit,
+          });
 
         // 키워드로 추가 필터링 (있는 경우)
         // Mixed Language Query: 각 키워드에 DB 기반 동의어 확장 적용
@@ -701,6 +724,13 @@ export async function POST(request: NextRequest) {
     // 검색 소요 시간
     const responseTime = Date.now() - searchStartTime;
 
+    // P1: Record Metrics (Observability)
+    recordSearchMetrics(
+      responseTime,
+      isSemanticSearch ? 'ai_semantic' : 'keyword',
+      results.length
+    );
+
     // ─────────────────────────────────────────────────
     // 결과 캐싱 (비동기, 응답 차단 안 함)
     // ─────────────────────────────────────────────────
@@ -713,7 +743,9 @@ export async function POST(request: NextRequest) {
       limit,
       cached: false,
       responseTime,
+      searchMode: isSemanticSearch ? 'ai_semantic' : 'keyword',
     });
+
   } catch (error) {
     console.error("Search API error:", error);
     return apiInternalError();

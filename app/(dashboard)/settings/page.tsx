@@ -13,6 +13,7 @@ import {
   Building2,
   Sparkles,
   ArrowRight,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -20,6 +21,7 @@ import { useCredits, useInvalidateCredits } from "@/hooks";
 import { openCheckout } from "@/lib/paddle/client";
 import { PLAN_CONFIG, type PlanId } from "@/lib/paddle/config";
 import { useToast } from "@/components/ui/toast";
+import { RefundRequestModal, RefundHistory } from "@/components/refund";
 
 interface UserProfile {
   id: string;
@@ -36,6 +38,7 @@ function SettingsContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [activeTab, setActiveTab] = useState<"profile" | "subscription" | "notifications">("profile");
+  const [showRefundModal, setShowRefundModal] = useState(false);
 
   // Form states
   const [name, setName] = useState("");
@@ -367,7 +370,7 @@ function SettingsContent() {
                   {Object.entries(PLAN_CONFIG).map(([id, planConfig]) => {
                     const currentPlan = (creditsData?.plan || profile.plan) as PlanId;
                     const isCurrentPlan = currentPlan === id;
-                    const planOrder: PlanId[] = ['starter', 'pro', 'enterprise'];
+                    const planOrder: PlanId[] = ['starter', 'pro'];
                     const canUpgrade = planOrder.indexOf(id as PlanId) > planOrder.indexOf(currentPlan);
 
                     return (
@@ -425,20 +428,39 @@ function SettingsContent() {
                               </>
                             )}
                           </button>
-                        ) : id === 'enterprise' && canUpgrade ? (
-                          <a
-                            href="mailto:sales@rai.com?subject=Enterprise 플랜 문의"
-                            className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg
-                                     bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
-                          >
-                            문의하기
-                            <ArrowRight className="w-3 h-3" />
-                          </a>
                         ) : null}
                       </div>
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Cancel Subscription */}
+              {(creditsData?.plan || profile.plan) !== "starter" && (
+                <div className="space-y-4 pt-4 border-t border-white/10">
+                  <h3 className="font-medium text-white">구독 취소</h3>
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+                    <div>
+                      <p className="text-white">구독을 취소하시겠습니까?</p>
+                      <p className="text-sm text-slate-400 mt-1">
+                        취소 시 남은 기간에 대한 비례 환불이 가능합니다.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowRefundModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg
+                               bg-red-500/20 hover:bg-red-500/30 text-red-400 text-sm font-medium transition-colors"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      구독 취소
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Refund History */}
+              <div className="pt-4 border-t border-white/10">
+                <RefundHistory />
               </div>
             </div>
           )}
@@ -473,6 +495,17 @@ function SettingsContent() {
           )}
         </div>
       </div>
+
+      {/* Refund Modal */}
+      <RefundRequestModal
+        isOpen={showRefundModal}
+        onClose={() => setShowRefundModal(false)}
+        onSuccess={() => {
+          invalidateCredits();
+          fetchProfile();
+        }}
+        plan={creditsData?.plan || profile.plan}
+      />
     </div>
   );
 }

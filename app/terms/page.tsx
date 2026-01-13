@@ -222,7 +222,7 @@ export default function TermsPage() {
                 <section id="general">
                   <h2 className="text-xl font-bold text-white mb-4">제1조 (목적)</h2>
                   <p className="text-slate-300 leading-relaxed">
-                    본 약관은 주식회사 RAI(이하 &quot;회사&quot;)가 제공하는 AI 기반 이력서 분석 서비스
+                    본 약관은 포텐시아 주식회사(이하 &quot;회사&quot;)가 제공하는 AI 기반 이력서 분석 서비스
                     &quot;RAI&quot;(이하 &quot;서비스&quot;)의 이용에 관한 회사와 이용자 간의 권리, 의무 및
                     책임사항, 기타 필요한 사항을 규정함을 목적으로 합니다.
                   </p>
@@ -532,19 +532,21 @@ export default function TermsPage() {
                   <h2 className="text-xl font-bold text-white mb-4">제15조 (환불 정책)</h2>
                   <ol className="list-decimal list-inside space-y-3 text-slate-300">
                     <li>
-                      결제일로부터 7일 이내에 서비스를 이용하지 않은 경우 전액 환불이
-                      가능합니다.
+                      <strong className="text-white">14일 전액 환불:</strong> 결제일로부터 14일 이내에 환불을 요청하는 경우,
+                      서비스 이용 여부와 관계없이 전액 환불됩니다.
                     </li>
                     <li>
-                      서비스 이용 후에는 이용한 크레딧에 해당하는 금액을 공제한 후
-                      환불됩니다.
+                      <strong className="text-white">환불 절차:</strong> 환불 요청은 서비스 내 설정 메뉴 또는
+                      고객센터(support@rai.kr)를 통해 할 수 있으며, 요청일로부터
+                      5~7영업일 이내에 원결제 수단으로 환불됩니다.
                     </li>
                     <li>
-                      회사의 귀책사유로 서비스가 중단되어 이용자가 손해를 입은 경우,
-                      해당 기간에 해당하는 이용료를 환불합니다.
+                      <strong className="text-white">14일 경과 후:</strong> 결제일로부터 14일이 경과한 후에는
+                      환불이 불가하며, 현재 결제 주기가 종료될 때까지 서비스를 계속 이용할 수 있습니다.
                     </li>
                     <li>
-                      환불 요청은 고객센터 또는 서비스 내 문의 기능을 통해 할 수 있습니다.
+                      <strong className="text-white">서비스 장애 보상:</strong> 회사의 귀책사유로 서비스가 중단된 경우,
+                      별도의 보상 정책에 따라 크레딧 또는 이용 기간 연장으로 보상합니다.
                     </li>
                   </ol>
                 </section>
@@ -619,7 +621,7 @@ export default function TermsPage() {
                 <section className="pt-8 border-t border-white/10">
                   <h2 className="text-xl font-bold text-white mb-4">문의처</h2>
                   <div className="text-slate-300 space-y-2">
-                    <p><strong className="text-white">회사명:</strong> 주식회사 RAI</p>
+                    <p><strong className="text-white">회사명:</strong> 포텐시아 주식회사 (Potensia Inc.)</p>
                     <p><strong className="text-white">이메일:</strong> support@rai.kr</p>
                     <p><strong className="text-white">고객센터:</strong> 평일 09:00 - 18:00</p>
                   </div>

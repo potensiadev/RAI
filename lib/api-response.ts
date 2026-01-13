@@ -63,7 +63,9 @@ export interface ApiMeta {
   cached?: boolean;
   cacheAge?: number;
   responseTime?: number;
+  searchMode?: 'ai_semantic' | 'keyword' | 'fallback_text';
 }
+
 
 /**
  * 통합 API 응답 타입

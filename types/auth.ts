@@ -7,7 +7,7 @@
 // Plan Types (PRD v6.0)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-export type PlanType = 'starter' | 'pro' | 'enterprise';
+export type PlanType = 'starter' | 'pro';
 export type AnalysisMode = 'phase_1' | 'phase_2';
 
 export interface Plan {
@@ -37,17 +37,10 @@ export const PLANS: Record<PlanType, Plan> = {
     baseCredits: 150,
     overageCost: 1000,
     blindExportLimit: Infinity,
-    crossCheckMode: "phase_1",
-  },
-  enterprise: {
-    name: "Enterprise (확장형)",
-    price: 199000,
-    baseCredits: 300,
-    overageCost: null,
-    blindExportLimit: Infinity,
-    crossCheckMode: "phase_2",
+    crossCheckMode: "phase_2", // 3-Way Cross-Check (GPT + Gemini + Claude)
   },
 };
+
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // User Profile

@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
           user_id: user.id,
           file_path: storagePath,
           file_name: file.name,
-          mode: userInfo.plan === "enterprise" ? "phase_2" : "phase_1",
+          mode: userInfo.plan === "pro" ? "phase_2" : "phase_1", // Pro: 3-Way Cross-Check
         }),
       });
 

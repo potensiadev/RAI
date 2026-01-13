@@ -22,20 +22,21 @@ export const PADDLE_CONFIG = {
     : 'https://sandbox-api.paddle.com',
 } as const;
 
-// 플랜 설정
+// 플랜 설정 (types/auth.ts의 PLANS와 동기화됨)
 export const PLAN_CONFIG = {
   starter: {
     id: 'starter',
     name: 'Starter',
-    priceId: null, // 무료 플랜
+    priceId: null, // 무료 체험 후 유료 전환
     credits: 50,
-    price: 0,
-    priceDisplay: '무료',
+    price: 79000,
+    priceDisplay: '₩79,000/월',
+    crossCheckMode: 'phase_1' as const, // 2-Way (GPT + Gemini)
     features: [
       '월 50건 이력서 분석',
-      'AI 자동 추출',
+      '2-Way AI Cross-Check',
       '기본 검색',
-      '블라인드 내보내기',
+      '블라인드 내보내기 (월 30회)',
     ],
   },
   pro: {
@@ -43,29 +44,16 @@ export const PLAN_CONFIG = {
     name: 'Pro',
     priceId: process.env.PADDLE_PRODUCT_PRO || '',
     credits: 150,
-    price: 49000,
-    priceDisplay: '₩49,000/월',
+    price: 149000,
+    priceDisplay: '₩149,000/월',
+    crossCheckMode: 'phase_2' as const, // 3-Way (GPT + Gemini + Claude)
     features: [
       '월 150건 이력서 분석',
-      'AI 고급 분석',
+      '3-Way AI Cross-Check (GPT + Gemini + Claude)',
       '동의어 검색',
       '버전 관리',
+      '무제한 블라인드 내보내기',
       '우선 지원',
-    ],
-  },
-  enterprise: {
-    id: 'enterprise',
-    name: 'Enterprise',
-    priceId: process.env.PADDLE_PRODUCT_ENTERPRISE || '',
-    credits: 300,
-    price: 99000,
-    priceDisplay: '₩99,000/월',
-    features: [
-      '월 300건 이력서 분석',
-      '모든 Pro 기능',
-      'API 액세스',
-      '전담 지원',
-      '맞춤 통합',
     ],
   },
 } as const;
@@ -88,6 +76,7 @@ export function getPlanByPriceId(priceId: string): typeof PLAN_CONFIG[PlanId] | 
  * 플랜 업그레이드 가능 여부 확인
  */
 export function canUpgrade(currentPlan: PlanId, targetPlan: PlanId): boolean {
-  const planOrder: PlanId[] = ['starter', 'pro', 'enterprise'];
+  const planOrder: PlanId[] = ['starter', 'pro'];
   return planOrder.indexOf(targetPlan) > planOrder.indexOf(currentPlan);
 }
+

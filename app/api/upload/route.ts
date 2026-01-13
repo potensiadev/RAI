@@ -307,7 +307,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
       user_id: publicUserId,
       job_id: jobId,
       candidate_id: candidateId,
-      mode: userPlan === "enterprise" ? "phase_2" : "phase_1",
+      mode: userPlan === "pro" ? "phase_2" : "phase_1", // Pro: 3-Way (GPT+Gemini+Claude)
     };
 
     try {

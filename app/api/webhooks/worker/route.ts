@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import {
   apiSuccess,
   apiUnauthorized,
@@ -7,6 +7,7 @@ import {
   apiInternalError,
 } from "@/lib/api-response";
 import { invalidateUserSearchCache } from "@/lib/cache";
+import { checkQualityRefundCondition } from "@/lib/refund/config";
 
 // NextResponse는 Health check GET에서 사용
 
@@ -21,6 +22,136 @@ import { invalidateUserSearchCache } from "@/lib/cache";
 // Webhook Secret 필수 검증
 // 환경변수가 설정되지 않으면 모든 요청 거부
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+
+/**
+ * 품질 환불 처리 함수
+ *
+ * PRD: prd_refund_policy_v0.4.md Section 3.3.2
+ * QA: refund_policy_test_scenarios_v1.0.md (EC-001 ~ EC-030)
+ *
+ * Advisory Lock과 Idempotency를 포함한 RPC 호출
+ */
+async function processQualityRefund(
+  supabase: SupabaseClient,
+  params: {
+    candidateId: string;
+    userId: string;
+    jobId: string;
+    confidence: number;
+    missingFields: string[];
+  }
+): Promise<{ success: boolean; idempotent?: boolean; error?: string }> {
+  const { candidateId, userId, jobId, confidence, missingFields } = params;
+
+  try {
+    // RPC로 Atomic 환불 처리 (Advisory Lock 포함)
+    const { data, error } = await supabase.rpc("process_quality_refund", {
+      p_candidate_id: candidateId,
+      p_user_id: userId,
+      p_job_id: jobId,
+      p_confidence: confidence,
+      p_missing_fields: missingFields,
+    });
+
+    if (error) {
+      console.error("[QualityRefund] RPC Error:", error);
+      return { success: false, error: error.message };
+    }
+
+    // RPC 결과 확인
+    const result = data as { success: boolean; idempotent?: boolean; error?: string };
+    if (!result?.success) {
+      console.error("[QualityRefund] RPC returned failure:", result?.error);
+      return { success: false, error: result?.error || "Unknown error" };
+    }
+
+    // Storage 파일 삭제 시도 (실패해도 환불은 완료된 상태)
+    try {
+      const { data: job } = await supabase
+        .from("processing_jobs")
+        .select("file_name")
+        .eq("id", jobId)
+        .single();
+
+      if (job?.file_name) {
+        const ext = job.file_name.split(".").pop() || "pdf";
+        const storagePath = `uploads/${userId}/${jobId}.${ext}`;
+
+        const { error: storageError } = await supabase.storage
+          .from("resumes")
+          .remove([storagePath]);
+
+        if (storageError) {
+          // Storage 삭제 실패 - 로깅 (배치 cleanup에서 재시도)
+          console.error(
+            `[QualityRefund] Storage deletion failed: ${storagePath}`,
+            storageError
+          );
+        } else {
+          console.log(`[QualityRefund] File deleted: ${storagePath}`);
+        }
+      }
+    } catch (storageErr) {
+      console.error("[QualityRefund] Storage operation error:", storageErr);
+      // Storage 실패는 무시하고 환불 성공으로 처리
+    }
+
+    console.log(
+      `[QualityRefund] Processed: candidate=${candidateId}, confidence=${confidence}, ` +
+        `missing=${missingFields.join(",")}, idempotent=${result.idempotent}`
+    );
+
+    return { success: true, idempotent: result.idempotent };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : "Unknown error";
+    console.error("[QualityRefund] Unexpected error:", err);
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
+ * 사용자에게 Realtime 알림 전송
+ *
+ * PRD: prd_refund_policy_v0.4.md Section 3.4
+ * Supabase Realtime Broadcast 사용
+ */
+async function notifyUserRefund(
+  supabase: SupabaseClient,
+  userId: string,
+  eventType: "quality_refund" | "upload_refund",
+  details: {
+    candidateId?: string;
+    confidence?: number;
+    missingFields?: string[];
+  }
+): Promise<void> {
+  try {
+    // Supabase Realtime Broadcast
+    const channel = supabase.channel(`user:${userId}`);
+
+    await channel.send({
+      type: "broadcast",
+      event: "refund_notification",
+      payload: {
+        type: eventType,
+        message:
+          eventType === "quality_refund"
+            ? "분석 품질이 기준에 미달하여 크레딧이 자동 환불되었습니다."
+            : "파일 처리 실패로 크레딧이 환불되었습니다.",
+        details,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // 채널 정리
+    supabase.removeChannel(channel);
+
+    console.log(`[Webhook] Refund notification sent to user: ${userId.slice(0, 8)}`);
+  } catch (err) {
+    console.error("[Webhook] Failed to send refund notification:", err);
+    // 알림 실패는 환불 성공에 영향 없음
+  }
+}
 
 // Progressive Loading: parsed, analyzed 상태 추가
 type WebhookStatus = "parsed" | "analyzed" | "completed" | "failed";
@@ -144,6 +275,63 @@ export async function POST(request: NextRequest) {
         `[Webhook] Job completed: candidate=${payload.result.candidate_id}, ` +
         `is_update=${payload.result.is_update}, parent_id=${payload.result.parent_id}`
       );
+
+      // ─────────────────────────────────────────────────
+      // 품질 환불 조건 체크
+      // PRD: prd_refund_policy_v0.4.md Section 3.2
+      // QA: refund_policy_test_scenarios_v1.0.md (EC-001 ~ EC-025)
+      // ─────────────────────────────────────────────────
+      const qualityCheck = checkQualityRefundCondition(
+        payload.result.confidence_score,
+        payload.result.quick_data
+      );
+
+      if (qualityCheck.eligible) {
+        console.log(
+          `[Webhook] Quality refund triggered: confidence=${qualityCheck.confidence}, ` +
+          `missing=${qualityCheck.missingFields.join(",")}`
+        );
+
+        // 사용자 정보 조회
+        const { data: candidateData } = await supabase
+          .from("candidates")
+          .select("user_id")
+          .eq("id", payload.result.candidate_id)
+          .single();
+
+        if (candidateData?.user_id) {
+          // 품질 환불 처리 (RPC 호출)
+          const refundResult = await processQualityRefund(supabase, {
+            candidateId: payload.result.candidate_id,
+            userId: candidateData.user_id,
+            jobId: payload.job_id,
+            confidence: qualityCheck.confidence,
+            missingFields: qualityCheck.missingFields,
+          });
+
+          if (refundResult.success) {
+            // 사용자 알림 전송
+            await notifyUserRefund(supabase, candidateData.user_id, "quality_refund", {
+              candidateId: payload.result.candidate_id,
+              confidence: qualityCheck.confidence,
+              missingFields: qualityCheck.missingFields,
+            });
+
+            // 검색 캐시 무효화 (환불 시에도)
+            await invalidateUserSearchCache(candidateData.user_id);
+
+            return apiSuccess({
+              message: `Job ${payload.job_id} processed with quality refund`,
+              action: "refunded",
+              reason: "quality_below_threshold",
+              idempotent: refundResult.idempotent,
+            });
+          } else {
+            console.error("[Webhook] Quality refund failed:", refundResult.error);
+            // 환불 실패해도 job은 완료 처리 (나중에 수동 처리)
+          }
+        }
+      }
 
       // ─────────────────────────────────────────────────
       // 검색 캐시 무효화 (새 후보자 추가/수정 시)

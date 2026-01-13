@@ -4,6 +4,11 @@
  *
  * PATCH /api/candidates/[id]
  * 후보자 정보 수정 (검토 후 편집)
+ *
+ * DELETE /api/candidates/[id]
+ * 후보자 삭제 (Soft Delete + Storage 파일 삭제)
+ * - PRD: prd_refund_policy_v0.4.md Section 2.2
+ * - QA: refund_policy_test_scenarios_v1.0.md (EC-041 ~ EC-050)
  */
 
 import { NextRequest } from "next/server";
@@ -327,6 +332,150 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return apiSuccess(candidate);
   } catch (error) {
     console.error("Candidate update API error:", error);
+    return apiInternalError();
+  }
+}
+
+/**
+ * DELETE /api/candidates/[id]
+ *
+ * 후보자 삭제 (Soft Delete)
+ * - EC-041: 정상 삭제 처리
+ * - EC-042: 이미 삭제된 후보자 (idempotent)
+ * - EC-043: 이미 환불된 후보자 (idempotent)
+ * - EC-044: 권한 없는 사용자 (403)
+ * - EC-045: 존재하지 않는 후보자 (404)
+ * - EC-046: Storage 파일 삭제 실패 (로깅 후 진행)
+ */
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    // Rate Limit 체크 (분당 60회)
+    const rateLimitResponse = await withRateLimit(request, "default");
+    if (rateLimitResponse) return rateLimitResponse;
+
+    const { id } = await params;
+    const supabase = await createClient();
+
+    // ─────────────────────────────────────────────────
+    // 1. 인증 확인
+    // ─────────────────────────────────────────────────
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user || !user.email) {
+      return apiUnauthorized();
+    }
+
+    // 사용자 ID 조회 (public.users)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: userData } = await (supabase as any)
+      .from("users")
+      .select("id")
+      .eq("email", user.email)
+      .single();
+
+    const publicUserId = (userData as { id: string } | null)?.id;
+    if (!publicUserId) {
+      return apiUnauthorized("사용자 정보를 찾을 수 없습니다.");
+    }
+
+    // ─────────────────────────────────────────────────
+    // 2. 후보자 조회 (권한 확인 + 상태 확인)
+    // ─────────────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: candidate, error: fetchError } = await (supabase as any)
+      .from("candidates")
+      .select("id, user_id, status, deleted_at")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !candidate) {
+      if (fetchError?.code === "PGRST116") {
+        return apiNotFound("후보자를 찾을 수 없습니다.");
+      }
+      console.error("[DELETE Candidate] Fetch error:", fetchError);
+      return apiInternalError();
+    }
+
+    // 소유권 검증 (403 Forbidden) - EC-044
+    if (candidate.user_id !== publicUserId) {
+      return apiForbidden("이 후보자를 삭제할 권한이 없습니다.");
+    }
+
+    // ─────────────────────────────────────────────────
+    // 3. 이미 삭제/환불된 경우 Idempotent 처리
+    // ─────────────────────────────────────────────────
+    // EC-042, EC-043: 이미 처리된 경우 성공 응답 (멱등성)
+    if (
+      candidate.status === "refunded" ||
+      candidate.status === "deleted" ||
+      candidate.deleted_at
+    ) {
+      return apiSuccess({
+        success: true,
+        candidateId: id,
+        message: "Already processed",
+        idempotent: true,
+      });
+    }
+
+    // ─────────────────────────────────────────────────
+    // 4. Storage 파일 삭제
+    // ─────────────────────────────────────────────────
+    // processing_jobs에서 파일 정보 조회 (candidate_id로 검색)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: job } = await (supabase as any)
+      .from("processing_jobs")
+      .select("id, file_name, file_path")
+      .eq("candidate_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (job?.file_name) {
+      // Storage 경로: uploads/{user_id}/{job_id}.{ext}
+      const ext = job.file_name.split(".").pop() || "pdf";
+      const storagePath = `uploads/${publicUserId}/${job.id}.${ext}`;
+
+      const { error: storageError } = await supabase.storage
+        .from("resumes")
+        .remove([storagePath]);
+
+      // EC-046: Storage 삭제 실패 시 로깅만 (삭제는 진행)
+      if (storageError) {
+        console.error(
+          `[DELETE Candidate] Storage deletion failed: ${storagePath}`,
+          storageError
+        );
+      }
+    }
+
+    // ─────────────────────────────────────────────────
+    // 5. Soft Delete 실행
+    // ─────────────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: updateError } = await (supabase as any)
+      .from("candidates")
+      .update({
+        status: "deleted",
+        deleted_at: new Date().toISOString(),
+        delete_reason: "user_request",
+      })
+      .eq("id", id)
+      .eq("user_id", publicUserId); // RLS 이중 보호
+
+    if (updateError) {
+      console.error("[DELETE Candidate] Update error:", updateError);
+      return apiInternalError("삭제 처리에 실패했습니다.");
+    }
+
+    return apiSuccess({
+      success: true,
+      candidateId: id,
+    });
+  } catch (error) {
+    console.error("[DELETE Candidate] API error:", error);
     return apiInternalError();
   }
 }

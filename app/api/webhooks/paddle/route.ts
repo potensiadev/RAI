@@ -2,12 +2,18 @@
  * POST /api/webhooks/paddle
  * Paddle Webhook 처리
  *
+ * PRD: prd_refund_policy_v0.4.md Section 5, 6
+ * QA: refund_policy_test_scenarios_v1.0.md (EC-061 ~ EC-070)
+ *
  * 지원 이벤트:
  * - subscription.created: 새 구독 생성
  * - subscription.updated: 구독 업데이트 (업그레이드/다운그레이드)
  * - subscription.canceled: 구독 취소
  * - subscription.past_due: 결제 실패
  * - subscription.activated: 구독 활성화
+ * - adjustment.created: 환불 생성 (Phase 2)
+ * - adjustment.updated: 환불 상태 변경
+ * - transaction.completed: 결제 완료 (결제 금액 기록용)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -26,7 +32,7 @@ interface PaddleWebhookEvent {
   event_id: string;
   occurred_at: string;
   data: {
-    id: string; // subscription_id
+    id: string; // subscription_id / adjustment_id / transaction_id
     status: string;
     customer_id: string;
     items: Array<{
@@ -45,6 +51,23 @@ interface PaddleWebhookEvent {
     custom_data?: {
       email?: string;
     };
+    // Adjustment (refund) specific fields
+    action?: "refund" | "credit" | "chargeback";
+    subscription_id?: string;
+    transaction_id?: string;
+    totals?: {
+      total: string;
+      subtotal: string;
+      tax: string;
+    };
+    // Transaction specific fields
+    details?: {
+      totals: {
+        total: string;
+        grand_total: string;
+      };
+    };
+    billed_at?: string;
   };
 }
 
@@ -232,6 +255,68 @@ export async function POST(request: NextRequest) {
           subscription_status: "past_due",
         });
         console.log(`[Paddle Webhook] Subscription past due for ${user.email}`);
+        break;
+
+      // ─────────────────────────────────────────────────
+      // Phase 2: Transaction 이벤트 (결제 금액 기록)
+      // ─────────────────────────────────────────────────
+      case "transaction.completed":
+        if (data.details?.totals) {
+          const paymentAmount = parseInt(data.details.totals.grand_total || data.details.totals.total, 10);
+          await supabaseAdmin
+            .from("users")
+            .update({
+              last_payment_amount: paymentAmount,
+              last_payment_date: data.billed_at || new Date().toISOString(),
+            })
+            .eq("id", user.id);
+          console.log(`[Paddle Webhook] Transaction completed for ${user.email}: ${paymentAmount}`);
+        }
+        break;
+
+      // ─────────────────────────────────────────────────
+      // Phase 2: Adjustment 이벤트 (환불 처리)
+      // ─────────────────────────────────────────────────
+      case "adjustment.created":
+        if (data.action === "refund") {
+          console.log(`[Paddle Webhook] Refund created: ${data.id}, status: ${data.status}`);
+
+          // 환불 요청 상태 업데이트 (transaction_id로 찾기)
+          if (data.transaction_id) {
+            await supabaseAdmin
+              .from("refund_requests")
+              .update({
+                paddle_refund_id: data.id,
+                status: data.status === "approved" ? "completed" : "processing",
+                paddle_response: data,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("user_id", user.id)
+              .eq("status", "pending")
+              .order("created_at", { ascending: false })
+              .limit(1);
+          }
+        }
+        break;
+
+      case "adjustment.updated":
+        if (data.action === "refund") {
+          console.log(`[Paddle Webhook] Refund updated: ${data.id}, status: ${data.status}`);
+
+          // paddle_refund_id로 환불 요청 찾아서 상태 업데이트
+          const newStatus = data.status === "approved" ? "completed" : data.status === "rejected" ? "failed" : "processing";
+          await supabaseAdmin
+            .from("refund_requests")
+            .update({
+              status: newStatus,
+              paddle_response: data,
+              processed_at: ["approved", "rejected", "reversed"].includes(data.status)
+                ? new Date().toISOString()
+                : null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("paddle_refund_id", data.id);
+        }
         break;
 
       default:

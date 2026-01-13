@@ -222,7 +222,7 @@ export default function PrivacyPage() {
                 {/* 서문 */}
                 <section>
                   <p className="text-slate-300 leading-relaxed">
-                    주식회사 RAI(이하 &quot;회사&quot;)는 개인정보보호법, 정보통신망 이용촉진 및
+                    포텐시아 주식회사(Potensia Inc., 이하 &quot;회사&quot;)는 개인정보보호법, 정보통신망 이용촉진 및
                     정보보호 등에 관한 법률 등 관련 법령에 따라 이용자의 개인정보를 보호하고,
                     이와 관련한 고충을 신속하고 원활하게 처리할 수 있도록 다음과 같이
                     개인정보처리방침을 수립하여 공개합니다.
@@ -639,7 +639,7 @@ export default function PrivacyPage() {
                 <section className="pt-8 border-t border-white/10">
                   <h2 className="text-xl font-bold text-white mb-4">문의처</h2>
                   <div className="text-slate-300 space-y-2">
-                    <p><strong className="text-white">회사명:</strong> 주식회사 RAI</p>
+                    <p><strong className="text-white">회사명:</strong> 포텐시아 주식회사 (Potensia Inc.)</p>
                     <p><strong className="text-white">개인정보 관련 문의:</strong> privacy@rai.kr</p>
                     <p><strong className="text-white">일반 문의:</strong> support@rai.kr</p>
                     <p><strong className="text-white">고객센터:</strong> 평일 09:00 - 18:00</p>

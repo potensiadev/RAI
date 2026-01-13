@@ -176,11 +176,19 @@ Return valid JSON only."""
         ]
 
     def _get_providers(self, mode: AnalysisMode) -> List[LLMProvider]:
-        """Get providers for analysis"""
+        """Get providers for analysis based on mode
+        
+        Phase 1: OpenAI + Gemini (2-Way Cross-Check)
+        Phase 2: OpenAI + Gemini + Claude (3-Way Cross-Check) - Pro plan only
+        """
         available = self.llm_manager.get_available_providers()
         
-        # Always use OpenAI + Gemini for cross-check (2 calls)
-        required = [LLMProvider.OPENAI, LLMProvider.GEMINI]
+        if mode == AnalysisMode.PHASE_1:
+            # 2-Way Cross-Check: GPT-4o + Gemini
+            required = [LLMProvider.OPENAI, LLMProvider.GEMINI]
+        else:
+            # 3-Way Cross-Check: GPT-4o + Gemini + Claude (Pro plan)
+            required = [LLMProvider.OPENAI, LLMProvider.GEMINI, LLMProvider.CLAUDE]
         
         providers = [p for p in required if p in available]
         
@@ -191,6 +199,7 @@ Return valid JSON only."""
             raise ValueError("No LLM providers available")
         
         return providers
+
 
     async def _call_llms_parallel(
         self,
@@ -238,6 +247,9 @@ Return valid JSON only."""
     ) -> tuple[Dict[str, Any], float, List[Warning]]:
         """
         Merge responses with cross-check on critical fields.
+
+        2-Way (Phase 1): OpenAI + Gemini 교차 검증
+        3-Way (Phase 2): OpenAI + Gemini + Claude 다수결 검증 (Pro plan)
         """
         warnings_precheck = []
 
@@ -271,15 +283,18 @@ Return valid JSON only."""
         if len(valid_responses) == 1:
             return valid_responses[0].content, 0.7, warnings_precheck + [Warning("info", "cross_check", "Only one provider available")]
 
-        # Multiple responses - merge with cross-check
+        # Get all provider responses
         openai_data = responses.get(LLMProvider.OPENAI)
         gemini_data = responses.get(LLMProvider.GEMINI)
+        claude_data = responses.get(LLMProvider.CLAUDE)
 
         # Use OpenAI as base (usually more structured)
         if openai_data and openai_data.success:
             base_data = openai_data.content.copy()
         elif gemini_data and gemini_data.success:
             base_data = gemini_data.content.copy()
+        elif claude_data and claude_data.success:
+            base_data = claude_data.content.copy()
         else:
             return {}, 0.0, [Warning("critical", "all", "No valid responses")]
 
@@ -287,31 +302,87 @@ Return valid JSON only."""
         confidence_sum = 0
         field_count = 0
 
+        # Determine if 3-way mode (Claude available)
+        is_3way = claude_data and claude_data.success
+
+        if is_3way:
+            logger.info("[AnalystAgent] 3-Way Cross-Check 모드 (GPT + Gemini + Claude)")
+        else:
+            logger.info("[AnalystAgent] 2-Way Cross-Check 모드 (GPT + Gemini)")
+
         # Cross-check critical fields
         for field in self.CRITICAL_FIELDS:
             openai_val = openai_data.content.get(field) if openai_data and openai_data.success else None
             gemini_val = gemini_data.content.get(field) if gemini_data and gemini_data.success else None
+            claude_val = claude_data.content.get(field) if claude_data and claude_data.success else None
 
-            if openai_val and gemini_val:
-                if str(openai_val).lower().strip() == str(gemini_val).lower().strip():
-                    confidence_sum += 1.0
+            values = []
+            if openai_val:
+                values.append(("openai", str(openai_val).lower().strip()))
+            if gemini_val:
+                values.append(("gemini", str(gemini_val).lower().strip()))
+            if claude_val:
+                values.append(("claude", str(claude_val).lower().strip()))
+
+            if len(values) >= 2:
+                # 3-Way: 다수결 (2/3 이상 일치 시 높은 신뢰도)
+                if is_3way and len(values) == 3:
+                    unique_vals = set(v[1] for v in values)
+                    if len(unique_vals) == 1:
+                        # 3개 모두 일치 → 최고 신뢰도
+                        confidence_sum += 1.0
+                    elif len(unique_vals) == 2:
+                        # 2개 일치, 1개 불일치 → 다수결 채택
+                        val_counts = {}
+                        for provider, val in values:
+                            val_counts[val] = val_counts.get(val, []) + [provider]
+
+                        majority_val = max(val_counts.keys(), key=lambda v: len(val_counts[v]))
+                        minority_providers = [p for v, providers in val_counts.items() if v != majority_val for p in providers]
+
+                        confidence_sum += 0.85
+                        base_data[field] = next(
+                            (openai_val if openai_val and str(openai_val).lower().strip() == majority_val
+                             else gemini_val if gemini_val and str(gemini_val).lower().strip() == majority_val
+                             else claude_val),
+                            base_data.get(field)
+                        )
+                        warnings.append(Warning(
+                            "mismatch_resolved", field,
+                            f"다수결 적용: {minority_providers} 불일치",
+                            "low"
+                        ))
+                    else:
+                        # 3개 모두 다름 → 낮은 신뢰도
+                        confidence_sum += 0.4
+                        warnings.append(Warning(
+                            "mismatch", field,
+                            f"3-Way 불일치: openai='{openai_val}', gemini='{gemini_val}', claude='{claude_val}'",
+                            "high"
+                        ))
+                # 2-Way: 기존 로직
                 else:
-                    confidence_sum += 0.5
-                    warnings.append(Warning(
-                        "mismatch", field,
-                        f"Values differ: '{openai_val}' vs '{gemini_val}'",
-                        "medium"
-                    ))
+                    val1, val2 = values[0][1], values[1][1]
+                    if val1 == val2:
+                        confidence_sum += 1.0
+                    else:
+                        confidence_sum += 0.5
+                        warnings.append(Warning(
+                            "mismatch", field,
+                            f"Values differ: '{values[0][1]}' vs '{values[1][1]}'",
+                            "medium"
+                        ))
                 field_count += 1
-            elif openai_val or gemini_val:
+            elif len(values) == 1:
                 confidence_sum += 0.7
                 field_count += 1
 
-        # For non-critical fields, just take whatever is available
-        if gemini_data and gemini_data.success:
-            for key, value in gemini_data.content.items():
-                if key not in base_data or base_data[key] is None:
-                    base_data[key] = value
+        # For non-critical fields, merge from all providers
+        for provider_data in [gemini_data, claude_data]:
+            if provider_data and provider_data.success:
+                for key, value in provider_data.content.items():
+                    if key not in base_data or base_data[key] is None:
+                        base_data[key] = value
 
         avg_confidence = confidence_sum / max(1, field_count) if field_count > 0 else 0.8
 

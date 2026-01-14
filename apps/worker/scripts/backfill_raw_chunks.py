@@ -5,6 +5,10 @@ PRD v0.1: prd_aisemantic_search_v0.1.md
 - 기존 후보자 데이터에 raw_full, raw_section 청크 추가
 - Storage에서 파일 다운로드 → 파싱 → 청킹 → 임베딩 → 저장
 
+P2 이슈 해결:
+- 배치 실패 시 개별 재시도 로직 추가
+- 지수 백오프 적용
+
 사용법:
     python scripts/backfill_raw_chunks.py [--dry-run] [--limit 100] [--user-id UUID]
 
@@ -20,6 +24,7 @@ import argparse
 import logging
 import sys
 import os
+import random
 from typing import Optional, List
 from datetime import datetime
 from pathlib import Path
@@ -52,7 +57,7 @@ if not os.getenv('SUPABASE_URL'):
     sys.exit(1)
 
 from supabase import create_client
-from config import Settings
+from config import Settings, chunking_config
 from services.embedding_service import get_embedding_service, ChunkType
 from utils.hwp_parser import HWPParser
 from utils.pdf_parser import PDFParser
@@ -83,6 +88,11 @@ class BackfillProcessor:
         self.pdf_parser = PDFParser()
         self.docx_parser = DOCXParser()
 
+        # 재시도 설정 (config에서 가져옴)
+        self.max_retries = chunking_config.MAX_EMBEDDING_RETRIES
+        self.retry_base_wait = chunking_config.RETRY_BASE_WAIT_SECONDS
+        self.retry_max_wait = chunking_config.RETRY_MAX_WAIT_SECONDS
+
         # 통계
         self.stats = {
             "total": 0,
@@ -90,7 +100,53 @@ class BackfillProcessor:
             "skipped": 0,
             "failed": 0,
             "chunks_created": 0,
+            "retry_success": 0,
+            "retry_failed": 0,
         }
+
+    async def _retry_with_exponential_backoff(
+        self,
+        func,
+        *args,
+        max_retries: int = None,
+        **kwargs
+    ):
+        """
+        지수 백오프를 적용한 재시도 (P2 이슈 해결)
+
+        Args:
+            func: 실행할 비동기 함수
+            max_retries: 최대 재시도 횟수
+
+        Returns:
+            함수 실행 결과 또는 None
+        """
+        if max_retries is None:
+            max_retries = self.max_retries
+
+        last_error = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                last_error = e
+
+                if attempt < max_retries:
+                    # 지수 백오프 + 지터
+                    wait_time = min(
+                        self.retry_base_wait * (2 ** attempt) + random.uniform(0, 1),
+                        self.retry_max_wait
+                    )
+                    logger.warning(
+                        f"[Backfill] 재시도 {attempt + 1}/{max_retries} "
+                        f"({wait_time:.2f}초 대기): {type(e).__name__}: {e}"
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"[Backfill] 최대 재시도 횟수 초과: {type(e).__name__}: {e}")
+
+        return None
 
     async def get_candidates_without_raw_chunks(
         self,
@@ -136,7 +192,7 @@ class BackfillProcessor:
 
         return candidates
 
-    async def get_file_path_for_candidate(self, candidate_id: str) -> Optional[str]:
+    async def get_file_path_for_candidate(self, candidate_id: str) -> Optional[tuple]:
         """
         후보자의 원본 파일 경로 조회 (processing_jobs에서)
 
@@ -144,18 +200,37 @@ class BackfillProcessor:
             candidate_id: 후보자 ID
 
         Returns:
-            Storage 파일 경로 또는 None
+            (Storage 파일 경로, 파일명) 튜플 또는 None
         """
         result = self.supabase.table("processing_jobs") \
-            .select("file_path, file_name") \
+            .select("id, file_path, file_name, user_id") \
             .eq("candidate_id", candidate_id) \
             .eq("status", "completed") \
             .order("created_at", desc=True) \
             .limit(1) \
             .execute()
 
-        if result.data and result.data[0].get("file_path"):
-            return result.data[0]["file_path"]
+        if not result.data:
+            return None
+
+        job = result.data[0]
+
+        # file_path가 있으면 그대로 사용
+        if job.get("file_path"):
+            return (job["file_path"], job.get("file_name", "unknown"))
+
+        # file_path가 없으면 user_id와 job_id로 재구성
+        # Storage 구조: uploads/{user_id}/{job_id}.{ext}
+        user_id = job.get("user_id")
+        job_id = job.get("id")
+        file_name = job.get("file_name", "")
+
+        if user_id and job_id:
+            # 확장자 추출
+            ext = file_name.split(".")[-1].lower() if "." in file_name else "pdf"
+            reconstructed_path = f"uploads/{user_id}/{job_id}.{ext}"
+            logger.info(f"  파일 경로 재구성: {reconstructed_path}")
+            return (reconstructed_path, file_name)
 
         return None
 
@@ -209,6 +284,13 @@ class BackfillProcessor:
 
         return None
 
+    async def _create_embedding_with_retry(self, text: str) -> Optional[List[float]]:
+        """개별 텍스트에 대한 임베딩 생성 (재시도 포함)"""
+        async def _create():
+            return await self.embedding_service.create_embedding(text)
+
+        return await self._retry_with_exponential_backoff(_create)
+
     async def process_candidate(self, candidate: dict) -> bool:
         """
         단일 후보자에 대한 raw 청크 생성
@@ -225,14 +307,13 @@ class BackfillProcessor:
         logger.info(f"처리 중: {candidate_name} ({candidate_id})")
 
         # 1. 파일 경로 조회
-        file_path = await self.get_file_path_for_candidate(candidate_id)
-        if not file_path:
+        file_info = await self.get_file_path_for_candidate(candidate_id)
+        if not file_info:
             logger.warning(f"  파일 경로 없음, 스킵")
             self.stats["skipped"] += 1
             return False
 
-        # 파일명 추출
-        file_name = file_path.split("/")[-1]
+        file_path, file_name = file_info
 
         # 2. 파일 다운로드
         file_bytes = self.download_file(file_path)
@@ -259,14 +340,32 @@ class BackfillProcessor:
             self.stats["skipped"] += 1
             return False
 
-        # 5. 임베딩 생성
+        # 5. 임베딩 생성 (배치 + 개별 재시도)
         texts = [c.content for c in raw_chunks]
+
+        # 먼저 배치로 시도
         embeddings = await self.embedding_service.create_embeddings_batch(texts)
 
+        # 배치 결과 확인 및 실패한 항목 개별 재시도
+        successful_embeddings = 0
         for i, embedding in enumerate(embeddings):
-            raw_chunks[i].embedding = embedding
+            if embedding is not None:
+                raw_chunks[i].embedding = embedding
+                successful_embeddings += 1
+            else:
+                # P2 이슈 해결: 개별 재시도 (지수 백오프 적용)
+                logger.info(f"    청크 {i} 개별 재시도 시작...")
+                retry_embedding = await self._create_embedding_with_retry(texts[i])
 
-        successful_embeddings = sum(1 for e in embeddings if e is not None)
+                if retry_embedding:
+                    raw_chunks[i].embedding = retry_embedding
+                    successful_embeddings += 1
+                    self.stats["retry_success"] += 1
+                    logger.info(f"    청크 {i} 재시도 성공")
+                else:
+                    self.stats["retry_failed"] += 1
+                    logger.warning(f"    청크 {i} 재시도 실패")
+
         logger.info(f"  임베딩 생성: {successful_embeddings}/{len(raw_chunks)}")
 
         if self.dry_run:
@@ -275,10 +374,12 @@ class BackfillProcessor:
             self.stats["chunks_created"] += len(raw_chunks)
             return True
 
-        # 6. DB 저장
+        # 6. DB 저장 (임베딩 있는 청크만)
         try:
+            saved_count = 0
             for chunk in raw_chunks:
                 if chunk.embedding is None:
+                    logger.debug(f"    청크 {chunk.chunk_index} 임베딩 없음, 저장 스킵")
                     continue
 
                 insert_data = {
@@ -290,10 +391,11 @@ class BackfillProcessor:
                 }
 
                 self.supabase.table("candidate_chunks").insert(insert_data).execute()
+                saved_count += 1
 
             self.stats["processed"] += 1
-            self.stats["chunks_created"] += successful_embeddings
-            logger.info(f"  저장 완료")
+            self.stats["chunks_created"] += saved_count
+            logger.info(f"  저장 완료: {saved_count}/{len(raw_chunks)} 청크")
             return True
 
         except Exception as e:
@@ -321,6 +423,7 @@ class BackfillProcessor:
         logger.info(f"  Limit: {limit}")
         logger.info(f"  User ID: {user_id or 'All'}")
         logger.info(f"  Batch Size: {batch_size}")
+        logger.info(f"  Max Retries: {self.max_retries}")
         logger.info("=" * 60)
 
         # 대상 후보자 조회
@@ -358,6 +461,8 @@ class BackfillProcessor:
         logger.info(f"  스킵됨: {self.stats['skipped']}")
         logger.info(f"  실패: {self.stats['failed']}")
         logger.info(f"  생성된 청크: {self.stats['chunks_created']}")
+        logger.info(f"  재시도 성공: {self.stats['retry_success']}")
+        logger.info(f"  재시도 실패: {self.stats['retry_failed']}")
         logger.info("=" * 60)
 
 

@@ -3,6 +3,13 @@ Embedding Service - 청킹 + Vector Embedding
 
 이력서 데이터를 의미 단위로 청킹하고 임베딩 생성
 OpenAI text-embedding-3-small 사용
+
+PRD v0.1 이슈 해결:
+- P0: tiktoken 도입하여 토큰 추정 정확화
+- P0: truncation 발생 시 로그 경고
+- P1: 지수 백오프 재시도 로직
+- P1: 한글 텍스트 최적화 (50% 감지, CHUNK_SIZE=2000, OVERLAP=500)
+- P1: 청킹 파라미터 config.py에서 관리
 """
 
 import asyncio
@@ -12,10 +19,18 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
+import random
 
 from openai import AsyncOpenAI
 
-from config import get_settings
+from config import get_settings, chunking_config
+
+# tiktoken import (토큰 수 정확한 계산)
+try:
+    import tiktoken
+    TIKTOKEN_AVAILABLE = True
+except ImportError:
+    TIKTOKEN_AVAILABLE = False
 
 # 로깅 설정 - 상세 출력
 logging.basicConfig(level=logging.DEBUG)
@@ -104,13 +119,14 @@ class EmbeddingService:
     EMBEDDING_MODEL = "text-embedding-3-small"
     EMBEDDING_DIMENSIONS = 1536
 
-    # 청크 최대 길이 (토큰 기준, 대략 문자 수로 환산)
-    MAX_CHUNK_CHARS = 2000
+    # 청크 최대 길이 (config에서 가져옴)
+    MAX_CHUNK_CHARS = chunking_config.MAX_STRUCTURED_CHUNK_CHARS
 
     def __init__(self):
         logger.info("=" * 60)
         logger.info("[EmbeddingService] 초기화 시작")
         self.client = None
+        self._encoding = None  # tiktoken 인코더 (lazy init)
         openai_key = settings.OPENAI_API_KEY
         if openai_key:
             try:
@@ -121,7 +137,109 @@ class EmbeddingService:
                 logger.error(traceback.format_exc())
         else:
             logger.warning("[EmbeddingService] ⚠️ OPENAI_API_KEY 없음 - 임베딩 비활성화")
+
+        # tiktoken 인코더 초기화
+        if TIKTOKEN_AVAILABLE:
+            try:
+                self._encoding = tiktoken.encoding_for_model(self.EMBEDDING_MODEL)
+                logger.info("[EmbeddingService] ✅ tiktoken 인코더 초기화 성공")
+            except Exception as e:
+                logger.warning(f"[EmbeddingService] ⚠️ tiktoken 인코더 초기화 실패: {e}")
+                self._encoding = None
+        else:
+            logger.warning("[EmbeddingService] ⚠️ tiktoken 미설치 - 토큰 수 추정 모드 사용")
+
         logger.info("=" * 60)
+
+    def _count_tokens(self, text: str) -> int:
+        """
+        텍스트의 토큰 수 계산 (P0 이슈 해결)
+
+        tiktoken 사용 시 정확한 토큰 수 계산,
+        없으면 한글/영문 혼합 추정 사용
+        """
+        if self._encoding:
+            return len(self._encoding.encode(text))
+
+        # tiktoken 없을 때: 한글/영문 혼합 추정
+        korean_chars = sum(1 for c in text if '\uac00' <= c <= '\ud7a3')
+        other_chars = len(text) - korean_chars
+
+        # 한글: 1자 ≈ 2-3토큰, 영문/기타: 4자 ≈ 1토큰
+        korean_tokens = korean_chars * 2.5
+        other_tokens = other_chars / 4
+
+        return int(korean_tokens + other_tokens)
+
+    def _count_tokens_batch(self, texts: List[str]) -> int:
+        """배치 텍스트의 총 토큰 수 계산"""
+        return sum(self._count_tokens(t) for t in texts)
+
+    def _is_korean_dominant(self, text: str) -> bool:
+        """
+        텍스트가 한글 우세인지 확인 (P1 이슈: 한글 최적화)
+
+        Args:
+            text: 검사할 텍스트
+
+        Returns:
+            한글 비율이 KOREAN_THRESHOLD (50%) 이상이면 True
+        """
+        if not text:
+            return False
+
+        korean_chars = sum(1 for c in text if '\uac00' <= c <= '\ud7a3')
+        total_chars = len(text.replace(' ', '').replace('\n', ''))
+
+        if total_chars == 0:
+            return False
+
+        korean_ratio = korean_chars / total_chars
+        return korean_ratio >= chunking_config.KOREAN_THRESHOLD
+
+    async def _retry_with_exponential_backoff(
+        self,
+        func,
+        *args,
+        max_retries: int = None,
+        **kwargs
+    ):
+        """
+        지수 백오프를 적용한 재시도 (P1 이슈 해결)
+
+        Args:
+            func: 실행할 비동기 함수
+            max_retries: 최대 재시도 횟수 (기본: config에서)
+
+        Returns:
+            함수 실행 결과 또는 None
+        """
+        if max_retries is None:
+            max_retries = chunking_config.MAX_EMBEDDING_RETRIES
+
+        last_error = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                last_error = e
+
+                if attempt < max_retries:
+                    # 지수 백오프 + 지터
+                    wait_time = min(
+                        chunking_config.RETRY_BASE_WAIT_SECONDS * (2 ** attempt) + random.uniform(0, 1),
+                        chunking_config.RETRY_MAX_WAIT_SECONDS
+                    )
+                    logger.warning(
+                        f"[EmbeddingService] 재시도 {attempt + 1}/{max_retries} "
+                        f"({wait_time:.2f}초 대기): {type(e).__name__}: {e}"
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"[EmbeddingService] 최대 재시도 횟수 초과: {type(e).__name__}: {e}")
+
+        return None
 
     async def create_embedding(self, text: str) -> Optional[List[float]]:
         """단일 텍스트 임베딩 생성"""
@@ -132,19 +250,22 @@ class EmbeddingService:
         start_time = datetime.now()
         logger.info(f"[EmbeddingService] 단일 임베딩 생성 시작 - 텍스트 길이: {len(text)} chars")
 
-        try:
+        async def _create():
             response = await self.client.embeddings.create(
                 model=self.EMBEDDING_MODEL,
                 input=text[:8000]  # 토큰 제한
             )
-            elapsed = (datetime.now() - start_time).total_seconds()
-            logger.info(f"[EmbeddingService] ✅ 임베딩 생성 완료 ({elapsed:.2f}초) - 차원: {len(response.data[0].embedding)}")
             return response.data[0].embedding
-        except Exception as e:
-            elapsed = (datetime.now() - start_time).total_seconds()
-            logger.error(f"[EmbeddingService] ❌ 임베딩 생성 실패 ({elapsed:.2f}초): {type(e).__name__}: {e}")
-            logger.error(f"[EmbeddingService] 상세 오류:\n{traceback.format_exc()}")
-            return None
+
+        result = await self._retry_with_exponential_backoff(_create)
+
+        elapsed = (datetime.now() - start_time).total_seconds()
+        if result:
+            logger.info(f"[EmbeddingService] ✅ 임베딩 생성 완료 ({elapsed:.2f}초) - 차원: {len(result)}")
+        else:
+            logger.error(f"[EmbeddingService] ❌ 임베딩 생성 실패 ({elapsed:.2f}초)")
+
+        return result
 
     async def create_embeddings_batch(
         self,
@@ -165,10 +286,18 @@ class EmbeddingService:
             truncated = [t[:8000] for t in texts]
 
             logger.info(f"[EmbeddingService] OpenAI embeddings.create 호출 중...")
-            response = await self.client.embeddings.create(
-                model=self.EMBEDDING_MODEL,
-                input=truncated
-            )
+
+            async def _create_batch():
+                return await self.client.embeddings.create(
+                    model=self.EMBEDDING_MODEL,
+                    input=truncated
+                )
+
+            response = await self._retry_with_exponential_backoff(_create_batch)
+
+            if not response:
+                logger.error("[EmbeddingService] ❌ 배치 임베딩 생성 실패 (모든 재시도 실패)")
+                return [None] * len(texts)
 
             elapsed = (datetime.now() - start_time).total_seconds()
             logger.info(f"[EmbeddingService] ✅ 배치 임베딩 생성 완료 ({elapsed:.2f}초)")
@@ -259,22 +388,18 @@ class EmbeddingService:
                         else:
                             failed_indices.append(i)
 
-                    # 실패한 청크에 대해 개별 재시도
+                    # 실패한 청크에 대해 개별 재시도 (지수 백오프 적용)
                     if failed_indices:
                         logger.info(f"[EmbeddingService] Step 2-1: 실패한 {len(failed_indices)}개 청크 개별 재시도")
                         for idx in failed_indices:
-                            try:
-                                retry_embedding = await self.create_embedding(chunks[idx].content)
-                                if retry_embedding:
-                                    chunks[idx].embedding = retry_embedding
-                                    embedded_count += 1
-                                    logger.info(f"[EmbeddingService] ✅ 청크 {idx} 재시도 성공")
-                                else:
-                                    failed_count += 1
-                                    logger.warning(f"[EmbeddingService] ❌ 청크 {idx} 재시도 실패")
-                            except Exception as retry_error:
+                            retry_embedding = await self.create_embedding(chunks[idx].content)
+                            if retry_embedding:
+                                chunks[idx].embedding = retry_embedding
+                                embedded_count += 1
+                                logger.info(f"[EmbeddingService] ✅ 청크 {idx} 재시도 성공")
+                            else:
                                 failed_count += 1
-                                logger.warning(f"[EmbeddingService] ❌ 청크 {idx} 재시도 예외: {retry_error}")
+                                logger.warning(f"[EmbeddingService] ❌ 청크 {idx} 재시도 실패")
 
                     logger.info(f"[EmbeddingService] ✅ 임베딩 생성 완료: {embedded_count}/{len(chunks)} 성공")
 
@@ -284,14 +409,15 @@ class EmbeddingService:
                         warnings.append(warning_msg)
                         logger.warning(f"[EmbeddingService] ⚠️ {warning_msg}")
 
-                    # 토큰 수 추정 (대략 4 문자 = 1 토큰)
-                    total_tokens = sum(len(t) // 4 for t in texts)
-                    logger.info(f"[EmbeddingService] 예상 토큰 사용량: {total_tokens}")
+                    # 토큰 수 계산 (P0 이슈 해결: tiktoken 사용)
+                    total_tokens = self._count_tokens_batch(texts)
+                    logger.info(f"[EmbeddingService] 토큰 사용량: {total_tokens} (tiktoken: {TIKTOKEN_AVAILABLE})")
 
             elapsed = (datetime.now() - start_time).total_seconds()
             logger.info(f"[EmbeddingService] ✅ 처리 완료 ({elapsed:.2f}초)")
             logger.info("=" * 60)
 
+            # P2 이슈: 부분 성공 시에도 success=True이지만 명확한 상태 제공
             return EmbeddingResult(
                 success=True,
                 chunks=chunks,
@@ -626,7 +752,11 @@ class EmbeddingService:
 
         청킹 전략:
         1. raw_full: 전체 텍스트 (1개, 최대 8000자)
-        2. raw_section: 슬라이딩 윈도우 (N개, 1500자 청크, 300자 오버랩)
+        2. raw_section: 슬라이딩 윈도우 (N개, 한글 최적화 적용)
+
+        P1 이슈 해결:
+        - 한글 텍스트 최적화: 한글 50% 이상 → CHUNK_SIZE=2000, OVERLAP=500
+        - P0 이슈: truncation 발생 시 로그 경고
 
         Args:
             raw_text: 파싱된 원본 이력서 텍스트
@@ -635,45 +765,65 @@ class EmbeddingService:
             List[Chunk]: raw_full + raw_section 청크들
         """
         chunks = []
+        cfg = chunking_config
 
-        if not raw_text or len(raw_text.strip()) < 100:
-            logger.debug("[EmbeddingService] Raw 텍스트가 너무 짧음 (< 100자), 스킵")
+        if not raw_text or len(raw_text.strip()) < cfg.RAW_TEXT_MIN_LENGTH:
+            logger.debug(f"[EmbeddingService] Raw 텍스트가 너무 짧음 (< {cfg.RAW_TEXT_MIN_LENGTH}자), 스킵")
             return chunks
 
         # ─────────────────────────────────────────────────
         # 1. raw_full: 전체 텍스트 (최대 8000자)
         # ─────────────────────────────────────────────────
-        MAX_RAW_FULL_CHARS = 8000
+        is_truncated = len(raw_text) > cfg.MAX_RAW_FULL_CHARS
+
+        # P0 이슈 해결: truncation 발생 시 로그 경고
+        if is_truncated:
+            logger.warning(
+                f"[EmbeddingService] ⚠️ TRUNCATION: 원본 텍스트가 {len(raw_text)}자로 "
+                f"MAX_RAW_FULL_CHARS({cfg.MAX_RAW_FULL_CHARS})를 초과합니다. "
+                f"마지막 {len(raw_text) - cfg.MAX_RAW_FULL_CHARS}자가 raw_full에서 제외됩니다. "
+                f"검색 커버리지 100% 목표에 영향을 줄 수 있습니다."
+            )
 
         chunks.append(Chunk(
             chunk_type=ChunkType.RAW_FULL,
             chunk_index=0,
-            content=raw_text[:MAX_RAW_FULL_CHARS],
+            content=raw_text[:cfg.MAX_RAW_FULL_CHARS],
             metadata={
                 "original_length": len(raw_text),
-                "truncated": len(raw_text) > MAX_RAW_FULL_CHARS
+                "truncated": is_truncated,
+                "truncated_chars": len(raw_text) - cfg.MAX_RAW_FULL_CHARS if is_truncated else 0
             }
         ))
 
         # ─────────────────────────────────────────────────
         # 2. raw_section: 슬라이딩 윈도우 청킹
-        #    - 청크 크기: 1500자
-        #    - 오버랩: 300자
-        #    - 최소 청크 길이: 100자
+        #    - P1 이슈 해결: 한글 최적화
         # ─────────────────────────────────────────────────
-        CHUNK_SIZE = 1500
-        OVERLAP = 300
-        MIN_CHUNK_LENGTH = 100
 
-        # 1500자 이상일 때만 섹션 분할
-        if len(raw_text) > CHUNK_SIZE:
+        # 한글 우세 여부 확인
+        is_korean = self._is_korean_dominant(raw_text)
+
+        if is_korean:
+            chunk_size = cfg.KOREAN_CHUNK_SIZE
+            overlap = cfg.KOREAN_OVERLAP
+            logger.debug(f"[EmbeddingService] 한글 최적화 적용: CHUNK_SIZE={chunk_size}, OVERLAP={overlap}")
+        else:
+            chunk_size = cfg.RAW_SECTION_CHUNK_SIZE
+            overlap = cfg.RAW_SECTION_OVERLAP
+
+        min_chunk_length = cfg.RAW_SECTION_MIN_LENGTH
+
+        # chunk_size 이상일 때만 섹션 분할
+        if len(raw_text) > chunk_size:
             section_index = 0
+            stride = chunk_size - overlap
 
-            for start in range(0, len(raw_text), CHUNK_SIZE - OVERLAP):
-                section = raw_text[start:start + CHUNK_SIZE]
+            for start in range(0, len(raw_text), stride):
+                section = raw_text[start:start + chunk_size]
 
                 # 최소 길이 체크
-                if len(section.strip()) < MIN_CHUNK_LENGTH:
+                if len(section.strip()) < min_chunk_length:
                     continue
 
                 chunks.append(Chunk(
@@ -682,15 +832,17 @@ class EmbeddingService:
                     content=section,
                     metadata={
                         "start_pos": start,
-                        "end_pos": min(start + CHUNK_SIZE, len(raw_text)),
-                        "section_length": len(section)
+                        "end_pos": min(start + chunk_size, len(raw_text)),
+                        "section_length": len(section),
+                        "is_korean_optimized": is_korean
                     }
                 ))
                 section_index += 1
 
         logger.debug(
             f"[EmbeddingService] Raw 청킹 완료: "
-            f"raw_full=1, raw_section={len(chunks) - 1}"
+            f"raw_full=1, raw_section={len(chunks) - 1}, "
+            f"korean_optimized={is_korean}"
         )
 
         return chunks

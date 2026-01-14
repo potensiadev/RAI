@@ -5,11 +5,61 @@ RAI Worker Configuration
 from enum import Enum
 from typing import Optional
 from pydantic_settings import BaseSettings
+from pydantic import Field
 
 
 class AnalysisMode(str, Enum):
     PHASE_1 = "phase_1"  # GPT-4o + Gemini (2-Way)
     PHASE_2 = "phase_2"  # GPT-4o + Gemini + Claude (3-Way)
+
+
+class ChunkingConfig:
+    """
+    청킹 설정 (PRD v0.1 이슈 해결)
+
+    구조화 데이터:
+    - MAX_STRUCTURED_CHUNK_CHARS: 구조화 청크 최대 길이
+
+    원본 텍스트:
+    - MAX_RAW_FULL_CHARS: raw_full 최대 길이
+    - RAW_SECTION_CHUNK_SIZE: 슬라이딩 윈도우 크기
+    - RAW_SECTION_OVERLAP: 오버랩 크기
+    - RAW_SECTION_MIN_LENGTH: 최소 청크 길이
+    - RAW_TEXT_MIN_LENGTH: raw 청킹 최소 조건
+
+    한글 최적화:
+    - KOREAN_THRESHOLD: 한글 비율 임계값 (50%)
+    - KOREAN_CHUNK_SIZE: 한글 문서용 청크 크기
+    - KOREAN_OVERLAP: 한글 문서용 오버랩
+
+    재시도:
+    - MAX_EMBEDDING_RETRIES: 최대 재시도 횟수
+    - RETRY_BASE_WAIT_SECONDS: 기본 대기 시간 (지수 백오프)
+    - RETRY_MAX_WAIT_SECONDS: 최대 대기 시간
+    """
+    # 구조화 데이터
+    MAX_STRUCTURED_CHUNK_CHARS: int = 2000
+
+    # 원본 텍스트
+    MAX_RAW_FULL_CHARS: int = 8000
+    RAW_SECTION_CHUNK_SIZE: int = 1500
+    RAW_SECTION_OVERLAP: int = 300
+    RAW_SECTION_MIN_LENGTH: int = 100
+    RAW_TEXT_MIN_LENGTH: int = 100
+
+    # 한글 최적화 (50% 이상이면 한글로 판단)
+    KOREAN_THRESHOLD: float = 0.5
+    KOREAN_CHUNK_SIZE: int = 2000
+    KOREAN_OVERLAP: int = 500
+
+    # 재시도 설정 (지수 백오프)
+    MAX_EMBEDDING_RETRIES: int = 3
+    RETRY_BASE_WAIT_SECONDS: float = 1.0
+    RETRY_MAX_WAIT_SECONDS: float = 10.0
+
+
+# 청킹 설정 싱글톤
+chunking_config = ChunkingConfig()
 
 
 class Settings(BaseSettings):

@@ -92,9 +92,9 @@ export default function GravityDropZone({
             className={cn(
                 "relative overflow-hidden rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-300",
                 "min-h-[300px] flex items-center justify-center",
-                isDragging && "scale-[1.02] border-primary",
-                isRejected && "border-red-500 bg-red-500/10",
-                !isDragging && !isRejected && "border-slate-700 hover:border-slate-600 bg-slate-800/30",
+                isDragging && "scale-[1.02] border-primary bg-primary/5",
+                isRejected && "border-red-500 bg-red-50",
+                !isDragging && !isRejected && "border-slate-300 hover:border-slate-400 bg-slate-50 hover:bg-slate-100",
                 disabled && "opacity-50 cursor-not-allowed"
             )}
         >
@@ -112,7 +112,7 @@ export default function GravityDropZone({
                 "absolute inset-0 transition-opacity duration-500",
                 isDragging ? "opacity-100" : "opacity-0"
             )}>
-                <div className="absolute inset-0 bg-gradient-radial from-primary/20 via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-gradient-radial from-primary/10 via-transparent to-transparent" />
             </div>
 
             {/* Orbiting Particles */}
@@ -139,7 +139,7 @@ export default function GravityDropZone({
                         <motion.div
                             animate={{
                                 scale: isDragging ? [1, 1.5, 1] : 1,
-                                opacity: isDragging ? [0.3, 0.8, 0.3] : 0.2,
+                                opacity: isDragging ? [0.6, 1, 0.6] : 0.4,
                             }}
                             transition={{
                                 duration: 1,
@@ -151,7 +151,7 @@ export default function GravityDropZone({
                             }}
                             className={cn(
                                 "absolute top-0 left-1/2 -translate-x-1/2 rounded-full",
-                                isDragging ? "bg-primary" : "bg-slate-500"
+                                isDragging ? "bg-primary" : "bg-slate-400"
                             )}
                         />
                     </motion.div>
@@ -166,17 +166,17 @@ export default function GravityDropZone({
                         scale: isDragging ? [1, 1.2, 1] : 1,
                         boxShadow: isDragging
                             ? [
-                                "0 0 20px rgba(139, 92, 246, 0.3)",
-                                "0 0 60px rgba(139, 92, 246, 0.6)",
-                                "0 0 20px rgba(139, 92, 246, 0.3)",
+                                "0 0 20px rgba(59, 130, 246, 0.2)",
+                                "0 0 60px rgba(59, 130, 246, 0.4)",
+                                "0 0 20px rgba(59, 130, 246, 0.2)",
                             ]
-                            : "0 0 0px rgba(139, 92, 246, 0)",
+                            : "0 0 0px rgba(59, 130, 246, 0)",
                     }}
                     transition={{ duration: 1, repeat: isDragging ? Infinity : 0 }}
                     className={cn(
                         "p-6 rounded-full transition-colors duration-300",
-                        isDragging ? "bg-primary/30" : "bg-slate-700",
-                        isRejected && "bg-red-500/30"
+                        isDragging ? "bg-white text-primary shadow-xl" : "bg-white text-slate-400 shadow-sm border border-slate-200",
+                        isRejected && "bg-red-50 text-red-500 border-red-100"
                     )}
                 >
                     <AnimatePresence mode="wait">
@@ -187,7 +187,7 @@ export default function GravityDropZone({
                                 animate={{ scale: 1, rotate: 0 }}
                                 exit={{ scale: 0, rotate: 180 }}
                             >
-                                <XCircle size={48} className="text-red-400" />
+                                <XCircle size={48} className="text-red-500" />
                             </motion.div>
                         ) : isDragging ? (
                             <motion.div
@@ -216,17 +216,17 @@ export default function GravityDropZone({
                         animate={{ y: isDragging ? -5 : 0 }}
                         className={cn(
                             "text-lg font-medium transition-colors",
-                            isDragging ? "text-primary" : "text-white",
-                            isRejected && "text-red-400"
+                            isDragging ? "text-primary" : "text-gray-900",
+                            isRejected && "text-red-500"
                         )}
                     >
                         {isRejected
                             ? "파일이 너무 많습니다"
                             : isDragging
-                            ? "여기에 놓으세요"
-                            : "이력서 파일을 드래그하거나 클릭하세요"}
+                                ? "여기에 놓으세요"
+                                : "이력서 파일을 드래그하거나 클릭하세요"}
                     </motion.p>
-                    <p className="text-sm text-slate-400 mt-1">
+                    <p className="text-sm text-gray-500 mt-1">
                         HWP, HWPX, DOC, DOCX, PDF • 최대 50MB • 최대 {maxFiles}개
                     </p>
                 </div>

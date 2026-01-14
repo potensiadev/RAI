@@ -14,25 +14,28 @@ interface ReviewBannerProps {
 
 const LEVEL_CONFIG = {
   high: {
-    bg: "bg-emerald-500/10",
-    border: "border-emerald-500/30",
-    text: "text-emerald-400",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    text: "text-emerald-700",
+    iconColor: "text-emerald-600",
     icon: CheckCircle,
     title: "AI 분석 신뢰도 높음",
     description: "2-Way Cross-Check 결과 일치율이 높습니다. 선택적으로 검토하세요.",
   },
   medium: {
-    bg: "bg-yellow-500/10",
-    border: "border-yellow-500/30",
-    text: "text-yellow-400",
+    bg: "bg-yellow-50",
+    border: "border-yellow-200",
+    text: "text-yellow-700",
+    iconColor: "text-yellow-600",
     icon: AlertTriangle,
     title: "AI 분석 검토 권장",
     description: "일부 필드에서 불일치가 감지되었습니다. 하이라이트된 필드를 확인해 주세요.",
   },
   low: {
-    bg: "bg-red-500/10",
-    border: "border-red-500/30",
-    text: "text-red-400",
+    bg: "bg-red-50",
+    border: "border-red-200",
+    text: "text-red-700",
+    iconColor: "text-red-600",
     icon: AlertCircle,
     title: "AI 분석 검토 필수",
     description: "분석 결과의 신뢰도가 낮습니다. 모든 필드를 신중하게 검토해 주세요.",
@@ -50,11 +53,11 @@ export default function ReviewBanner({
   const Icon = config.icon;
 
   return (
-    <div className={`rounded-xl border ${config.bg} ${config.border} p-4`}>
+    <div className={`rounded-xl border ${config.bg} ${config.border} p-4 shadow-sm`}>
       {/* Header */}
       <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg ${config.bg}`}>
-          <Icon className={`w-5 h-5 ${config.text}`} />
+        <div className={`p-2 rounded-lg bg-white border ${config.border}`}>
+          <Icon className={`w-5 h-5 ${config.iconColor}`} />
         </div>
 
         <div className="flex-1">
@@ -62,30 +65,29 @@ export default function ReviewBanner({
             <h3 className={`font-semibold ${config.text}`}>
               {config.title}
             </h3>
-            <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
+            <span className="text-xs text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded font-medium">
               {analysisMode === "phase_2" ? "3-Way" : "2-Way"} Cross-Check
             </span>
           </div>
 
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-gray-600 mt-1">
             {config.description}
           </p>
 
           {/* Confidence Score Bar */}
           <div className="mt-3 flex items-center gap-3">
-            <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
               <div
-                className={`h-full transition-all duration-500 ${
-                  confidenceLevel === "high"
+                className={`h-full transition-all duration-500 ${confidenceLevel === "high"
                     ? "bg-emerald-500"
                     : confidenceLevel === "medium"
-                    ? "bg-yellow-500"
-                    : "bg-red-500"
-                }`}
+                      ? "bg-yellow-500"
+                      : "bg-red-500"
+                  }`}
                 style={{ width: `${confidenceScore}%` }}
               />
             </div>
-            <span className={`text-sm font-mono font-medium ${config.text}`}>
+            <span className={`text-sm font-mono font-bold ${config.text}`}>
               {confidenceScore}%
             </span>
           </div>
@@ -93,8 +95,8 @@ export default function ReviewBanner({
 
         {/* Review Badge */}
         {requiresReview && (
-          <div className="px-3 py-1 rounded-full bg-orange-500/20 border border-orange-500/30">
-            <span className="text-xs font-medium text-orange-400">
+          <div className="px-3 py-1 rounded-full bg-orange-50 border border-orange-200">
+            <span className="text-xs font-semibold text-orange-600">
               검토 필요
             </span>
           </div>
@@ -103,10 +105,10 @@ export default function ReviewBanner({
 
       {/* Warnings */}
       {warnings.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-slate-700/50">
+        <div className="mt-4 pt-3 border-t border-gray-200">
           <div className="flex items-center gap-2 mb-2">
-            <Info className="w-4 h-4 text-slate-500" />
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+            <Info className="w-4 h-4 text-gray-500" />
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
               경고 사항
             </span>
           </div>
@@ -114,9 +116,9 @@ export default function ReviewBanner({
             {warnings.map((warning, index) => (
               <li
                 key={index}
-                className="text-sm text-slate-400 flex items-start gap-2"
+                className="text-sm text-gray-600 flex items-start gap-2"
               >
-                <span className="text-slate-600">•</span>
+                <span className="text-gray-400">•</span>
                 {warning}
               </li>
             ))}

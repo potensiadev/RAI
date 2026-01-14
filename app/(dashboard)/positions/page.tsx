@@ -160,15 +160,15 @@ export default function PositionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">Positions</h1>
-          <p className="text-slate-400 mt-1">
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Positions</h1>
+          <p className="text-gray-500 mt-1">
             채용 포지션을 관리하고 후보자를 매칭하세요
           </p>
         </div>
         <Link
           href="/positions/new"
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90
-                   text-white font-medium transition-colors"
+                   text-white font-medium transition-all shadow-sm active:scale-95"
         >
           <Plus className="w-5 h-5" />
           새 포지션
@@ -177,47 +177,47 @@ export default function PositionsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+        <div className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/20">
+            <div className="p-2 rounded-lg bg-primary/10">
               <Briefcase className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{stats.total}</p>
-              <p className="text-sm text-slate-400">전체 포지션</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              <p className="text-sm text-gray-500">전체 포지션</p>
             </div>
           </div>
         </div>
-        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+        <div className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-500/20">
-              <Target className="w-5 h-5 text-emerald-400" />
+            <div className="p-2 rounded-lg bg-emerald-500/10">
+              <Target className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{stats.open}</p>
-              <p className="text-sm text-slate-400">진행중</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.open}</p>
+              <p className="text-sm text-gray-500">진행중</p>
             </div>
           </div>
         </div>
-        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+        <div className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-red-500/20">
-              <AlertCircle className="w-5 h-5 text-red-400" />
+            <div className="p-2 rounded-lg bg-red-500/10">
+              <AlertCircle className="w-5 h-5 text-red-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{stats.urgent}</p>
-              <p className="text-sm text-slate-400">긴급</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.urgent}</p>
+              <p className="text-sm text-gray-500">긴급</p>
             </div>
           </div>
         </div>
-        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+        <div className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-orange-500/20">
-              <Clock className="w-5 h-5 text-orange-400" />
+            <div className="p-2 rounded-lg bg-orange-500/10">
+              <Clock className="w-5 h-5 text-orange-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{stats.deadlineSoon}</p>
-              <p className="text-sm text-slate-400">7일 내 마감</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.deadlineSoon}</p>
+              <p className="text-sm text-gray-500">7일 내 마감</p>
             </div>
           </div>
         </div>

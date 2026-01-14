@@ -210,8 +210,8 @@ function SettingsContent() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-white">Settings</h1>
-        <p className="text-slate-400 mt-1">
+        <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
+        <p className="text-gray-500 mt-1">
           계정 설정 및 구독 관리
         </p>
       </div>
@@ -226,8 +226,8 @@ function SettingsContent() {
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors",
                 activeTab === tab.id
-                  ? "bg-primary/20 text-primary"
-                  : "text-slate-400 hover:text-white hover:bg-white/5"
+                  ? "bg-primary/10 text-primary font-medium"
+                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
               )}
             >
               <tab.icon className="w-5 h-5" />
@@ -235,11 +235,11 @@ function SettingsContent() {
             </button>
           ))}
 
-          <hr className="my-4 border-white/10" />
+          <hr className="my-4 border-gray-200" />
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-red-400 hover:bg-red-500/10 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-red-500 hover:bg-red-50 transition-colors"
           >
             <LogOut className="w-5 h-5" />
             로그아웃
@@ -247,26 +247,26 @@ function SettingsContent() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 rounded-xl bg-white/5 border border-white/10 p-6">
+        <div className="flex-1 rounded-xl bg-white border border-gray-100 shadow-sm p-6">
           {/* Profile Tab */}
           {activeTab === "profile" && (
             <div className="space-y-6">
-              <h2 className="text-xl font-semibold text-white">프로필 설정</h2>
+              <h2 className="text-xl font-semibold text-gray-900">프로필 설정</h2>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">
+                  <label className="block text-sm font-medium text-gray-500 mb-2">
                     이메일
                   </label>
-                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10">
-                    <Mail className="w-5 h-5 text-slate-500" />
-                    <span className="text-white">{profile.email}</span>
-                    <span className="ml-auto text-xs text-slate-500">변경 불가</span>
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-50 border border-gray-200">
+                    <Mail className="w-5 h-5 text-gray-400" />
+                    <span className="text-gray-900">{profile.email}</span>
+                    <span className="ml-auto text-xs text-gray-500">변경 불가</span>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">
+                  <label className="block text-sm font-medium text-gray-500 mb-2">
                     이름
                   </label>
                   <input
@@ -274,24 +274,24 @@ function SettingsContent() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="이름을 입력하세요"
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                             text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                    className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                             text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">
+                  <label className="block text-sm font-medium text-gray-500 mb-2">
                     회사
                   </label>
                   <div className="relative">
-                    <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                    <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input
                       type="text"
                       value={company}
                       onChange={(e) => setCompany(e.target.value)}
                       placeholder="회사명을 입력하세요"
-                      className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 border border-white/10
-                               text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                      className="w-full pl-12 pr-4 py-3 rounded-xl bg-white border border-gray-200
+                               text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                     />
                   </div>
                 </div>
@@ -300,7 +300,7 @@ function SettingsContent() {
                   onClick={handleSaveProfile}
                   disabled={isSaving}
                   className="flex items-center gap-2 px-6 py-3 rounded-xl bg-primary hover:bg-primary/90
-                           text-white font-medium transition-colors disabled:opacity-50"
+                           text-white font-medium transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:scale-100"
                 >
                   {isSaving ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -316,10 +316,10 @@ function SettingsContent() {
           {/* Subscription Tab */}
           {activeTab === "subscription" && (
             <div className="space-y-6">
-              <h2 className="text-xl font-semibold text-white">구독 관리</h2>
+              <h2 className="text-xl font-semibold text-gray-900">구독 관리</h2>
 
               {/* Current Plan */}
-              <div className="p-6 rounded-xl bg-gradient-to-br from-primary/20 to-purple-500/20 border border-primary/30">
+              <div className="p-6 rounded-xl bg-gradient-to-br from-primary/5 to-purple-500/5 border border-primary/20 shadow-sm">
                 {creditsLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -328,14 +328,14 @@ function SettingsContent() {
                   <>
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-slate-400">현재 플랜</p>
-                        <p className="text-2xl font-bold text-white capitalize mt-1">
+                        <p className="text-sm text-gray-500">현재 플랜</p>
+                        <p className="text-2xl font-bold text-gray-900 capitalize mt-1">
                           {creditsData?.plan || profile.plan}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-slate-400">이번 달 사용량</p>
-                        <p className="text-2xl font-bold text-white mt-1">
+                        <p className="text-sm text-gray-500">이번 달 사용량</p>
+                        <p className="text-2xl font-bold text-gray-900 mt-1">
                           {creditsData?.creditsUsedThisMonth ?? 0} / {creditsData?.planBaseCredits ?? 50}
                         </p>
                       </div>
@@ -343,7 +343,7 @@ function SettingsContent() {
 
                     {/* Progress Bar */}
                     <div className="mt-4">
-                      <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-primary rounded-full transition-all"
                           style={{
@@ -354,7 +354,7 @@ function SettingsContent() {
                           }}
                         />
                       </div>
-                      <div className="flex justify-between mt-2 text-xs text-slate-400">
+                      <div className="flex justify-between mt-2 text-xs text-gray-500">
                         <span>남은 크레딧: {creditsData?.remainingCredits?.toLocaleString() ?? 0}</span>
                         <span>추가 크레딧: {creditsData?.credits?.toLocaleString() ?? 0}</span>
                       </div>
@@ -365,7 +365,7 @@ function SettingsContent() {
 
               {/* Plan Options */}
               <div className="space-y-4">
-                <h3 className="font-medium text-white">플랜 변경</h3>
+                <h3 className="font-medium text-gray-900">플랜 변경</h3>
                 <div className="grid grid-cols-3 gap-4">
                   {Object.entries(PLAN_CONFIG).map(([id, planConfig]) => {
                     const currentPlan = (creditsData?.plan || profile.plan) as PlanId;
@@ -377,29 +377,29 @@ function SettingsContent() {
                       <div
                         key={id}
                         className={cn(
-                          "p-4 rounded-xl border transition-all relative",
+                          "p-4 rounded-xl border transition-all relative shadow-sm",
                           isCurrentPlan
-                            ? "bg-primary/20 border-primary"
+                            ? "bg-primary/5 border-primary"
                             : canUpgrade
-                              ? "bg-white/5 border-white/10 hover:border-primary/50 hover:bg-primary/5"
-                              : "bg-white/5 border-white/10 opacity-60"
+                              ? "bg-white border-gray-200 hover:border-primary hover:bg-primary/5 hover:shadow-md"
+                              : "bg-gray-50 border-gray-100 opacity-60"
                         )}
                       >
                         {id === 'pro' && !isCurrentPlan && (
-                          <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-gradient-to-r from-primary to-purple-500 rounded-full text-xs font-semibold text-white flex items-center gap-1">
+                          <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-gradient-to-r from-primary to-purple-500 rounded-full text-xs font-semibold text-white flex items-center gap-1 shadow-sm">
                             <Sparkles className="w-3 h-3" />
                             인기
                           </div>
                         )}
 
-                        <h4 className="font-semibold text-white">{planConfig.name}</h4>
+                        <h4 className="font-semibold text-gray-900">{planConfig.name}</h4>
                         <p className="text-xl font-bold text-primary mt-2">{planConfig.priceDisplay}</p>
-                        <p className="text-sm text-slate-400 mt-1">월 {planConfig.credits}건</p>
+                        <p className="text-sm text-gray-500 mt-1">월 {planConfig.credits}건</p>
 
                         {/* Features */}
                         <ul className="mt-3 space-y-1">
                           {planConfig.features.slice(0, 3).map((feature, idx) => (
-                            <li key={idx} className="text-xs text-slate-400 flex items-start gap-1">
+                            <li key={idx} className="text-xs text-gray-500 flex items-start gap-1">
                               <Check className="w-3 h-3 text-primary shrink-0 mt-0.5" />
                               <span>{feature}</span>
                             </li>
@@ -417,7 +417,7 @@ function SettingsContent() {
                             disabled={isUpgrading}
                             className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg
                                      bg-primary hover:bg-primary/90 text-white text-sm font-medium
-                                     transition-colors disabled:opacity-50"
+                                     transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:scale-100"
                           >
                             {isUpgrading ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -437,19 +437,19 @@ function SettingsContent() {
 
               {/* Cancel Subscription */}
               {(creditsData?.plan || profile.plan) !== "starter" && (
-                <div className="space-y-4 pt-4 border-t border-white/10">
-                  <h3 className="font-medium text-white">구독 취소</h3>
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
+                <div className="space-y-4 pt-4 border-t border-gray-200">
+                  <h3 className="font-medium text-gray-900">구독 취소</h3>
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-200">
                     <div>
-                      <p className="text-white">구독을 취소하시겠습니까?</p>
-                      <p className="text-sm text-slate-400 mt-1">
+                      <p className="text-gray-900">구독을 취소하시겠습니까?</p>
+                      <p className="text-sm text-gray-500 mt-1">
                         취소 시 남은 기간에 대한 비례 환불이 가능합니다.
                       </p>
                     </div>
                     <button
                       onClick={() => setShowRefundModal(true)}
                       className="flex items-center gap-2 px-4 py-2 rounded-lg
-                               bg-red-500/20 hover:bg-red-500/30 text-red-400 text-sm font-medium transition-colors"
+                               bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 text-sm font-medium transition-colors"
                     >
                       <XCircle className="w-4 h-4" />
                       구독 취소
@@ -459,7 +459,7 @@ function SettingsContent() {
               )}
 
               {/* Refund History */}
-              <div className="pt-4 border-t border-white/10">
+              <div className="pt-4 border-t border-gray-200">
                 <RefundHistory />
               </div>
             </div>
@@ -468,7 +468,7 @@ function SettingsContent() {
           {/* Notifications Tab */}
           {activeTab === "notifications" && (
             <div className="space-y-6">
-              <h2 className="text-xl font-semibold text-white">알림 설정</h2>
+              <h2 className="text-xl font-semibold text-gray-900">알림 설정</h2>
 
               <div className="space-y-4">
                 {[
@@ -478,15 +478,15 @@ function SettingsContent() {
                 ].map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10"
+                    className="flex items-center justify-between p-4 rounded-xl bg-white border border-gray-100 shadow-sm"
                   >
                     <div>
-                      <p className="font-medium text-white">{item.label}</p>
-                      <p className="text-sm text-slate-400">{item.desc}</p>
+                      <p className="font-medium text-gray-900">{item.label}</p>
+                      <p className="text-sm text-gray-500">{item.desc}</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                     </label>
                   </div>
                 ))}

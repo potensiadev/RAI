@@ -48,7 +48,7 @@ export default function VersionStack({
                                     scale: 1 - (index + 1) * 0.02,
                                 }}
                                 exit={{ opacity: 0, y: 0 }}
-                                className="absolute inset-x-0 h-12 rounded-xl bg-slate-700 border border-slate-600"
+                                className="absolute inset-x-0 h-12 rounded-xl bg-gray-200 border border-gray-300"
                                 style={{ zIndex: -index - 1 }}
                             />
                         ))}
@@ -62,21 +62,21 @@ export default function VersionStack({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className={cn(
-                    "w-full p-4 rounded-xl border transition-all flex items-center justify-between",
+                    "w-full p-4 rounded-xl border transition-all flex items-center justify-between shadow-sm",
                     isExpanded
-                        ? "bg-primary/10 border-primary/30"
-                        : "bg-slate-800/50 border-slate-700 hover:border-slate-600"
+                        ? "bg-primary/5 border-primary/20"
+                        : "bg-white border-gray-200 hover:border-primary/30"
                 )}
             >
                 <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary/20 text-primary">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
                         <History size={18} />
                     </div>
                     <div className="text-left">
-                        <p className="text-sm font-medium text-white">
+                        <p className="text-sm font-semibold text-gray-900">
                             버전 {currentVersion} (현재)
                         </p>
-                        <p className="text-xs text-slate-400">
+                        <p className="text-xs text-gray-500">
                             {pastVersions.length}개의 이전 버전 존재
                         </p>
                     </div>
@@ -85,7 +85,7 @@ export default function VersionStack({
                     animate={{ rotate: isExpanded ? 180 : 0 }}
                     transition={{ duration: 0.2 }}
                 >
-                    <ChevronDown size={18} className="text-slate-400" />
+                    <ChevronDown size={18} className="text-gray-400" />
                 </motion.div>
             </motion.button>
 
@@ -115,13 +115,13 @@ export default function VersionStack({
                                             className={cn(
                                                 "w-full p-3 rounded-lg border text-left transition-all flex items-center gap-3",
                                                 isCurrent
-                                                    ? "bg-primary/10 border-primary/30 cursor-default"
-                                                    : "bg-slate-800/30 border-slate-700 hover:border-slate-500 hover:bg-slate-800/50"
+                                                    ? "bg-primary/5 border-primary/20 cursor-default"
+                                                    : "bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                                             )}
                                         >
                                             <div className={cn(
                                                 "p-1.5 rounded-lg",
-                                                isCurrent ? "bg-primary/20 text-primary" : "bg-slate-700 text-slate-400"
+                                                isCurrent ? "bg-primary/10 text-primary" : "bg-gray-100 text-gray-500"
                                             )}>
                                                 <FileText size={14} />
                                             </div>
@@ -130,17 +130,17 @@ export default function VersionStack({
                                                 <div className="flex items-center gap-2">
                                                     <span className={cn(
                                                         "text-sm font-medium",
-                                                        isCurrent ? "text-primary" : "text-white"
+                                                        isCurrent ? "text-primary" : "text-gray-900"
                                                     )}>
                                                         버전 {version.version}
                                                     </span>
                                                     {isCurrent && (
-                                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary">
+                                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold">
                                                             현재
                                                         </span>
                                                     )}
                                                 </div>
-                                                <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
+                                                <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5">
                                                     <Calendar size={10} />
                                                     <span>
                                                         {new Date(version.createdAt).toLocaleDateString("ko-KR")}
@@ -150,7 +150,7 @@ export default function VersionStack({
 
                                             {/* Changes Preview */}
                                             {version.changes && version.changes.length > 0 && (
-                                                <div className="text-xs text-slate-500">
+                                                <div className="text-xs text-gray-400">
                                                     +{version.changes.length} 변경
                                                 </div>
                                             )}

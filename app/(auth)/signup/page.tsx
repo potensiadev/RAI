@@ -181,9 +181,9 @@ export default function SignupPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="w-12 h-12 mx-auto rounded-xl bg-green-500/20 flex items-center justify-center border border-green-500/30"
+              className="w-16 h-16 mx-auto rounded-2xl bg-green-500 flex items-center justify-center shadow-lg shadow-green-500/30 mb-6"
             >
-              <UserCheck className="w-6 h-6 text-green-400" />
+              <UserCheck className="w-8 h-8 text-white" />
             </motion.div>
           ) : (
             <motion.div
@@ -191,9 +191,9 @@ export default function SignupPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="w-12 h-12 mx-auto rounded-xl bg-primary/20 flex items-center justify-center border border-primary/30"
+              className="w-16 h-16 mx-auto rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30 mb-6"
             >
-              <Sparkles className="w-6 h-6 text-primary" />
+              <Sparkles className="w-8 h-8 text-white" />
             </motion.div>
           )}
         </AnimatePresence>
@@ -206,8 +206,8 @@ export default function SignupPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
-              <h1 className="text-2xl font-bold text-white">반가워요!</h1>
-              <p className="text-slate-400 text-sm">이미 회원이시네요</p>
+              <h1 className="text-3xl font-bold text-gray-900 tracking-tight">반가워요!</h1>
+              <p className="text-gray-500 text-base">이미 회원이시네요</p>
             </motion.div>
           ) : (
             <motion.div
@@ -216,8 +216,8 @@ export default function SignupPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
-              <h1 className="text-2xl font-bold text-white">회원가입</h1>
-              <p className="text-slate-400 text-sm">
+              <h1 className="text-3xl font-bold text-gray-900 tracking-tight">회원가입</h1>
+              <p className="text-gray-500 text-base">
                 HR Screener에 오신 것을 환영합니다
               </p>
             </motion.div>
@@ -226,7 +226,7 @@ export default function SignupPage() {
       </div>
 
       {/* Form Area */}
-      <div className="p-6 rounded-2xl bg-[#0F0F24]/60 backdrop-blur-md border border-white/5 space-y-4">
+      <div className="p-8 rounded-3xl bg-white shadow-2xl shadow-black/5 border border-gray-100 space-y-6">
         <AnimatePresence mode="wait">
           {existingUser ? (
             // 로그인 전환 UI
@@ -460,12 +460,12 @@ export default function SignupPage() {
                 계속하기
               </Button>
 
-              <div className="relative">
+              <div className="relative py-2">
                 <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-white/10" />
+                  <span className="w-full border-t border-gray-100" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-[#0F0F24] px-2 text-slate-500">또는</span>
+                  <span className="bg-white px-3 text-gray-400 font-medium">또는</span>
                 </div>
               </div>
 
@@ -508,10 +508,10 @@ export default function SignupPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="text-center text-sm text-slate-500"
+            className="text-center text-sm text-gray-500"
           >
             이미 계정이 있으신가요?{" "}
-            <Link href="/login" className="text-primary hover:underline">
+            <Link href="/login" className="text-primary font-semibold hover:underline">
               로그인
             </Link>
           </motion.p>

@@ -14,7 +14,6 @@ import {
   Send,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import DeepSpaceBackground from "@/components/layout/DeepSpaceBackground";
 
 // Navigation links
 const navLinks = [
@@ -23,7 +22,6 @@ const navLinks = [
   { href: "/support", label: "Support" },
 ];
 
-// FAQ categories
 const faqCategories = [
   {
     title: "시작하기",
@@ -107,7 +105,6 @@ const faqCategories = [
   },
 ];
 
-// Contact options
 const contactOptions = [
   {
     icon: Mail,
@@ -129,23 +126,24 @@ const contactOptions = [
   },
 ];
 
-// FAQ Item component
 function FAQItem({ question, answer }: { question: string; answer: string }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="border-b border-white/5 last:border-b-0">
+    <div className="border-b border-gray-100 last:border-b-0">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between w-full py-4 text-left"
+        className="flex items-center justify-between w-full py-5 text-left group"
       >
-        <span className="text-white font-medium pr-4">{question}</span>
+        <span className={`font-medium pr-4 transition-colors ${isOpen ? 'text-primary' : 'text-gray-900 group-hover:text-primary'}`}>
+          {question}
+        </span>
         <motion.div
           animate={{ rotate: isOpen ? 180 : 0 }}
           transition={{ duration: 0.2 }}
           className="flex-shrink-0"
         >
-          <ChevronDown className="w-5 h-5 text-slate-400" />
+          <ChevronDown className={`w-5 h-5 ${isOpen ? 'text-primary' : 'text-gray-400'}`} />
         </motion.div>
       </button>
       <motion.div
@@ -157,13 +155,12 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
         transition={{ duration: 0.2 }}
         className="overflow-hidden"
       >
-        <p className="pb-4 text-sm text-slate-400 leading-relaxed">{answer}</p>
+        <p className="pb-5 text-sm text-gray-600 leading-relaxed">{answer}</p>
       </motion.div>
     </div>
   );
 }
 
-// Contact Form component
 function ContactForm() {
   const [formData, setFormData] = useState({
     name: "",
@@ -177,10 +174,7 @@ function ContactForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-
-    // Simulate form submission
     await new Promise((resolve) => setTimeout(resolve, 1000));
-
     setIsSubmitting(false);
     setSubmitted(true);
   };
@@ -192,20 +186,20 @@ function ContactForm() {
         animate={{ opacity: 1, scale: 1 }}
         className="text-center py-12"
       >
-        <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto mb-4">
-          <Send className="w-8 h-8 text-emerald-400" />
+        <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center mx-auto mb-4">
+          <Send className="w-8 h-8 text-emerald-500" />
         </div>
-        <h3 className="text-xl font-bold text-white mb-2">문의가 접수되었습니다</h3>
-        <p className="text-slate-400">영업일 기준 24시간 내에 답변 드리겠습니다.</p>
+        <h3 className="text-xl font-bold text-gray-900 mb-2">문의가 접수되었습니다</h3>
+        <p className="text-gray-500">영업일 기준 24시간 내에 답변 드리겠습니다.</p>
       </motion.div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label htmlFor="name" className="block text-sm font-medium text-slate-300 mb-2">
+          <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">
             이름
           </label>
           <input
@@ -214,14 +208,14 @@ function ContactForm() {
             required
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10
-                     text-white placeholder-slate-500 focus:outline-none focus:border-primary/50
-                     transition-colors"
+            className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                     text-gray-900 placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10
+                     transition-all"
             placeholder="홍길동"
           />
         </div>
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">
+          <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">
             이메일
           </label>
           <input
@@ -230,16 +224,16 @@ function ContactForm() {
             required
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10
-                     text-white placeholder-slate-500 focus:outline-none focus:border-primary/50
-                     transition-colors"
+            className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                     text-gray-900 placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10
+                     transition-all"
             placeholder="example@company.com"
           />
         </div>
       </div>
 
       <div>
-        <label htmlFor="category" className="block text-sm font-medium text-slate-300 mb-2">
+        <label htmlFor="category" className="block text-sm font-semibold text-gray-700 mb-2">
           문의 유형
         </label>
         <select
@@ -247,21 +241,21 @@ function ContactForm() {
           required
           value={formData.category}
           onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-          className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10
-                   text-white focus:outline-none focus:border-primary/50
-                   transition-colors appearance-none cursor-pointer"
+          className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                   text-gray-900 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10
+                   transition-all appearance-none cursor-pointer"
         >
-          <option value="" className="bg-deep-space">선택해 주세요</option>
-          <option value="general" className="bg-deep-space">일반 문의</option>
-          <option value="technical" className="bg-deep-space">기술 지원</option>
-          <option value="billing" className="bg-deep-space">결제 문의</option>
-          <option value="enterprise" className="bg-deep-space">Enterprise 문의</option>
-          <option value="partnership" className="bg-deep-space">제휴 문의</option>
+          <option value="" className="text-gray-500">선택해 주세요</option>
+          <option value="general">일반 문의</option>
+          <option value="technical">기술 지원</option>
+          <option value="billing">결제 문의</option>
+          <option value="enterprise">Enterprise 문의</option>
+          <option value="partnership">제휴 문의</option>
         </select>
       </div>
 
       <div>
-        <label htmlFor="message" className="block text-sm font-medium text-slate-300 mb-2">
+        <label htmlFor="message" className="block text-sm font-semibold text-gray-700 mb-2">
           문의 내용
         </label>
         <textarea
@@ -270,9 +264,9 @@ function ContactForm() {
           rows={5}
           value={formData.message}
           onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-          className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10
-                   text-white placeholder-slate-500 focus:outline-none focus:border-primary/50
-                   transition-colors resize-none"
+          className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                   text-gray-900 placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10
+                   transition-all resize-none"
           placeholder="문의 내용을 자세히 작성해 주세요..."
         />
       </div>
@@ -280,9 +274,9 @@ function ContactForm() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-medium
+        className="w-full py-4 rounded-xl bg-primary hover:bg-blue-600 text-white font-semibold
                  transition-all disabled:opacity-50 disabled:cursor-not-allowed
-                 flex items-center justify-center gap-2"
+                 flex items-center justify-center gap-2 shadow-sm hover:shadow-md"
       >
         {isSubmitting ? (
           <>
@@ -303,9 +297,13 @@ function ContactForm() {
 export default function SupportPage() {
   const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
@@ -321,22 +319,20 @@ export default function SupportPage() {
   if (!mounted) return null;
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      <DeepSpaceBackground />
-
-      <div className="relative z-10">
-        {/* Navigation */}
-        <motion.nav
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="flex items-center justify-between px-6 md:px-8 py-6 max-w-7xl mx-auto"
-        >
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/10 selection:text-primary">
+      {/* Navigation */}
+      <motion.nav
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "bg-white/80 backdrop-blur-md border-b border-gray-100" : "bg-transparent"
+          }`}
+      >
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
               <Sparkles className="w-5 h-5 text-primary" />
             </div>
-            <span className="text-xl font-bold text-white">RAI</span>
+            <span className="text-xl font-bold tracking-tight text-gray-900">RAI</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-8">
@@ -344,11 +340,10 @@ export default function SupportPage() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`text-sm transition-colors ${
-                  link.href === "/support"
-                    ? "text-white font-medium"
-                    : "text-slate-300 hover:text-white"
-                }`}
+                className={`text-sm font-medium transition-colors ${link.href === "/support"
+                    ? "text-primary"
+                    : "text-gray-500 hover:text-gray-900"
+                  }`}
               >
                 {link.label}
               </Link>
@@ -358,14 +353,13 @@ export default function SupportPage() {
           <div className="hidden md:flex items-center gap-4">
             <Link
               href="/login"
-              className="px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors"
+              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
             >
               로그인
             </Link>
             <Link
               href="/signup"
-              className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10
-                       text-sm text-white font-medium transition-all"
+              className="px-5 py-2.5 rounded-full bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-all shadow-sm hover:shadow-md"
             >
               시작하기
             </Link>
@@ -373,115 +367,102 @@ export default function SupportPage() {
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 text-slate-300 hover:text-white transition-colors"
-            aria-label="Toggle menu"
+            className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
-        </motion.nav>
+        </div>
+      </motion.nav>
 
-        {/* Mobile Menu */}
-        <motion.div
-          initial={false}
-          animate={{
-            height: mobileMenuOpen ? "auto" : 0,
-            opacity: mobileMenuOpen ? 1 : 0,
-          }}
-          transition={{ duration: 0.3 }}
-          className="md:hidden overflow-hidden"
-        >
-          <div className="px-6 pb-6 space-y-4">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`block py-2 transition-colors ${
-                  link.href === "/support"
-                    ? "text-white font-medium"
-                    : "text-slate-300 hover:text-white"
-                }`}
-              >
-                {link.label}
-              </Link>
-            ))}
-            <div className="pt-4 border-t border-white/10 space-y-3">
-              <Link
-                href="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block py-2 text-slate-300 hover:text-white transition-colors"
-              >
-                로그인
-              </Link>
-              <Link
-                href="/signup"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block py-3 px-4 rounded-lg bg-primary text-white text-center font-medium"
-              >
-                시작하기
-              </Link>
-            </div>
+      {/* Mobile Menu */}
+      <motion.div
+        initial={false}
+        animate={{ height: mobileMenuOpen ? "auto" : 0, opacity: mobileMenuOpen ? 1 : 0 }}
+        className="md:hidden overflow-hidden bg-white border-b border-gray-100 fixed top-20 left-0 right-0 z-40 shadow-lg"
+      >
+        <div className="p-6 space-y-4">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={() => setMobileMenuOpen(false)}
+              className="block py-2 text-base font-medium text-gray-900"
+            >
+              {link.label}
+            </Link>
+          ))}
+          <div className="pt-4 border-t border-gray-100 space-y-3">
+            <Link
+              href="/login"
+              className="block w-full py-3 text-center text-gray-600 font-medium hover:text-gray-900"
+            >
+              로그인
+            </Link>
+            <Link
+              href="/signup"
+              className="block w-full py-3 rounded-xl bg-primary text-white text-center font-medium hover:bg-primary/90"
+            >
+              시작하기
+            </Link>
           </div>
-        </motion.div>
+        </div>
+      </motion.div>
 
-        {/* Hero Section */}
-        <section className="px-6 md:px-8 pt-16 pb-12 max-w-7xl mx-auto">
+      <main className="pt-32 pb-20 px-6">
+        {/* Hero */}
+        <div className="max-w-4xl mx-auto text-center mb-20">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="text-center max-w-3xl mx-auto"
           >
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-6">
-              어떻게
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-neon-purple to-neon-cyan">
-                {" "}도와드릴까요?
-              </span>
+            <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-gray-900 mb-6">
+              어떻게 <span className="text-primary">도와드릴까요?</span>
             </h1>
-            <p className="text-lg text-slate-400 leading-relaxed">
+            <p className="text-xl text-gray-500 leading-relaxed">
               자주 묻는 질문에서 답을 찾거나, 직접 문의해 주세요.
             </p>
           </motion.div>
-        </section>
+        </div>
 
         {/* Contact Options */}
-        <section className="px-6 md:px-8 py-8 max-w-4xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="max-w-5xl mx-auto mb-24">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {contactOptions.map((option, index) => (
               <motion.div
                 key={option.title}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className="p-5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-center"
+                className="p-8 rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all text-center"
               >
-                <div className="w-10 h-10 rounded-lg bg-primary/20 border border-primary/30
-                              flex items-center justify-center mx-auto mb-3">
-                  <option.icon className="w-5 h-5 text-primary" />
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-5 text-primary">
+                  <option.icon className="w-6 h-6" />
                 </div>
-                <h3 className="text-white font-medium mb-1">{option.title}</h3>
-                <p className="text-sm text-slate-400 mb-2">{option.description}</p>
-                <div className="flex items-center justify-center gap-1 text-xs text-slate-500">
+                <h3 className="text-lg font-bold text-gray-900 mb-2">{option.title}</h3>
+                <p className="text-sm text-gray-500 mb-4">{option.description}</p>
+                <div className="flex items-center justify-center gap-1.5 text-xs font-medium text-gray-400">
                   <Clock className="w-3 h-3" />
                   {option.detail}
                 </div>
               </motion.div>
             ))}
           </div>
-        </section>
+        </div>
 
         {/* FAQ Section */}
-        <section className="px-6 md:px-8 py-16 max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto mb-32">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             className="text-center mb-12"
           >
-            <h2 className="text-2xl font-bold text-white mb-4">자주 묻는 질문</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">자주 묻는 질문</h2>
+            <p className="text-gray-500">궁금한 점을 빠르게 해결하세요</p>
           </motion.div>
 
-          <div className="space-y-8">
+          <div className="space-y-12">
             {faqCategories.map((category, categoryIndex) => (
               <motion.div
                 key={category.title}
@@ -490,27 +471,29 @@ export default function SupportPage() {
                 viewport={{ once: true }}
                 transition={{ delay: categoryIndex * 0.1 }}
               >
-                <h3 className="text-lg font-semibold text-primary mb-4">{category.title}</h3>
-                <div className="rounded-xl bg-white/[0.02] border border-white/[0.05] px-6">
+                <h3 className="text-lg font-bold text-primary mb-6 px-2 border-l-4 border-primary pl-4">{category.title}</h3>
+                <div className="rounded-3xl bg-white border border-gray-100 p-2 shadow-sm">
                   {category.faqs.map((faq) => (
-                    <FAQItem key={faq.question} question={faq.question} answer={faq.answer} />
+                    <div key={faq.question} className="px-6">
+                      <FAQItem question={faq.question} answer={faq.answer} />
+                    </div>
                   ))}
                 </div>
               </motion.div>
             ))}
           </div>
-        </section>
+        </div>
 
         {/* Contact Form Section */}
-        <section className="px-6 md:px-8 py-16 max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto mb-32">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center mb-8"
+            className="text-center mb-10"
           >
-            <h2 className="text-2xl font-bold text-white mb-4">직접 문의하기</h2>
-            <p className="text-slate-400">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">직접 문의하기</h2>
+            <p className="text-gray-500">
               원하는 답을 찾지 못하셨나요? 아래 양식으로 문의해 주세요.
             </p>
           </motion.div>
@@ -519,37 +502,37 @@ export default function SupportPage() {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="p-8 rounded-2xl bg-white/[0.03] border border-white/[0.08]"
+            className="p-8 md:p-10 rounded-3xl bg-white border border-gray-100 shadow-xl shadow-gray-100/50"
           >
             <ContactForm />
           </motion.div>
-        </section>
+        </div>
+      </main>
 
-        {/* Footer */}
-        <footer className="relative px-6 md:px-8 py-12 border-t border-white/5">
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center">
-                <Sparkles className="w-4 h-4 text-primary" />
-              </div>
-              <span className="text-sm text-slate-500">
-                © 2025 RAI. All rights reserved.
-              </span>
+      {/* Footer */}
+      <footer className="border-t border-gray-100 bg-white py-12 px-6">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-gray-400" />
             </div>
-            <div className="flex items-center gap-6 text-sm text-slate-500">
-              <Link href="/terms" className="hover:text-white transition-colors">
-                이용약관
-              </Link>
-              <Link href="/privacy" className="hover:text-white transition-colors">
-                개인정보처리방침
-              </Link>
-              <Link href="/support" className="hover:text-white transition-colors">
-                문의하기
-              </Link>
-            </div>
+            <span className="text-sm text-gray-500">
+              © 2025 RAI. All rights reserved.
+            </span>
           </div>
-        </footer>
-      </div>
+          <div className="flex items-center gap-8 text-sm text-gray-500">
+            <Link href="/terms" className="hover:text-gray-900 transition-colors">
+              이용약관
+            </Link>
+            <Link href="/privacy" className="hover:text-gray-900 transition-colors">
+              개인정보처리방침
+            </Link>
+            <Link href="/support" className="hover:text-gray-900 transition-colors">
+              문의하기
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

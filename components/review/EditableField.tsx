@@ -79,25 +79,25 @@ export default function EditableField({
 
   // Confidence color
   const getConfidenceColor = (conf?: number) => {
-    if (!conf) return "text-slate-500";
-    if (conf >= 0.95) return "text-emerald-400";
-    if (conf >= 0.8) return "text-yellow-400";
-    return "text-red-400";
+    if (!conf) return "text-gray-400";
+    if (conf >= 0.95) return "text-emerald-600";
+    if (conf >= 0.8) return "text-yellow-600";
+    return "text-red-500";
   };
 
   // Confidence bar color
   const getConfidenceBarColor = (conf?: number) => {
-    if (!conf) return "bg-slate-500";
-    if (conf >= 0.95) return "bg-emerald-400";
-    if (conf >= 0.8) return "bg-yellow-400";
-    return "bg-red-400";
+    if (!conf) return "bg-gray-300";
+    if (conf >= 0.95) return "bg-emerald-500";
+    if (conf >= 0.8) return "bg-yellow-500";
+    return "bg-red-500";
   };
 
   return (
     <div className="group relative">
       {/* Label Row */}
-      <div className="flex items-center gap-2 mb-1">
-        <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+      <div className="flex items-center gap-2 mb-1.5">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
           {label}
         </label>
 
@@ -108,14 +108,14 @@ export default function EditableField({
             title={`AI 신뢰도: ${Math.round(confidence * 100)}%`}
           >
             {/* Progress Bar */}
-            <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+            <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all ${getConfidenceBarColor(confidence)}`}
                 style={{ width: `${Math.round(confidence * 100)}%` }}
               />
             </div>
             {/* Percentage Text */}
-            <span className={`text-xs font-mono ${getConfidenceColor(confidence)}`}>
+            <span className={`text-xs font-mono font-medium ${getConfidenceColor(confidence)}`}>
               {Math.round(confidence * 100)}%
             </span>
           </div>
@@ -123,15 +123,15 @@ export default function EditableField({
 
         {/* Warning Badge */}
         {hasWarning && (
-          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/30">
-            <AlertTriangle className="w-3 h-3 text-yellow-500" />
-            <span className="text-xs text-yellow-500">확인 필요</span>
+          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-yellow-50 border border-yellow-200">
+            <AlertTriangle className="w-3 h-3 text-yellow-600" />
+            <span className="text-xs text-yellow-700 font-medium">확인 필요</span>
           </div>
         )}
 
         {/* Modified Badge */}
         {isModified && !isEditing && (
-          <span className="text-xs text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">
+          <span className="text-xs text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded font-medium">
             수정됨
           </span>
         )}
@@ -147,9 +147,9 @@ export default function EditableField({
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-600
-                         text-white text-sm focus:outline-none focus:border-neon-cyan
-                         min-h-[80px] resize-y"
+                className="flex-1 px-3 py-2 rounded-lg bg-white border border-primary/50 ring-2 ring-primary/20
+                         text-gray-900 text-sm focus:outline-none
+                         min-h-[80px] resize-y shadow-sm transition-all"
                 placeholder={placeholder}
               />
             ) : (
@@ -159,51 +159,52 @@ export default function EditableField({
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-600
-                         text-white text-sm focus:outline-none focus:border-neon-cyan"
+                className="flex-1 px-3 py-2 rounded-lg bg-white border border-primary/50 ring-2 ring-primary/20
+                         text-gray-900 text-sm focus:outline-none shadow-sm transition-all"
                 placeholder={placeholder}
               />
             )}
 
             {/* Action Buttons */}
-            <button
-              onClick={handleSave}
-              className="p-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30
-                       text-emerald-400 transition-colors"
-              title="저장 (Enter)"
-            >
-              <Check className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleCancel}
-              className="p-2 rounded-lg bg-red-500/20 hover:bg-red-500/30
-                       text-red-400 transition-colors"
-              title="취소 (Esc)"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={handleSave}
+                className="p-2 rounded-lg bg-emerald-50 border border-emerald-100 hover:bg-emerald-100
+                         text-emerald-600 transition-colors shadow-sm"
+                title="저장 (Enter)"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleCancel}
+                className="p-2 rounded-lg bg-red-50 border border-red-100 hover:bg-red-100
+                         text-red-500 transition-colors shadow-sm"
+                title="취소 (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         ) : (
           <div
-            className={`flex items-center justify-between px-3 py-2 rounded-lg
-                       bg-slate-800/50 border transition-colors cursor-pointer
+            className={`flex items-center justify-between px-3 py-2.5 rounded-lg
+                       bg-white border transition-all cursor-pointer shadow-sm group-hover:shadow-md
                        ${hasWarning
-                         ? "border-yellow-500/30 hover:border-yellow-500/50"
-                         : "border-slate-700 hover:border-slate-600"
-                       }
-                       ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                ? "border-yellow-200 hover:border-yellow-300 bg-yellow-50/30"
+                : "border-gray-200 hover:border-primary/30"
+              }
+                       ${disabled ? "opacity-50 cursor-not-allowed bg-gray-50" : ""}`}
             onClick={() => !disabled && setIsEditing(true)}
           >
             <span
-              className={`text-sm ${
-                isEmpty ? "text-slate-500 italic" : "text-white"
-              }`}
+              className={`text-sm ${isEmpty ? "text-gray-400 italic" : "text-gray-900"
+                }`}
             >
               {isEmpty ? placeholder : displayValue}
             </span>
 
             {!disabled && (
-              <Pencil className="w-4 h-4 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <Pencil className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
             )}
           </div>
         )}
@@ -211,9 +212,9 @@ export default function EditableField({
 
       {/* Warning Message */}
       {warningMessage && (
-        <div className="flex items-start gap-1.5 mt-1.5">
-          <Info className="w-3.5 h-3.5 text-yellow-500 mt-0.5 flex-shrink-0" />
-          <p className="text-xs text-yellow-500/80">{warningMessage}</p>
+        <div className="flex items-start gap-1.5 mt-2">
+          <Info className="w-3.5 h-3.5 text-yellow-600 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-yellow-700">{warningMessage}</p>
         </div>
       )}
     </div>

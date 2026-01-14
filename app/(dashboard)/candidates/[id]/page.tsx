@@ -462,8 +462,8 @@ export default function CandidateDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-10 h-10 text-neon-cyan animate-spin" />
-          <p className="text-slate-400">후보자 정보를 불러오는 중...</p>
+          <Loader2 className="w-10 h-10 text-primary animate-spin" />
+          <p className="text-gray-500">후보자 정보를 불러오는 중...</p>
         </div>
       </div>
     );
@@ -473,14 +473,14 @@ export default function CandidateDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="flex flex-col items-center gap-4 text-center">
-          <AlertCircle className="w-12 h-12 text-red-400" />
-          <h2 className="text-xl font-semibold text-white">
+          <AlertCircle className="w-12 h-12 text-red-500" />
+          <h2 className="text-xl font-semibold text-gray-900">
             {error || "후보자를 찾을 수 없습니다"}
           </h2>
           <button
             onClick={() => router.back()}
-            className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600
-                     text-slate-300 transition-colors flex items-center gap-2"
+            className="px-4 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50
+                     text-gray-600 transition-colors flex items-center gap-2 shadow-sm"
           >
             <ArrowLeft className="w-4 h-4" />
             돌아가기
@@ -504,15 +504,15 @@ export default function CandidateDetailPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.back()}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
-                     text-slate-400 hover:text-white transition-colors"
+            className="p-2 rounded-lg hover:bg-gray-100
+                     text-gray-400 hover:text-gray-900 transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
 
           <div>
-            <h1 className="text-2xl font-bold text-white">{candidate.name}</h1>
-            <p className="text-slate-400">
+            <h1 className="text-2xl font-bold text-gray-900">{candidate.name}</h1>
+            <p className="text-gray-500">
               {candidate.role}
               {candidate.company && ` @ ${candidate.company}`}
               {/* Issue #5: Show experience years in header */}
@@ -529,8 +529,8 @@ export default function CandidateDetailPage() {
               href={safePortfolioUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
-                       text-slate-400 hover:text-neon-cyan transition-colors"
+              className="p-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50
+                       text-gray-400 hover:text-primary transition-colors shadow-sm"
               title="포트폴리오"
             >
               <Globe className="w-5 h-5" />
@@ -541,8 +541,8 @@ export default function CandidateDetailPage() {
               href={safeGithubUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
-                       text-slate-400 hover:text-white transition-colors"
+              className="p-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50
+                       text-gray-400 hover:text-gray-900 transition-colors shadow-sm"
               title="GitHub"
             >
               <Github className="w-5 h-5" />
@@ -553,8 +553,8 @@ export default function CandidateDetailPage() {
               href={safeLinkedinUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700
-                       text-slate-400 hover:text-blue-400 transition-colors"
+              className="p-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50
+                       text-gray-400 hover:text-blue-600 transition-colors shadow-sm"
               title="LinkedIn"
             >
               <Linkedin className="w-5 h-5" />
@@ -567,8 +567,8 @@ export default function CandidateDetailPage() {
             onClick={handleBlindExport}
             disabled={isExporting}
             className="flex items-center gap-2 px-3 py-2 rounded-lg
-                     bg-neon-cyan/10 hover:bg-neon-cyan/20 border border-neon-cyan/30
-                     text-neon-cyan transition-colors disabled:opacity-50"
+                     bg-white border border-primary/20 hover:bg-primary/5
+                     text-primary transition-colors disabled:opacity-50 shadow-sm"
             title={exportUsage ? `블라인드 내보내기 (${exportUsage.used}/${exportUsage.limit === "unlimited" ? "∞" : exportUsage.limit})` : "블라인드 내보내기"}
           >
             {isExporting ? (
@@ -576,9 +576,9 @@ export default function CandidateDetailPage() {
             ) : (
               <FileDown className="w-4 h-4" />
             )}
-            <span className="text-sm">블라인드 내보내기</span>
+            <span className="text-sm font-medium">블라인드 내보내기</span>
             {exportUsage && exportUsage.limit !== "unlimited" && (
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-gray-400">
                 ({exportUsage.used}/{exportUsage.limit})
               </span>
             )}
@@ -587,20 +587,20 @@ export default function CandidateDetailPage() {
           {/* Split View Toggle */}
           <button
             onClick={() => setShowSplitView(!showSplitView)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${showSplitView
-              ? "bg-primary/20 border-primary/30 text-primary"
-              : "bg-slate-800 border-slate-700 text-slate-400 hover:text-white"
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors shadow-sm ${showSplitView
+              ? "bg-primary text-white border-primary"
+              : "bg-white border-gray-200 text-gray-500 hover:text-gray-900 hover:bg-gray-50"
               }`}
             title={showSplitView ? "분할 보기 끄기" : "분할 보기 켜기"}
           >
             {showSplitView ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
-            <span className="text-sm">Split View</span>
+            <span className="text-sm font-medium">Split View</span>
           </button>
         </div>
       </div>
 
       {/* Meta Info */}
-      <div className="flex items-center gap-4 text-sm text-slate-500">
+      <div className="flex items-center gap-4 text-sm text-gray-400">
         <span>버전 {candidate.version}</span>
         <span>•</span>
         <span>

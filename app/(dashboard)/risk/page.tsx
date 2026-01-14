@@ -239,8 +239,8 @@ export default function RiskPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-white">Risk Management</h1>
-        <p className="text-slate-400 mt-1">
+        <h1 className="text-3xl font-bold text-gray-900">Risk Management</h1>
+        <p className="text-gray-500 mt-1">
           신뢰도가 낮거나 검토가 필요한 후보자를 관리하세요
         </p>
       </div>
@@ -257,10 +257,10 @@ export default function RiskPage() {
               key={level}
               onClick={() => setFilterLevel(isActive ? "all" : level)}
               className={cn(
-                "p-4 rounded-xl border transition-all text-left",
+                "p-4 rounded-xl border transition-all text-left shadow-sm",
                 isActive
                   ? `${config.bgColor} ${config.borderColor}`
-                  : "bg-white/5 border-white/10 hover:bg-white/10"
+                  : "bg-white border-gray-100 hover:bg-gray-50"
               )}
             >
               <div className="flex items-center gap-3">
@@ -268,8 +268,8 @@ export default function RiskPage() {
                   <config.icon className={cn("w-5 h-5", config.color)} />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-white">{count}</p>
-                  <p className="text-sm text-slate-400">{config.label}</p>
+                  <p className="text-2xl font-bold text-gray-900">{count}</p>
+                  <p className="text-sm text-gray-500">{config.label}</p>
                 </div>
               </div>
             </button>
@@ -278,26 +278,26 @@ export default function RiskPage() {
       </div>
 
       {/* Risk List */}
-      <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+      <div className="rounded-xl bg-white border border-gray-100 overflow-hidden shadow-sm">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
           <div className="flex items-center gap-4">
             {/* Select All Checkbox */}
             {filteredCandidates.length > 0 && (
               <button
                 onClick={toggleSelectAll}
-                className="p-1 rounded hover:bg-white/10 transition-colors"
+                className="p-1 rounded hover:bg-gray-200 transition-colors"
                 title={isAllSelected ? "전체 선택 해제" : "전체 선택"}
               >
                 {isAllSelected ? (
                   <CheckSquare className="w-5 h-5 text-primary" />
                 ) : (
-                  <Square className="w-5 h-5 text-slate-400" />
+                  <Square className="w-5 h-5 text-gray-400" />
                 )}
               </button>
             )}
-            <h3 className="font-medium text-white">
+            <h3 className="font-medium text-gray-900">
               {filterLevel === "all" ? "전체 후보자" : getRiskConfig(filterLevel).label}
-              <span className="ml-2 text-slate-400">({filteredCandidates.length})</span>
+              <span className="ml-2 text-gray-500">({filteredCandidates.length})</span>
             </h3>
           </div>
 
@@ -305,15 +305,15 @@ export default function RiskPage() {
             {/* Bulk Action Buttons - PRD P2 */}
             {hasSelection && (
               <>
-                <span className="text-sm text-slate-400 mr-2">
+                <span className="text-sm text-gray-500 mr-2">
                   {selectedIds.size}개 선택됨
                 </span>
                 <button
                   onClick={handleBulkMarkReviewed}
                   disabled={isBulkActionLoading}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg
-                           bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30
-                           text-emerald-400 text-sm font-medium transition-colors
+                           bg-emerald-50 hover:bg-emerald-100 border border-emerald-200
+                           text-emerald-600 text-sm font-medium transition-colors
                            disabled:opacity-50 disabled:cursor-not-allowed"
                   title="선택한 후보자들을 검토 완료로 표시"
                 >
@@ -328,8 +328,8 @@ export default function RiskPage() {
                   onClick={handleBulkDelete}
                   disabled={isBulkActionLoading}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg
-                           bg-red-500/10 hover:bg-red-500/20 border border-red-500/30
-                           text-red-400 text-sm font-medium transition-colors
+                           bg-red-50 hover:bg-red-100 border border-red-200
+                           text-red-600 text-sm font-medium transition-colors
                            disabled:opacity-50 disabled:cursor-not-allowed"
                   title="선택한 후보자들을 삭제"
                 >
@@ -342,8 +342,8 @@ export default function RiskPage() {
                 </button>
                 <button
                   onClick={clearSelection}
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400
-                           hover:text-white transition-colors"
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400
+                           hover:text-gray-900 transition-colors"
                   title="선택 해제"
                 >
                   <X className="w-4 h-4" />
@@ -374,7 +374,7 @@ export default function RiskPage() {
             } : undefined}
           />
         ) : (
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-gray-100">
             {filteredCandidates.map((candidate) => {
               const level = getRiskLevel(candidate);
               const config = getRiskConfig(level);
@@ -384,19 +384,19 @@ export default function RiskPage() {
                 <div
                   key={candidate.id}
                   className={cn(
-                    "flex items-center p-4 hover:bg-white/5 transition-colors group",
+                    "flex items-center p-4 hover:bg-gray-50 transition-colors group",
                     isSelected && "bg-primary/5"
                   )}
                 >
                   {/* Checkbox */}
                   <button
                     onClick={(e) => toggleSelect(candidate.id, e)}
-                    className="p-1 mr-3 rounded hover:bg-white/10 transition-colors"
+                    className="p-1 mr-3 rounded hover:bg-gray-200 transition-colors"
                   >
                     {isSelected ? (
                       <CheckSquare className="w-5 h-5 text-primary" />
                     ) : (
-                      <Square className="w-5 h-5 text-slate-400 group-hover:text-slate-300" />
+                      <Square className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
                     )}
                   </button>
 
@@ -411,7 +411,7 @@ export default function RiskPage() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-medium text-white group-hover:text-primary transition-colors">
+                          <h3 className="font-medium text-gray-900 group-hover:text-primary transition-colors">
                             {candidate.name || "이름 미확인"}
                           </h3>
                           <span className={cn(
@@ -421,7 +421,7 @@ export default function RiskPage() {
                             {config.label}
                           </span>
                         </div>
-                        <div className="flex items-center gap-3 text-sm text-slate-400 mt-1">
+                        <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
                           {candidate.last_position && (
                             <span className="flex items-center gap-1">
                               <User className="w-3 h-3" />
@@ -438,20 +438,20 @@ export default function RiskPage() {
 
                     <div className="flex items-center gap-6">
                       <div className="text-right">
-                        <p className="text-sm text-slate-400">신뢰도</p>
+                        <p className="text-sm text-gray-500">신뢰도</p>
                         <p className={cn("font-medium", config.color)}>
                           {Math.round((candidate.confidence_score || 0) * 100)}%
                         </p>
                       </div>
                       {(candidate.warnings?.length || 0) > 0 && (
                         <div className="text-right">
-                          <p className="text-sm text-slate-400">경고</p>
-                          <p className="font-medium text-yellow-400">
+                          <p className="text-sm text-gray-500">경고</p>
+                          <p className="font-medium text-yellow-600">
                             {candidate.warnings.length}건
                           </p>
                         </div>
                       )}
-                      <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-primary transition-colors" />
+                      <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-primary transition-colors" />
                     </div>
                   </Link>
                 </div>

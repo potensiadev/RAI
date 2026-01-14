@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, Variants } from "framer-motion";
 import Link from "next/link";
 import {
   Sparkles,
@@ -17,7 +17,6 @@ import {
   X,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import DeepSpaceBackground from "@/components/layout/DeepSpaceBackground";
 
 // Navigation links
 const navLinks = [
@@ -27,15 +26,15 @@ const navLinks = [
 ];
 
 // Animation variants
-const fadeInUp = {
-  hidden: { opacity: 0, y: 40 },
+const fadeInUp: Variants = {
+  hidden: { opacity: 0, y: 20 },
   visible: (delay: number = 0) => ({
     opacity: 1,
     y: 0,
     transition: {
-      duration: 0.8,
-      delay,
-      ease: [0.25, 0.4, 0.25, 1] as [number, number, number, number],
+      duration: 0.5,
+      delay: typeof delay === "number" ? delay : 0,
+      ease: "easeOut",
     },
   }),
 };
@@ -46,7 +45,7 @@ const staggerContainer = {
     opacity: 1,
     transition: {
       staggerChildren: 0.1,
-      delayChildren: 0.2,
+      delayChildren: 0.1,
     },
   },
 };
@@ -144,9 +143,13 @@ const additionalFeatures = [
 export default function ProductsPage() {
   const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
@@ -162,34 +165,32 @@ export default function ProductsPage() {
   if (!mounted) return null;
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      <DeepSpaceBackground />
-
-      <div className="relative z-10">
-        {/* Navigation */}
-        <motion.nav
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="flex items-center justify-between px-6 md:px-8 py-6 max-w-7xl mx-auto"
-        >
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/10 selection:text-primary">
+      {/* Navigation */}
+      <motion.nav
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "bg-white/80 backdrop-blur-md border-b border-gray-100" : "bg-transparent"
+          }`}
+      >
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
               <Sparkles className="w-5 h-5 text-primary" />
             </div>
-            <span className="text-xl font-bold text-white">RAI</span>
+            <span className="text-xl font-bold tracking-tight text-gray-900">RAI</span>
           </Link>
 
+          {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-8">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`text-sm transition-colors ${
-                  link.href === "/products"
-                    ? "text-white font-medium"
-                    : "text-slate-300 hover:text-white"
-                }`}
+                className={`text-sm font-medium transition-colors ${link.href === "/products"
+                  ? "text-primary"
+                  : "text-gray-500 hover:text-gray-900"
+                  }`}
               >
                 {link.label}
               </Link>
@@ -199,110 +200,85 @@ export default function ProductsPage() {
           <div className="hidden md:flex items-center gap-4">
             <Link
               href="/login"
-              className="px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors"
+              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
             >
               로그인
             </Link>
             <Link
               href="/signup"
-              className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10
-                       text-sm text-white font-medium transition-all"
+              className="px-5 py-2.5 rounded-full bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-all shadow-sm hover:shadow-md"
             >
               시작하기
             </Link>
           </div>
 
+          {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 text-slate-300 hover:text-white transition-colors"
-            aria-label="Toggle menu"
+            className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
-        </motion.nav>
+        </div>
+      </motion.nav>
 
-        {/* Mobile Menu */}
-        <motion.div
-          initial={false}
-          animate={{
-            height: mobileMenuOpen ? "auto" : 0,
-            opacity: mobileMenuOpen ? 1 : 0,
-          }}
-          transition={{ duration: 0.3 }}
-          className="md:hidden overflow-hidden"
-        >
-          <div className="px-6 pb-6 space-y-4">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`block py-2 transition-colors ${
-                  link.href === "/products"
-                    ? "text-white font-medium"
-                    : "text-slate-300 hover:text-white"
-                }`}
-              >
-                {link.label}
-              </Link>
-            ))}
-            <div className="pt-4 border-t border-white/10 space-y-3">
-              <Link
-                href="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block py-2 text-slate-300 hover:text-white transition-colors"
-              >
-                로그인
-              </Link>
-              <Link
-                href="/signup"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block py-3 px-4 rounded-lg bg-primary text-white text-center font-medium"
-              >
-                시작하기
-              </Link>
-            </div>
+      {/* Mobile Menu */}
+      <motion.div
+        initial={false}
+        animate={{ height: mobileMenuOpen ? "auto" : 0, opacity: mobileMenuOpen ? 1 : 0 }}
+        className="md:hidden overflow-hidden bg-white border-b border-gray-100 fixed top-20 left-0 right-0 z-40 shadow-lg"
+      >
+        <div className="p-6 space-y-4">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={() => setMobileMenuOpen(false)}
+              className="block py-2 text-base font-medium text-gray-900"
+            >
+              {link.label}
+            </Link>
+          ))}
+          <div className="pt-4 border-t border-gray-100 space-y-3">
+            <Link
+              href="/login"
+              className="block w-full py-3 text-center text-gray-600 font-medium hover:text-gray-900"
+            >
+              로그인
+            </Link>
+            <Link
+              href="/signup"
+              className="block w-full py-3 rounded-xl bg-primary text-white text-center font-medium hover:bg-primary/90"
+            >
+              시작하기
+            </Link>
           </div>
-        </motion.div>
+        </div>
+      </motion.div>
 
-        {/* Hero Section */}
-        <section className="px-6 md:px-8 pt-16 pb-20 max-w-7xl mx-auto">
+      <main className="pt-32 pb-20 px-6">
+        {/* Hero */}
+        <div className="max-w-4xl mx-auto text-center mb-24">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="text-center max-w-3xl mx-auto"
           >
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-6">
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 mb-6 leading-tight">
               AI 기반 이력서 분석의
               <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-neon-purple to-neon-cyan">
-                새로운 기준
-              </span>
+              <span className="text-primary">새로운 기준</span>
             </h1>
-            <p className="text-lg text-slate-400 leading-relaxed">
-              RAI는 최신 AI 기술을 활용하여 이력서 분석, 후보자 검색, 데이터 관리를
+            <p className="text-xl text-gray-500 leading-relaxed max-w-2xl mx-auto">
+              RAI는 최신 AI 기술을 활용하여 이력서 분석, 후보자 검색,
               <br className="hidden md:block" />
-              하나의 플랫폼에서 해결합니다.
+              데이터 관리를 하나의 플랫폼에서 해결합니다.
             </p>
           </motion.div>
-        </section>
+        </div>
 
         {/* Core Features */}
-        <section className="px-6 md:px-8 py-20 max-w-7xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-3xl font-bold text-white mb-4">핵심 기능</h2>
-            <p className="text-slate-400 max-w-xl mx-auto">
-              헤드헌터의 업무 효율을 극대화하는 6가지 핵심 기능
-            </p>
-          </motion.div>
-
+        <div className="max-w-7xl mx-auto mb-32">
           <motion.div
             variants={staggerContainer}
             initial="hidden"
@@ -314,24 +290,19 @@ export default function ProductsPage() {
               <motion.div
                 key={feature.title}
                 variants={fadeInUp}
-                custom={index * 0.1}
-                className="group relative p-6 rounded-2xl bg-white/[0.03] backdrop-blur-xl
-                         border border-white/[0.08] hover:border-primary/30 transition-all duration-300"
+                className="group p-8 rounded-3xl bg-white border border-gray-100 hover:border-gray-200 hover:shadow-xl transition-all duration-300"
               >
-                <div className="w-12 h-12 rounded-xl bg-primary/20 border border-primary/30
-                              flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
                   <feature.icon className="w-6 h-6 text-primary" />
                 </div>
 
-                <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                <p className="text-sm text-slate-400 mb-4 leading-relaxed">
-                  {feature.description}
-                </p>
+                <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
+                <p className="text-gray-500 leading-relaxed mb-6">{feature.description}</p>
 
-                <ul className="space-y-2">
+                <ul className="space-y-3">
                   {feature.details.map((detail) => (
-                    <li key={detail} className="flex items-center gap-2 text-sm text-slate-500">
-                      <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <li key={detail} className="flex items-center gap-3 text-sm text-gray-600">
+                      <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />
                       {detail}
                     </li>
                   ))}
@@ -339,21 +310,20 @@ export default function ProductsPage() {
               </motion.div>
             ))}
           </motion.div>
-        </section>
+        </div>
 
         {/* Additional Features */}
-        <section className="px-6 md:px-8 py-20 max-w-7xl mx-auto">
+        <div className="max-w-3xl mx-auto mb-32">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
             className="text-center mb-12"
           >
-            <h2 className="text-2xl font-bold text-white mb-4">추가 기능</h2>
+            <h2 className="text-2xl font-bold text-gray-900">추가 기능</h2>
           </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {additionalFeatures.map((feature, index) => (
               <motion.div
                 key={feature.title}
@@ -361,75 +331,75 @@ export default function ProductsPage() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
-                className="flex items-start gap-4 p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]"
+                className="flex items-start gap-5 p-6 rounded-2xl bg-white border border-gray-100 shadow-sm"
               >
-                <div className="w-10 h-10 rounded-lg bg-neon-cyan/20 border border-neon-cyan/30
-                              flex items-center justify-center flex-shrink-0">
-                  <feature.icon className="w-5 h-5 text-neon-cyan" />
+                <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
+                  <feature.icon className="w-5 h-5 text-gray-600" />
                 </div>
                 <div>
-                  <h3 className="text-white font-medium mb-1">{feature.title}</h3>
-                  <p className="text-sm text-slate-400">{feature.description}</p>
+                  <h3 className="font-bold text-gray-900 mb-1">{feature.title}</h3>
+                  <p className="text-sm text-gray-500">{feature.description}</p>
                 </div>
               </motion.div>
             ))}
           </div>
-        </section>
+        </div>
 
-        {/* CTA Section */}
-        <section className="px-6 md:px-8 py-20 max-w-4xl mx-auto">
+        {/* CTA */}
+        <div className="max-w-4xl mx-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="relative p-10 md:p-12 rounded-3xl bg-gradient-to-br from-primary/20 via-primary/5 to-transparent
-                       border border-primary/20 text-center"
+            className="relative px-8 py-16 md:py-20 rounded-[2.5rem] bg-[#0F172A] text-center overflow-hidden"
           >
-            <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">
-              지금 바로 시작하세요
-            </h2>
-            <p className="text-slate-400 mb-8 max-w-md mx-auto">
-              Closed Beta 기간 동안 모든 기능을 무료로 체험해보세요.
-            </p>
+            {/* Background Gradient */}
+            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
 
-            <Link
-              href="/signup"
-              className="inline-flex items-center gap-2 px-8 py-4 rounded-xl
-                       bg-primary hover:bg-primary/90 text-white font-semibold
-                       transition-all shadow-lg shadow-primary/25"
-            >
-              무료 체험 시작
-              <ArrowRight className="w-5 h-5" />
-            </Link>
+            <div className="relative z-10">
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
+                지금 바로 시작하세요
+              </h2>
+              <p className="text-blue-100 mb-10 max-w-lg mx-auto text-lg">
+                Closed Beta 기간 동안 모든 기능을 무료로 체험해보세요.
+                <br />
+                신용카드 없이 14일간 무료로 이용할 수 있습니다.
+              </p>
+
+              <Link
+                href="/signup"
+                className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-primary hover:bg-blue-600 text-white font-semibold transition-all shadow-lg hover:shadow-xl hover:-translate-y-1"
+              >
+                무료 체험 시작
+                <ArrowRight className="w-5 h-5" />
+              </Link>
+            </div>
           </motion.div>
-        </section>
+        </div>
+      </main>
 
-        {/* Footer */}
-        <footer className="relative px-6 md:px-8 py-12 border-t border-white/5">
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center">
-                <Sparkles className="w-4 h-4 text-primary" />
-              </div>
-              <span className="text-sm text-slate-500">
-                © 2025 RAI. All rights reserved.
-              </span>
+      {/* Footer */}
+      <footer className="border-t border-gray-100 bg-white py-12 px-6">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-gray-400" />
             </div>
-            <div className="flex items-center gap-6 text-sm text-slate-500">
-              <Link href="/terms" className="hover:text-white transition-colors">
-                이용약관
-              </Link>
-              <Link href="/privacy" className="hover:text-white transition-colors">
-                개인정보처리방침
-              </Link>
-              <Link href="/support" className="hover:text-white transition-colors">
-                문의하기
-              </Link>
-            </div>
+            <span className="text-sm text-gray-500">© 2025 RAI. All rights reserved.</span>
           </div>
-        </footer>
-      </div>
+          <div className="flex items-center gap-8 text-sm text-gray-500">
+            <Link href="/terms" className="hover:text-gray-900 transition-colors">
+              이용약관
+            </Link>
+            <Link href="/privacy" className="hover:text-gray-900 transition-colors">
+              개인정보처리방침
+            </Link>
+            <Link href="/support" className="hover:text-gray-900 transition-colors">
+              문의하기
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

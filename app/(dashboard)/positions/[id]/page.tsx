@@ -27,26 +27,26 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import type { Position, PositionCandidate, MatchStage, PositionStatus } from "@/types/position";
 
-const STAGE_CONFIG: Record<MatchStage, { label: string; color: string; bgColor: string }> = {
-  matched: { label: "매칭됨", color: "text-slate-400", bgColor: "bg-slate-500/20" },
-  reviewed: { label: "검토완료", color: "text-blue-400", bgColor: "bg-blue-500/20" },
-  contacted: { label: "연락중", color: "text-cyan-400", bgColor: "bg-cyan-500/20" },
-  interviewing: { label: "면접진행", color: "text-purple-400", bgColor: "bg-purple-500/20" },
-  offered: { label: "오퍼", color: "text-amber-400", bgColor: "bg-amber-500/20" },
-  placed: { label: "채용완료", color: "text-emerald-400", bgColor: "bg-emerald-500/20" },
-  rejected: { label: "불합격", color: "text-red-400", bgColor: "bg-red-500/20" },
-  withdrawn: { label: "지원철회", color: "text-slate-500", bgColor: "bg-slate-600/20" },
+const STAGE_CONFIG: Record<MatchStage, { label: string; color: string; bgColor: string; borderColor: string }> = {
+  matched: { label: "매칭됨", color: "text-gray-500", bgColor: "bg-gray-100", borderColor: "border-gray-200" },
+  reviewed: { label: "검토완료", color: "text-blue-600", bgColor: "bg-blue-50", borderColor: "border-blue-200" },
+  contacted: { label: "연락중", color: "text-cyan-600", bgColor: "bg-cyan-50", borderColor: "border-cyan-200" },
+  interviewing: { label: "면접진행", color: "text-purple-600", bgColor: "bg-purple-50", borderColor: "border-purple-200" },
+  offered: { label: "오퍼", color: "text-amber-600", bgColor: "bg-amber-50", borderColor: "border-amber-200" },
+  placed: { label: "채용완료", color: "text-emerald-600", bgColor: "bg-emerald-50", borderColor: "border-emerald-200" },
+  rejected: { label: "불합격", color: "text-red-600", bgColor: "bg-red-50", borderColor: "border-red-200" },
+  withdrawn: { label: "지원철회", color: "text-gray-500", bgColor: "bg-gray-100", borderColor: "border-gray-200" },
 };
 
 const STAGE_ORDER: MatchStage[] = [
   "matched", "reviewed", "contacted", "interviewing", "offered", "placed"
 ];
 
-const STATUS_CONFIG: Record<PositionStatus, { label: string; color: string }> = {
-  open: { label: "진행중", color: "text-emerald-400 bg-emerald-500/20 border-emerald-500/30" },
-  paused: { label: "일시중지", color: "text-yellow-400 bg-yellow-500/20 border-yellow-500/30" },
-  closed: { label: "마감", color: "text-slate-400 bg-slate-500/20 border-slate-500/30" },
-  filled: { label: "채용완료", color: "text-blue-400 bg-blue-500/20 border-blue-500/30" },
+const STATUS_CONFIG: Record<PositionStatus, { label: string; color: string; bgColor: string; borderColor: string }> = {
+  open: { label: "진행중", color: "text-emerald-600", bgColor: "bg-emerald-50", borderColor: "border-emerald-200" },
+  paused: { label: "일시중지", color: "text-yellow-600", bgColor: "bg-yellow-50", borderColor: "border-yellow-200" },
+  closed: { label: "마감", color: "text-gray-500", bgColor: "bg-gray-100", borderColor: "border-gray-200" },
+  filled: { label: "채용완료", color: "text-blue-600", bgColor: "bg-blue-50", borderColor: "border-blue-200" },
 };
 
 interface ScoreDistribution {
@@ -233,8 +233,8 @@ export default function PositionDetailPage() {
   if (!position) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <AlertCircle className="w-12 h-12 text-red-400" />
-        <p className="text-slate-400">포지션을 찾을 수 없습니다.</p>
+        <AlertCircle className="w-12 h-12 text-red-500" />
+        <p className="text-gray-500">포지션을 찾을 수 없습니다.</p>
         <Link href="/positions" className="text-primary hover:underline">
           포지션 목록으로 돌아가기
         </Link>
@@ -251,22 +251,24 @@ export default function PositionDetailPage() {
         <div className="flex items-start gap-4">
           <Link
             href="/positions"
-            className="p-2 rounded-lg hover:bg-white/5 transition-colors mt-1"
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-900 transition-colors mt-1"
           >
-            <ArrowLeft className="w-5 h-5 text-slate-400" />
+            <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold text-white">{position.title}</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{position.title}</h1>
               <span className={cn(
                 "px-2.5 py-0.5 rounded-full text-xs font-medium border",
-                statusConfig.color
+                statusConfig.bgColor,
+                statusConfig.color,
+                statusConfig.borderColor
               )}>
                 {statusConfig.label}
               </span>
             </div>
             {position.clientCompany && (
-              <p className="text-slate-400 flex items-center gap-1.5">
+              <p className="text-gray-500 flex items-center gap-1.5">
                 <Building2 className="w-4 h-4" />
                 {position.clientCompany}
                 {position.department && ` / ${position.department}`}
@@ -281,10 +283,10 @@ export default function PositionDetailPage() {
             onClick={handleRefreshMatches}
             disabled={isRefreshing}
             className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl transition-colors",
+              "flex items-center gap-2 px-4 py-2 rounded-xl transition-colors shadow-sm",
               isRefreshing
-                ? "bg-white/5 text-slate-500 cursor-not-allowed"
-                : "bg-primary/20 text-primary hover:bg-primary/30"
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-white border border-primary/20 text-primary hover:bg-primary/5"
             )}
           >
             <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
@@ -292,7 +294,7 @@ export default function PositionDetailPage() {
           </button>
           <Link
             href={`/positions/${positionId}/edit`}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 text-slate-300 hover:bg-white/10 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors shadow-sm"
           >
             <Edit2 className="w-4 h-4" />
             수정
@@ -300,7 +302,7 @@ export default function PositionDetailPage() {
           <button
             onClick={handleDelete}
             disabled={isDeleting}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-red-200 text-red-500 hover:bg-red-50 transition-colors shadow-sm"
           >
             {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
             삭제
@@ -310,41 +312,41 @@ export default function PositionDetailPage() {
 
       {/* Position Info */}
       <div className="grid grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-          <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+        <div className="p-4 rounded-xl bg-white border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
             <Briefcase className="w-4 h-4" />
             경력
           </div>
-          <p className="text-white font-medium">
+          <p className="text-gray-900 font-medium">
             {position.minExpYears}년
             {position.maxExpYears && ` ~ ${position.maxExpYears}년`}
           </p>
         </div>
         {position.requiredEducationLevel && (
-          <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-            <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+          <div className="p-4 rounded-xl bg-white border border-gray-200 shadow-sm">
+            <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
               <GraduationCap className="w-4 h-4" />
               학력
             </div>
-            <p className="text-white font-medium">{position.requiredEducationLevel}</p>
+            <p className="text-gray-900 font-medium">{position.requiredEducationLevel}</p>
           </div>
         )}
         {position.locationCity && (
-          <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-            <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+          <div className="p-4 rounded-xl bg-white border border-gray-200 shadow-sm">
+            <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
               <MapPin className="w-4 h-4" />
               근무지
             </div>
-            <p className="text-white font-medium">{position.locationCity}</p>
+            <p className="text-gray-900 font-medium">{position.locationCity}</p>
           </div>
         )}
         {position.deadline && (
-          <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-            <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+          <div className="p-4 rounded-xl bg-white border border-gray-200 shadow-sm">
+            <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
               <Calendar className="w-4 h-4" />
               마감일
             </div>
-            <p className="text-white font-medium">
+            <p className="text-gray-900 font-medium">
               {new Date(position.deadline).toLocaleDateString("ko-KR")}
             </p>
           </div>
@@ -353,8 +355,8 @@ export default function PositionDetailPage() {
 
       {/* Skills */}
       {position.requiredSkills && position.requiredSkills.length > 0 && (
-        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-          <div className="flex items-center gap-2 text-slate-400 text-sm mb-3">
+        <div className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 text-gray-500 text-sm mb-3 font-medium">
             <Target className="w-4 h-4" />
             필수 스킬
           </div>
@@ -362,7 +364,7 @@ export default function PositionDetailPage() {
             {position.requiredSkills.map((skill, idx) => (
               <span
                 key={idx}
-                className="px-3 py-1 rounded-lg bg-primary/20 text-primary text-sm"
+                className="px-3 py-1 rounded-lg bg-primary/10 text-primary text-sm font-medium"
               >
                 {skill}
               </span>
@@ -370,14 +372,14 @@ export default function PositionDetailPage() {
           </div>
           {position.preferredSkills && position.preferredSkills.length > 0 && (
             <>
-              <div className="flex items-center gap-2 text-slate-400 text-sm mt-4 mb-2">
+              <div className="flex items-center gap-2 text-gray-500 text-sm mt-6 mb-3 font-medium">
                 우대 스킬
               </div>
               <div className="flex flex-wrap gap-2">
                 {position.preferredSkills.map((skill, idx) => (
                   <span
                     key={idx}
-                    className="px-3 py-1 rounded-lg bg-slate-700/50 text-slate-300 text-sm"
+                    className="px-3 py-1 rounded-lg bg-gray-100 text-gray-600 text-sm"
                   >
                     {skill}
                   </span>
@@ -389,41 +391,41 @@ export default function PositionDetailPage() {
       )}
 
       {/* Score Distribution */}
-      <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2 text-white font-medium">
+      <div className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2 text-gray-900 font-bold text-lg">
             <Users className="w-5 h-5 text-primary" />
             매칭된 후보자 ({matches.length}명)
           </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span className="text-slate-400">우수 ({scoreDistribution.excellent})</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span className="text-gray-600">우수 ({scoreDistribution.excellent})</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-blue-400" />
-              <span className="text-slate-400">양호 ({scoreDistribution.good})</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+              <span className="text-gray-600">양호 ({scoreDistribution.good})</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-yellow-400" />
-              <span className="text-slate-400">보통 ({scoreDistribution.fair})</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-yellow-500" />
+              <span className="text-gray-600">보통 ({scoreDistribution.fair})</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-slate-400" />
-              <span className="text-slate-400">낮음 ({scoreDistribution.low})</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-gray-400" />
+              <span className="text-gray-600">낮음 ({scoreDistribution.low})</span>
             </span>
           </div>
         </div>
 
         {/* Stage Tabs */}
-        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2">
+        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 scrollbar-none">
           <button
             onClick={() => setSelectedStage("all")}
             className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
+              "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors border",
               selectedStage === "all"
-                ? "bg-primary text-white"
-                : "bg-white/5 text-slate-400 hover:text-white"
+                ? "bg-primary text-white border-primary shadow-sm"
+                : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
             )}
           >
             전체 ({matches.length})
@@ -433,10 +435,10 @@ export default function PositionDetailPage() {
               key={stage}
               onClick={() => setSelectedStage(stage)}
               className={cn(
-                "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
+                "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors border",
                 selectedStage === stage
-                  ? cn(STAGE_CONFIG[stage].bgColor, STAGE_CONFIG[stage].color)
-                  : "bg-white/5 text-slate-400 hover:text-white"
+                  ? cn(STAGE_CONFIG[stage].bgColor, STAGE_CONFIG[stage].color, STAGE_CONFIG[stage].borderColor, "shadow-sm")
+                  : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
               )}
             >
               {STAGE_CONFIG[stage].label} ({stageCounts[stage] || 0})
@@ -446,44 +448,44 @@ export default function PositionDetailPage() {
 
         {/* Matches List */}
         {filteredMatches.length === 0 ? (
-          <div className="text-center py-10 text-slate-400">
+          <div className="text-center py-12 text-gray-400 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
             {matches.length === 0
               ? "아직 매칭된 후보자가 없습니다. 매칭 새로고침을 시도해보세요."
               : "해당 상태의 후보자가 없습니다."}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {filteredMatches.map((match) => {
               const stageConfig = STAGE_CONFIG[match.stage];
               const scoreColor =
                 match.overallScore >= 80
-                  ? "text-emerald-400"
+                  ? "text-emerald-600"
                   : match.overallScore >= 60
-                  ? "text-blue-400"
-                  : match.overallScore >= 40
-                  ? "text-yellow-400"
-                  : "text-slate-400";
+                    ? "text-blue-600"
+                    : match.overallScore >= 40
+                      ? "text-yellow-600"
+                      : "text-gray-400";
 
               return (
                 <div
                   key={match.id}
-                  className="p-4 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-colors"
+                  className="p-5 rounded-xl bg-white border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all"
                 >
                   <div className="flex items-center justify-between">
                     {/* Candidate Info */}
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-purple-500/30 flex items-center justify-center text-white font-semibold">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/10 to-purple-500/10 flex items-center justify-center text-primary font-bold text-lg">
                         {match.candidate?.name?.charAt(0) || "?"}
                       </div>
                       <div>
                         <Link
                           href={`/candidates/${match.candidateId}`}
-                          className="font-medium text-white hover:text-primary transition-colors flex items-center gap-1"
+                          className="font-bold text-gray-900 hover:text-primary transition-colors flex items-center gap-1.5 text-lg"
                         >
                           {match.candidate?.name || "이름 미확인"}
-                          <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                          <ExternalLink className="w-4 h-4 text-gray-400" />
                         </Link>
-                        <p className="text-sm text-slate-400">
+                        <p className="text-sm text-gray-500 mt-0.5">
                           {match.candidate?.lastPosition || "직책 미확인"}
                           {match.candidate?.lastCompany && ` @ ${match.candidate.lastCompany}`}
                         </p>
@@ -491,26 +493,26 @@ export default function PositionDetailPage() {
                     </div>
 
                     {/* Scores */}
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-8">
                       <div className="text-center">
                         <p className={cn("text-2xl font-bold", scoreColor)}>
                           {match.overallScore}%
                         </p>
-                        <p className="text-xs text-slate-500">종합점수</p>
+                        <p className="text-xs text-gray-400 font-medium">종합점수</p>
                       </div>
 
-                      <div className="flex items-center gap-3 text-sm">
+                      <div className="flex items-center gap-4 text-sm">
                         <div className="text-center">
-                          <p className="text-white">{match.skillScore}%</p>
-                          <p className="text-xs text-slate-500">스킬</p>
+                          <p className="text-gray-900 font-semibold">{match.skillScore}%</p>
+                          <p className="text-xs text-gray-400">스킬</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-white">{match.experienceScore}%</p>
-                          <p className="text-xs text-slate-500">경력</p>
+                          <p className="text-gray-900 font-semibold">{match.experienceScore}%</p>
+                          <p className="text-xs text-gray-400">경력</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-white">{match.semanticScore}%</p>
-                          <p className="text-xs text-slate-500">적합도</p>
+                          <p className="text-gray-900 font-semibold">{match.semanticScore}%</p>
+                          <p className="text-xs text-gray-400">적합도</p>
                         </div>
                       </div>
 
@@ -518,39 +520,40 @@ export default function PositionDetailPage() {
                       <div className="relative group">
                         <button
                           className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                            "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border",
                             stageConfig.bgColor,
-                            stageConfig.color
+                            stageConfig.color,
+                            stageConfig.borderColor
                           )}
                         >
                           {stageConfig.label}
-                          <ChevronDown className="w-4 h-4" />
+                          <ChevronDown className="w-4 h-4 opacity-50" />
                         </button>
-                        <div className="absolute right-0 top-full mt-1 py-1 rounded-lg bg-slate-800 border border-white/10 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[140px]">
+                        <div className="absolute right-0 top-full mt-1 py-1 rounded-xl bg-white border border-gray-200 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[140px]">
                           {STAGE_ORDER.map((stage) => (
                             <button
                               key={stage}
                               onClick={() => handleStageChange(match.candidateId, stage)}
                               className={cn(
-                                "w-full px-3 py-2 text-left text-sm hover:bg-white/5 transition-colors",
+                                "w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors font-medium",
                                 stage === match.stage
                                   ? STAGE_CONFIG[stage].color
-                                  : "text-slate-300"
+                                  : "text-gray-600"
                               )}
                             >
                               {STAGE_CONFIG[stage].label}
                             </button>
                           ))}
-                          <div className="border-t border-white/10 my-1" />
+                          <div className="border-t border-gray-100 my-1" />
                           <button
                             onClick={() => handleStageChange(match.candidateId, "rejected")}
-                            className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                            className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-red-50 transition-colors font-medium"
                           >
                             불합격
                           </button>
                           <button
                             onClick={() => handleStageChange(match.candidateId, "withdrawn")}
-                            className="w-full px-3 py-2 text-left text-sm text-slate-500 hover:bg-white/5 transition-colors"
+                            className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50 transition-colors font-medium"
                           >
                             지원철회
                           </button>
@@ -569,10 +572,10 @@ export default function PositionDetailPage() {
                           }
                         }}
                         className={cn(
-                          "p-2 rounded-lg transition-colors",
+                          "p-2 rounded-lg transition-colors border shadow-sm",
                           match.notes
-                            ? "bg-amber-500/20 text-amber-400"
-                            : "bg-white/5 text-slate-400 hover:text-white"
+                            ? "bg-amber-50 border-amber-200 text-amber-600"
+                            : "bg-white border-gray-200 text-gray-400 hover:text-gray-900 hover:border-gray-300"
                         )}
                       >
                         <MessageSquare className="w-4 h-4" />
@@ -582,29 +585,29 @@ export default function PositionDetailPage() {
 
                   {/* Matched Skills */}
                   {match.matchedSkills && match.matchedSkills.length > 0 && (
-                    <div className="mt-3 flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-slate-500">매칭 스킬:</span>
+                    <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-gray-400 font-medium">매칭 스킬:</span>
                       {match.matchedSkills.map((skill, idx) => (
                         <span
                           key={idx}
-                          className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 text-xs"
+                          className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600 text-xs border border-emerald-100 font-medium"
                         >
                           {skill}
                         </span>
                       ))}
                       {match.missingSkills && match.missingSkills.length > 0 && (
                         <>
-                          <span className="text-xs text-slate-500 ml-2">부족:</span>
+                          <span className="text-xs text-gray-400 ml-2 font-medium">부족:</span>
                           {match.missingSkills.slice(0, 3).map((skill, idx) => (
                             <span
                               key={idx}
-                              className="px-2 py-0.5 rounded-md bg-red-500/20 text-red-400 text-xs"
+                              className="px-2 py-0.5 rounded-md bg-red-50 text-red-500 text-xs border border-red-100 font-medium"
                             >
                               {skill}
                             </span>
                           ))}
                           {match.missingSkills.length > 3 && (
-                            <span className="text-xs text-slate-500">
+                            <span className="text-xs text-gray-400 font-medium">
                               +{match.missingSkills.length - 3}
                             </span>
                           )}
@@ -615,29 +618,29 @@ export default function PositionDetailPage() {
 
                   {/* Note Input */}
                   {expandedMatch === match.id && (
-                    <div className="mt-4 pt-4 border-t border-white/10">
+                    <div className="mt-4 pt-4 border-t border-gray-100 bg-gray-50/50 -mx-5 -mb-5 p-5 rounded-b-xl">
                       <textarea
                         value={noteInput}
                         onChange={(e) => setNoteInput(e.target.value)}
                         placeholder="메모를 입력하세요..."
                         rows={3}
-                        className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                                 text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50 resize-none"
+                        className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                                 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none transition-all"
                       />
-                      <div className="flex items-center justify-end gap-2 mt-2">
+                      <div className="flex items-center justify-end gap-2 mt-3">
                         <button
                           onClick={() => {
                             setExpandedMatch(null);
                             setNoteInput("");
                           }}
-                          className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors"
+                          className="px-4 py-2 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
                         >
-                          <X className="w-4 h-4" />
+                          취소
                         </button>
                         <button
                           onClick={() => handleSaveNote(match.candidateId)}
                           disabled={savingNote === match.candidateId}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium shadow-sm"
                         >
                           {savingNote === match.candidateId ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -652,8 +655,8 @@ export default function PositionDetailPage() {
 
                   {/* Existing Note Display */}
                   {match.notes && expandedMatch !== match.id && (
-                    <div className="mt-3 p-3 rounded-lg bg-amber-500/10 text-sm text-amber-200/80">
-                      <MessageSquare className="w-3.5 h-3.5 inline mr-1.5" />
+                    <div className="mt-3 p-3 rounded-lg bg-amber-50 text-sm text-amber-700 leading-relaxed border border-amber-100">
+                      <MessageSquare className="w-3.5 h-3.5 inline mr-1.5 opacity-60" />
                       {match.notes}
                     </div>
                   )}

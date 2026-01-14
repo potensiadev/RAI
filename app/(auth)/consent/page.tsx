@@ -104,28 +104,32 @@ export default function ConsentPage() {
   return (
     <div className="space-y-6">
       <div className="text-center space-y-2">
-        <Shield className="w-12 h-12 mx-auto text-primary" />
-        <h1 className="text-2xl font-bold text-white">서비스 이용 동의</h1>
-        <p className="text-slate-400 text-sm">
+        <div className="w-16 h-16 mx-auto bg-primary text-white rounded-2xl flex items-center justify-center shadow-lg shadow-primary/30 mb-6">
+          <Shield className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl font-bold text-gray-900">서비스 이용 동의</h1>
+        <p className="text-gray-500 text-sm">
           HR Screener 서비스 이용을 위해 아래 약관에 동의해주세요.
         </p>
       </div>
 
-      <div className="p-6 rounded-2xl bg-[#0F0F24]/60 backdrop-blur-md border border-white/5 space-y-4">
+      <div className="p-8 rounded-3xl bg-white shadow-2xl shadow-black/5 border border-gray-100 space-y-6">
         {error && (
-          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-red-600 text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
             {error}
           </div>
         )}
 
         {/* 전체 동의 */}
-        <div className="p-4 bg-white/5 rounded-lg">
+        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
           <label className="flex items-center gap-3 cursor-pointer">
             <Checkbox
               checked={allRequiredChecked && consents.marketing}
               onCheckedChange={handleCheckAll}
+              className="border-gray-300 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
             />
-            <span className="font-medium text-white">모두 동의합니다</span>
+            <span className="font-semibold text-gray-900">모두 동의합니다</span>
           </label>
         </div>
 
@@ -157,29 +161,21 @@ export default function ConsentPage() {
           />
 
           {/* 제3자 정보 보증 (핵심) */}
-          <div className="bg-amber-500/10 border border-amber-500/20 rounded-md p-3 text-sm">
-            <div className="flex gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-              <div className="text-amber-200">
-                <p className="font-medium">중요 안내</p>
-                <p className="mt-1 text-amber-300/80">
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-sm">
+            <div className="flex gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+              <div className="text-amber-900">
+                <p className="font-semibold">중요 안내</p>
+                <p className="mt-1 text-amber-700 leading-relaxed">
                   업로드하는 이력서의 정보주체(후보자)로부터 개인정보 수집·이용 동의를 받았음을 보증합니다.
                 </p>
               </div>
             </div>
           </div>
-
-          {/* 마케팅 동의 (선택) */}
-          {/* <ConsentItem
-            label="마케팅 정보 수신"
-            required={false}
-            checked={consents.marketing}
-            onCheckedChange={(v) => setConsents({ ...consents, marketing: v })}
-          /> */}
         </div>
 
         <Button
-          className="w-full"
+          className="w-full h-12 text-base font-semibold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
           size="lg"
           disabled={!allRequiredChecked || isSubmitting}
           onClick={handleSubmit}
@@ -214,20 +210,24 @@ function ConsentItem({
   onViewClick?: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between p-3 border border-white/10 rounded-lg bg-white/5">
+    <div className="flex items-center justify-between p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
       <label className="flex items-center gap-3 cursor-pointer flex-1">
-        <Checkbox checked={checked} onCheckedChange={onCheckedChange} />
-        <span className="flex items-center gap-2 text-slate-300">
+        <Checkbox
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          className="border-gray-300 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+        />
+        <span className="flex items-center gap-2 text-gray-600">
           {icon}
           <span>
-            {required && <span className="text-rose-400">[필수] </span>}
-            {!required && <span className="text-slate-500">[선택] </span>}
-            {label}
+            {required && <span className="text-rose-500 font-medium">[필수] </span>}
+            {!required && <span className="text-gray-400 font-medium">[선택] </span>}
+            <span className={required ? "text-gray-900" : "text-gray-600"}>{label}</span>
           </span>
         </span>
       </label>
       {onViewClick && (
-        <Button variant="ghost" size="sm" onClick={onViewClick}>
+        <Button variant="ghost" size="sm" onClick={onViewClick} className="text-gray-400 hover:text-gray-900 hover:bg-gray-100">
           보기
         </Button>
       )}
@@ -250,9 +250,9 @@ function ConsentDocumentModal({
 
   return (
     <Dialog open={!!type} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
+      <DialogContent className="max-w-2xl max-h-[80vh] bg-white border-gray-100 shadow-2xl">
         <DialogHeader>
-          <DialogTitle>{type && titles[type]}</DialogTitle>
+          <DialogTitle className="text-gray-900">{type && titles[type]}</DialogTitle>
         </DialogHeader>
         <ScrollArea className="h-[60vh] pr-4">
           {type === "thirdParty" && <ThirdPartyGuaranteeContent />}
@@ -266,14 +266,14 @@ function ConsentDocumentModal({
 
 function ThirdPartyGuaranteeContent() {
   return (
-    <div className="prose prose-invert prose-sm max-w-none">
-      <h3>제3자 개인정보 처리 보증 약관</h3>
+    <div className="prose prose-sm max-w-none text-gray-600">
+      <h3 className="text-gray-900">제3자 개인정보 처리 보증 약관</h3>
       <p><strong>시행일:</strong> 2025년 1월 1일</p>
-      <h4>제1조 (목적)</h4>
+      <h4 className="text-gray-800">제1조 (목적)</h4>
       <p>본 약관은 HR Screener 서비스를 이용하여 제3자의 개인정보가 포함된 이력서를 처리하는 과정에서 사용자의 책임과 의무를 명확히 합니다.</p>
-      <h4>제2조 (사용자의 보증)</h4>
+      <h4 className="text-gray-800">제2조 (사용자의 보증)</h4>
       <p>사용자는 업로드하는 이력서에 대해 정보주체로부터 개인정보 수집·이용 동의를 받았음을 보증합니다.</p>
-      <h4>제3조 (사용자의 책임)</h4>
+      <h4 className="text-gray-800">제3조 (사용자의 책임)</h4>
       <p>본 약관 위반으로 발생하는 모든 법적 책임은 사용자에게 있습니다.</p>
     </div>
   );
@@ -281,8 +281,8 @@ function ThirdPartyGuaranteeContent() {
 
 function TermsOfServiceContent() {
   return (
-    <div className="prose prose-invert prose-sm max-w-none">
-      <h3>서비스 이용약관</h3>
+    <div className="prose prose-sm max-w-none text-gray-600">
+      <h3 className="text-gray-900">서비스 이용약관</h3>
       <p><strong>시행일:</strong> 2025년 1월 1일</p>
       <p>HR Screener 서비스 이용약관입니다.</p>
     </div>
@@ -291,8 +291,8 @@ function TermsOfServiceContent() {
 
 function PrivacyPolicyContent() {
   return (
-    <div className="prose prose-invert prose-sm max-w-none">
-      <h3>개인정보 처리방침</h3>
+    <div className="prose prose-sm max-w-none text-gray-600">
+      <h3 className="text-gray-900">개인정보 처리방침</h3>
       <p><strong>시행일:</strong> 2025년 1월 1일</p>
       <p>HR Screener 개인정보 처리방침입니다.</p>
     </div>

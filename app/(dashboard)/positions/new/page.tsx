@@ -253,13 +253,13 @@ export default function NewPositionPage() {
       <div className="flex items-center gap-4">
         <Link
           href="/positions"
-          className="p-2 rounded-lg hover:bg-white/5 transition-colors"
+          className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-900 transition-colors"
         >
-          <ArrowLeft className="w-5 h-5 text-slate-400" />
+          <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-white">새 포지션 등록</h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <h1 className="text-2xl font-bold text-gray-900">새 포지션 등록</h1>
+          <p className="text-gray-500 text-sm mt-1">
             채용 포지션 정보를 입력하고 후보자 매칭을 시작하세요
           </p>
         </div>
@@ -267,12 +267,12 @@ export default function NewPositionPage() {
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* JD 자동 추출 */}
-        <section className="p-6 rounded-2xl bg-gradient-to-br from-primary/10 to-purple-500/10 border border-primary/20 space-y-4">
-          <div className="flex items-center gap-2 text-white font-medium">
+        <section className="p-6 rounded-2xl bg-gradient-to-br from-primary/5 to-purple-500/5 border border-primary/10 shadow-sm space-y-4">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
             <Sparkles className="w-5 h-5 text-primary" />
             JD에서 자동 추출
           </div>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-gray-500">
             JD(채용공고) 파일을 업로드하면 AI가 자동으로 포지션 정보를 추출합니다.
           </p>
 
@@ -288,10 +288,10 @@ export default function NewPositionPage() {
             <label
               htmlFor="jd-upload"
               className={cn(
-                "flex items-center gap-2 px-4 py-2.5 rounded-xl cursor-pointer transition-all",
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl cursor-pointer transition-all shadow-sm",
                 isExtracting
-                  ? "bg-primary/30 text-primary/70 cursor-not-allowed"
-                  : "bg-primary/20 text-primary hover:bg-primary/30"
+                  ? "bg-primary/10 text-primary cursor-not-allowed"
+                  : "bg-white border border-primary/20 text-primary hover:border-primary hover:bg-primary/5"
               )}
             >
               {isExtracting ? (
@@ -306,12 +306,12 @@ export default function NewPositionPage() {
                 </>
               )}
             </label>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-gray-400">
               PDF, DOCX, DOC (최대 5MB)
             </span>
 
             {extractedFileName && (
-              <span className="flex items-center gap-1.5 text-sm text-emerald-400">
+              <span className="flex items-center gap-1.5 text-sm text-emerald-600">
                 <CheckCircle className="w-4 h-4" />
                 {extractedFileName}에서 추출 완료
               </span>
@@ -320,29 +320,29 @@ export default function NewPositionPage() {
         </section>
 
         {/* 기본 정보 */}
-        <section className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-          <div className="flex items-center gap-2 text-white font-medium">
-            <Briefcase className="w-5 h-5 text-primary" />
+        <section className="p-6 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
+            <Briefcase className="w-5 h-5 text-gray-400" />
             기본 정보
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-sm text-slate-400 mb-2">
-                포지션명 <span className="text-red-400">*</span>
+              <label className="block text-sm text-gray-500 mb-2">
+                포지션명 <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 placeholder="예: 시니어 백엔드 개발자"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">
+              <label className="block text-sm text-gray-500 mb-2">
                 <Building2 className="w-4 h-4 inline mr-1" />
                 고객사
               </label>
@@ -351,26 +351,26 @@ export default function NewPositionPage() {
                 value={formData.clientCompany}
                 onChange={(e) => setFormData({ ...formData, clientCompany: e.target.value })}
                 placeholder="회사명"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">부서</label>
+              <label className="block text-sm text-gray-500 mb-2">부서</label>
               <input
                 type="text"
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                 placeholder="예: 개발팀"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm text-slate-400 mb-2">
+            <label className="block text-sm text-gray-500 mb-2">
               <FileText className="w-4 h-4 inline mr-1" />
               상세 설명 (JD)
             </label>
@@ -379,22 +379,22 @@ export default function NewPositionPage() {
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="포지션 상세 설명, 담당 업무, 자격 요건 등을 입력하세요. 상세할수록 AI 매칭 정확도가 높아집니다."
               rows={6}
-              className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                       text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50 resize-none"
+              className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                       text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none transition-all"
             />
           </div>
         </section>
 
         {/* 스킬 요건 */}
-        <section className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-          <div className="flex items-center gap-2 text-white font-medium">
-            <Users className="w-5 h-5 text-primary" />
+        <section className="p-6 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
+            <Users className="w-5 h-5 text-gray-400" />
             스킬 요건
           </div>
 
           <div>
-            <label className="block text-sm text-slate-400 mb-2">
-              필수 스킬 <span className="text-red-400">*</span>
+            <label className="block text-sm text-gray-500 mb-2">
+              필수 스킬 <span className="text-red-500">*</span>
             </label>
             <div className="flex gap-2">
               <input
@@ -408,13 +408,13 @@ export default function NewPositionPage() {
                   }
                 }}
                 placeholder="스킬 입력 후 Enter (쉼표로 여러 개 입력)"
-                className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="flex-1 px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
               <button
                 type="button"
                 onClick={() => addSkill("required")}
-                className="px-4 py-3 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
+                className="px-4 py-3 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -424,13 +424,13 @@ export default function NewPositionPage() {
                 {formData.requiredSkills.map((skill) => (
                   <span
                     key={skill}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/20 text-primary text-sm"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-sm font-medium"
                   >
                     {skill}
                     <button
                       type="button"
                       onClick={() => removeSkill("required", skill)}
-                      className="hover:text-white transition-colors"
+                      className="hover:text-primary/70 transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -441,7 +441,7 @@ export default function NewPositionPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-slate-400 mb-2">우대 스킬</label>
+            <label className="block text-sm text-gray-500 mb-2">우대 스킬</label>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -454,13 +454,13 @@ export default function NewPositionPage() {
                   }
                 }}
                 placeholder="스킬 입력 후 Enter"
-                className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="flex-1 px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
               <button
                 type="button"
                 onClick={() => addSkill("preferred")}
-                className="px-4 py-3 rounded-xl bg-slate-700/50 text-slate-300 hover:bg-slate-700 transition-colors"
+                className="px-4 py-3 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -470,13 +470,13 @@ export default function NewPositionPage() {
                 {formData.preferredSkills.map((skill) => (
                   <span
                     key={skill}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/50 text-slate-300 text-sm"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium"
                   >
                     {skill}
                     <button
                       type="button"
                       onClick={() => removeSkill("preferred", skill)}
-                      className="hover:text-white transition-colors"
+                      className="hover:text-gray-900 transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -488,29 +488,29 @@ export default function NewPositionPage() {
         </section>
 
         {/* 경력 & 학력 */}
-        <section className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-          <div className="flex items-center gap-2 text-white font-medium">
-            <GraduationCap className="w-5 h-5 text-primary" />
+        <section className="p-6 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
+            <GraduationCap className="w-5 h-5 text-gray-400" />
             경력 & 학력
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-400 mb-2">
-                최소 경력 (년) <span className="text-red-400">*</span>
+              <label className="block text-sm text-gray-500 mb-2">
+                최소 경력 (년) <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
                 min="0"
                 value={formData.minExpYears}
                 onChange={(e) => setFormData({ ...formData, minExpYears: parseInt(e.target.value) || 0 })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">최대 경력 (년)</label>
+              <label className="block text-sm text-gray-500 mb-2">최대 경력 (년)</label>
               <input
                 type="number"
                 min="0"
@@ -520,18 +520,18 @@ export default function NewPositionPage() {
                   maxExpYears: e.target.value ? parseInt(e.target.value) : null,
                 })}
                 placeholder="무관"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">학력 요건</label>
+              <label className="block text-sm text-gray-500 mb-2">학력 요건</label>
               <select
                 value={formData.requiredEducationLevel}
                 onChange={(e) => setFormData({ ...formData, requiredEducationLevel: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white
-                         focus:outline-none focus:border-primary/50 cursor-pointer"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 text-gray-900
+                         focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 cursor-pointer transition-all"
               >
                 {EDUCATION_LEVELS.map((level) => (
                   <option key={level.value} value={level.value}>
@@ -542,7 +542,7 @@ export default function NewPositionPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">우대 전공</label>
+              <label className="block text-sm text-gray-500 mb-2">우대 전공</label>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -555,13 +555,13 @@ export default function NewPositionPage() {
                     }
                   }}
                   placeholder="전공 입력"
-                  className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                           text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                  className="flex-1 px-4 py-3 rounded-xl bg-white border border-gray-200
+                           text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                 />
                 <button
                   type="button"
                   onClick={addMajor}
-                  className="px-3 rounded-xl bg-slate-700/50 text-slate-300 hover:bg-slate-700 transition-colors"
+                  className="px-3 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -571,11 +571,11 @@ export default function NewPositionPage() {
                   {formData.preferredMajors.map((major) => (
                     <span
                       key={major}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-700/50 text-slate-300 text-xs"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-medium"
                     >
                       {major}
                       <button type="button" onClick={() => removeMajor(major)}>
-                        <X className="w-3 h-3" />
+                        <X className="w-3 h-3 text-gray-400 hover:text-gray-600" />
                       </button>
                     </span>
                   ))}
@@ -586,20 +586,20 @@ export default function NewPositionPage() {
         </section>
 
         {/* 근무 조건 */}
-        <section className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-          <div className="flex items-center gap-2 text-white font-medium">
-            <MapPin className="w-5 h-5 text-primary" />
+        <section className="p-6 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
+            <MapPin className="w-5 h-5 text-gray-400" />
             근무 조건
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-400 mb-2">근무 형태</label>
+              <label className="block text-sm text-gray-500 mb-2">근무 형태</label>
               <select
                 value={formData.jobType}
                 onChange={(e) => setFormData({ ...formData, jobType: e.target.value as JobType })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white
-                         focus:outline-none focus:border-primary/50 cursor-pointer"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 text-gray-900
+                         focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 cursor-pointer transition-all"
               >
                 {JOB_TYPES.map((type) => (
                   <option key={type.value} value={type.value}>
@@ -610,19 +610,19 @@ export default function NewPositionPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">근무지</label>
+              <label className="block text-sm text-gray-500 mb-2">근무지</label>
               <input
                 type="text"
                 value={formData.locationCity}
                 onChange={(e) => setFormData({ ...formData, locationCity: e.target.value })}
                 placeholder="예: 서울 강남"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">
+              <label className="block text-sm text-gray-500 mb-2">
                 <DollarSign className="w-4 h-4 inline mr-1" />
                 연봉 하한 (만원)
               </label>
@@ -636,13 +636,13 @@ export default function NewPositionPage() {
                   salaryMin: e.target.value ? parseInt(e.target.value) : null,
                 })}
                 placeholder="예: 5000"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">연봉 상한 (만원)</label>
+              <label className="block text-sm text-gray-500 mb-2">연봉 상한 (만원)</label>
               <input
                 type="number"
                 min="0"
@@ -653,23 +653,23 @@ export default function NewPositionPage() {
                   salaryMax: e.target.value ? parseInt(e.target.value) : null,
                 })}
                 placeholder="예: 8000"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
           </div>
         </section>
 
         {/* 우선순위 & 마감일 */}
-        <section className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-          <div className="flex items-center gap-2 text-white font-medium">
-            <Calendar className="w-5 h-5 text-primary" />
+        <section className="p-6 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
+            <Calendar className="w-5 h-5 text-gray-400" />
             우선순위 & 일정
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-400 mb-2">우선순위</label>
+              <label className="block text-sm text-gray-500 mb-2">우선순위</label>
               <div className="grid grid-cols-2 gap-2">
                 {PRIORITIES.map((p) => (
                   <button
@@ -679,8 +679,8 @@ export default function NewPositionPage() {
                     className={cn(
                       "p-3 rounded-xl border text-left transition-all",
                       formData.priority === p.value
-                        ? "bg-primary/20 border-primary/50 text-white"
-                        : "bg-white/5 border-white/10 text-slate-400 hover:border-white/20"
+                        ? "bg-primary/5 border-primary text-primary"
+                        : "bg-white border-gray-200 text-gray-500 hover:border-primary/50 hover:bg-primary/5"
                     )}
                   >
                     <div className="font-medium text-sm">{p.label}</div>
@@ -691,13 +691,13 @@ export default function NewPositionPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">채용 마감일</label>
+              <label className="block text-sm text-gray-500 mb-2">채용 마감일</label>
               <input
                 type="date"
                 value={formData.deadline}
                 onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
           </div>
@@ -707,7 +707,7 @@ export default function NewPositionPage() {
         <div className="flex items-center justify-end gap-4">
           <Link
             href="/positions"
-            className="px-6 py-3 rounded-xl text-slate-400 hover:text-white transition-colors"
+            className="px-6 py-3 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
           >
             취소
           </Link>
@@ -715,9 +715,9 @@ export default function NewPositionPage() {
             type="submit"
             disabled={isSubmitting}
             className={cn(
-              "flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-colors",
+              "flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all shadow-md active:scale-95",
               isSubmitting
-                ? "bg-primary/50 text-white/50 cursor-not-allowed"
+                ? "bg-primary/50 text-white cursor-not-allowed"
                 : "bg-primary hover:bg-primary/90 text-white"
             )}
           >

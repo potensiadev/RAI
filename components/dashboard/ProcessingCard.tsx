@@ -83,24 +83,24 @@ export default function ProcessingCard({ candidate }: ProcessingCardProps) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -20, scale: 0.95 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className="relative p-5 rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-700/50 backdrop-blur-sm shadow-lg overflow-hidden"
+      className="relative p-5 rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden"
     >
-      {/* Animated Background Glow */}
+      {/* Animated Background Glow - Subtler for Light Mode */}
       <motion.div
-        className="absolute inset-0 opacity-20"
+        className="absolute inset-0 opacity-10"
         animate={{
           background: [
-            "radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.3) 0%, transparent 50%)",
-            "radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.3) 0%, transparent 50%)",
-            "radial-gradient(circle at 0% 100%, rgba(59, 130, 246, 0.3) 0%, transparent 50%)",
-            "radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.3) 0%, transparent 50%)",
+            "radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.2) 0%, transparent 50%)",
+            "radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.2) 0%, transparent 50%)",
+            "radial-gradient(circle at 0% 100%, rgba(59, 130, 246, 0.2) 0%, transparent 50%)",
+            "radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.2) 0%, transparent 50%)",
           ],
         }}
         transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
       />
 
       {/* Progress Bar */}
-      <div className="relative h-1.5 bg-slate-700/50 rounded-full mb-4 overflow-hidden">
+      <div className="relative h-1.5 bg-gray-100 rounded-full mb-4 overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${config.progress}%` }}
@@ -112,7 +112,7 @@ export default function ProcessingCard({ candidate }: ProcessingCardProps) {
           candidate.status !== "failed" &&
           candidate.status !== "rejected" && (
             <motion.div
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent"
               animate={{ x: ["-100%", "200%"] }}
               transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
             />
@@ -122,22 +122,21 @@ export default function ProcessingCard({ candidate }: ProcessingCardProps) {
       {/* Status Indicator */}
       <div className="relative flex items-center gap-2 mb-4">
         {candidate.status !== "completed" &&
-        candidate.status !== "failed" &&
-        candidate.status !== "rejected" ? (
-          <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+          candidate.status !== "failed" &&
+          candidate.status !== "rejected" ? (
+          <Loader2 className="w-4 h-4 animate-spin text-primary" />
         ) : (
           <div
-            className={`w-2 h-2 rounded-full ${
-              candidate.status === "completed"
-                ? "bg-emerald-400"
-                : "bg-red-400"
-            }`}
+            className={`w-2 h-2 rounded-full ${candidate.status === "completed"
+                ? "bg-emerald-500"
+                : "bg-red-500"
+              }`}
           />
         )}
-        <span className="text-sm font-medium text-slate-300">
+        <span className="text-sm font-medium text-gray-700">
           {config.label}
         </span>
-        <span className="ml-auto text-xs text-slate-500">
+        <span className="ml-auto text-xs text-gray-500">
           {config.progress}%
         </span>
       </div>
@@ -148,15 +147,15 @@ export default function ProcessingCard({ candidate }: ProcessingCardProps) {
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: "auto" }}
           transition={{ duration: 0.3 }}
-          className="relative space-y-3 pt-3 border-t border-slate-700/50"
+          className="relative space-y-3 pt-3 border-t border-gray-100"
         >
           {/* Name */}
           {displayName && (
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-700/50">
-                <User size={14} className="text-slate-400" />
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-50">
+                <User size={14} className="text-gray-400" />
               </div>
-              <span className="text-base font-semibold text-white">
+              <span className="text-base font-semibold text-gray-900">
                 {displayName}
               </span>
             </div>
@@ -165,15 +164,15 @@ export default function ProcessingCard({ candidate }: ProcessingCardProps) {
           {/* Company & Position */}
           {(displayCompany || displayPosition) && (
             <div className="flex items-start gap-3">
-              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-700/50">
-                <Building2 size={14} className="text-slate-400" />
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-50">
+                <Building2 size={14} className="text-gray-400" />
               </div>
               <div className="flex flex-col">
                 {displayCompany && (
-                  <span className="text-sm text-slate-300">{displayCompany}</span>
+                  <span className="text-sm text-gray-700">{displayCompany}</span>
                 )}
                 {displayPosition && (
-                  <span className="text-xs text-slate-500">{displayPosition}</span>
+                  <span className="text-xs text-gray-500">{displayPosition}</span>
                 )}
               </div>
             </div>
@@ -181,7 +180,7 @@ export default function ProcessingCard({ candidate }: ProcessingCardProps) {
 
           {/* Contact Info (parsed 단계에서 표시) */}
           {(displayPhone || displayEmail) && (
-            <div className="flex items-center gap-4 text-xs text-slate-500">
+            <div className="flex items-center gap-4 text-xs text-gray-500">
               {displayPhone && (
                 <div className="flex items-center gap-1">
                   <Phone size={12} />
@@ -201,14 +200,14 @@ export default function ProcessingCard({ candidate }: ProcessingCardProps) {
 
       {/* Processing Message (정보 없을 때) */}
       {!hasBasicInfo && (
-        <div className="relative flex items-center gap-3 text-slate-500">
+        <div className="relative flex items-center gap-3 text-gray-400">
           <Briefcase size={14} />
           <span className="text-sm">이력서 분석 중...</span>
         </div>
       )}
 
       {/* Time Indicator */}
-      <div className="relative mt-4 text-xs text-slate-600">
+      <div className="relative mt-4 text-xs text-slate-400">
         {new Date(candidate.created_at).toLocaleString("ko-KR", {
           month: "short",
           day: "numeric",

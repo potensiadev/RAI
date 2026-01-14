@@ -124,10 +124,10 @@ export function EmptyState({
       </div>
 
       {/* Text */}
-      <h3 className="text-lg font-semibold text-white mb-2 text-center">
+      <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">
         {displayTitle}
       </h3>
-      <p className="text-sm text-slate-400 text-center max-w-sm mb-6">
+      <p className="text-sm text-gray-500 text-center max-w-sm mb-6">
         {displayDescription}
       </p>
 

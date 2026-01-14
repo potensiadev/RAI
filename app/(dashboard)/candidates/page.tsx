@@ -288,8 +288,8 @@ export default function CandidatesPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-white">Candidates</h1>
-        <p className="text-slate-400 mt-1">
+        <h1 className="text-3xl font-bold text-gray-900">Candidates</h1>
+        <p className="text-gray-500 mt-1">
           등록된 모든 후보자를 확인하고 관리하세요
         </p>
       </div>
@@ -297,26 +297,26 @@ export default function CandidatesPage() {
       {/* Search & Filter Bar */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
             placeholder="이름, 직책, 회사, 스킬로 검색..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             data-testid="search-input"
-            className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10
-                     text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+            className="w-full pl-10 pr-4 py-3 rounded-xl bg-white border border-gray-200
+                     text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
           />
         </div>
 
         <div className="flex items-center gap-2">
-          <Filter className="w-5 h-5 text-slate-500" />
+          <Filter className="w-5 h-5 text-gray-400" />
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
             data-testid="filter-sort"
-            className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white
-                     focus:outline-none focus:border-primary/50 cursor-pointer"
+            className="px-4 py-3 rounded-xl bg-white border border-gray-200 text-gray-900
+                     focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 cursor-pointer"
           >
             <option value="recent">최근 등록순</option>
             <option value="confidence">신뢰도순</option>
@@ -327,44 +327,44 @@ export default function CandidatesPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+        <div className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/20">
+            <div className="p-2 rounded-lg bg-primary/10">
               <Users className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{candidates.length}</p>
-              <p className="text-sm text-slate-400">전체 후보자</p>
+              <p className="text-2xl font-bold text-gray-900">{candidates.length}</p>
+              <p className="text-sm text-gray-500">전체 후보자</p>
             </div>
           </div>
         </div>
-        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+        <div className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-500/20">
-              <Star className="w-5 h-5 text-emerald-400" />
+            <div className="p-2 rounded-lg bg-emerald-500/10">
+              <Star className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">
+              <p className="text-2xl font-bold text-gray-900">
                 {candidates.filter((c) => (c.confidence_score || 0) >= 0.95).length}
               </p>
-              <p className="text-sm text-slate-400">높은 신뢰도</p>
+              <p className="text-sm text-gray-500">높은 신뢰도</p>
             </div>
           </div>
         </div>
-        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+        <div className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-500/20">
-              <Calendar className="w-5 h-5 text-blue-400" />
+            <div className="p-2 rounded-lg bg-blue-500/10">
+              <Calendar className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">
+              <p className="text-2xl font-bold text-gray-900">
                 {candidates.filter((c) => {
                   const date = new Date(c.created_at);
                   const now = new Date();
                   return now.getTime() - date.getTime() < 7 * 24 * 60 * 60 * 1000;
                 }).length}
               </p>
-              <p className="text-sm text-slate-400">최근 7일</p>
+              <p className="text-sm text-gray-500">최근 7일</p>
             </div>
           </div>
         </div>
@@ -420,95 +420,97 @@ export default function CandidatesPage() {
 
             // 완료된 후보자는 기존 카드로 표시
             return (
-            <Link
-              key={candidate.id}
-              href={`/candidates/${candidate.id}`}
-              data-testid="candidate-item"
-              className="group p-5 rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900/80
-                       border border-white/10 hover:border-primary/30
-                       transition-all duration-300 hover:shadow-lg hover:shadow-primary/10
-                       hover:-translate-y-1"
-            >
-              {/* Card Header */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-purple-500/30 
-                                flex items-center justify-center text-white font-semibold text-lg
-                                group-hover:from-primary/50 group-hover:to-purple-500/50 transition-all">
-                    {candidate.name?.charAt(0) || "?"}
+              <Link
+                key={candidate.id}
+                href={`/candidates/${candidate.id}`}
+                data-testid="candidate-item"
+                className="group p-5 rounded-2xl bg-white
+                       border border-gray-100 hover:border-primary
+                       transition-all duration-300 hover:shadow-lg hover:shadow-primary/5
+                       hover:-translate-y-1 block h-full"
+              >
+                {/* Card Header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 
+                                  flex items-center justify-center text-primary font-semibold text-lg
+                                  group-hover:bg-primary group-hover:text-white transition-all">
+                      {candidate.name?.charAt(0) || "?"}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 group-hover:text-primary transition-colors">
+                        {candidate.name || "이름 미확인"}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        {candidate.last_position || "직책 미확인"}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-white group-hover:text-primary transition-colors">
-                      {candidate.name || "이름 미확인"}
-                    </h3>
-                    <p className="text-sm text-slate-400">
-                      {candidate.last_position || "직책 미확인"}
-                    </p>
-                  </div>
-                </div>
-                {/* Confidence Badge */}
-                <span
-                  className={cn(
-                    "px-2 py-1 rounded-full text-xs font-medium border",
-                    getConfidenceColor(candidate.confidence_score || 0)
-                  )}
-                  data-testid="ai-confidence"
-                >
-                  {Math.round((candidate.confidence_score || 0) * 100)}%
-                </span>
-              </div>
-
-              {/* Company & Experience */}
-              <div className="flex items-center gap-4 mb-3 text-sm">
-                {candidate.last_company && (
-                  <span className="flex items-center gap-1.5 text-slate-300" data-testid="candidate-company">
-                    <Building2 className="w-4 h-4 text-slate-500" />
-                    {candidate.last_company}
+                  {/* Confidence Badge */}
+                  <span
+                    className={cn(
+                      "px-2 py-1 rounded-full text-xs font-medium border",
+                      candidate.confidence_score >= 0.95 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                        candidate.confidence_score >= 0.8 ? "bg-yellow-50 text-yellow-700 border-yellow-200" :
+                          "bg-red-50 text-red-700 border-red-200"
+                    )}
+                    data-testid="ai-confidence"
+                  >
+                    {Math.round((candidate.confidence_score || 0) * 100)}%
                   </span>
-                )}
-                <span className="flex items-center gap-1.5 text-slate-300" data-testid="candidate-exp-years">
-                  <Briefcase className="w-4 h-4 text-slate-500" />
-                  {formatExperience(calculateTotalExperience(candidate.careers || []))}
-                </span>
-              </div>
+                </div>
 
-              {/* Summary */}
-              {candidate.summary && (
-                <p className="text-sm text-slate-400 line-clamp-2 mb-3">
-                  {candidate.summary}
-                </p>
-              )}
-
-              {/* Skills */}
-              {candidate.skills && candidate.skills.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap" data-testid="candidate-skills">
-                  <Code className="w-4 h-4 text-slate-500" />
-                  {candidate.skills.slice(0, 3).map((skill, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2 py-0.5 rounded-md bg-slate-700/50 text-xs text-slate-300"
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                  {candidate.skills.length > 3 && (
-                    <span className="text-xs text-slate-500">
-                      +{candidate.skills.length - 3}
+                {/* Company & Experience */}
+                <div className="flex items-center gap-4 mb-3 text-sm">
+                  {candidate.last_company && (
+                    <span className="flex items-center gap-1.5 text-gray-700" data-testid="candidate-company">
+                      <Building2 className="w-4 h-4 text-gray-400" />
+                      {candidate.last_company}
                     </span>
                   )}
+                  <span className="flex items-center gap-1.5 text-gray-700" data-testid="candidate-exp-years">
+                    <Briefcase className="w-4 h-4 text-gray-400" />
+                    {formatExperience(calculateTotalExperience(candidate.careers || []))}
+                  </span>
                 </div>
-              )}
 
-              {/* Date */}
-              <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-slate-500">
-                <span>
-                  {new Date(candidate.created_at).toLocaleDateString("ko-KR")}
-                </span>
-                <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                  상세 보기 →
-                </span>
-              </div>
-            </Link>
+                {/* Summary */}
+                {candidate.summary && (
+                  <p className="text-sm text-gray-500 line-clamp-2 mb-3">
+                    {candidate.summary}
+                  </p>
+                )}
+
+                {/* Skills */}
+                {candidate.skills && candidate.skills.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap" data-testid="candidate-skills">
+                    <Code className="w-4 h-4 text-gray-400" />
+                    {candidate.skills.slice(0, 3).map((skill, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 rounded-md bg-gray-100 text-xs text-gray-600"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                    {candidate.skills.length > 3 && (
+                      <span className="text-xs text-gray-500">
+                        +{candidate.skills.length - 3}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Date */}
+                <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+                  <span>
+                    {new Date(candidate.created_at).toLocaleDateString("ko-KR")}
+                  </span>
+                  <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">
+                    상세 보기 →
+                  </span>
+                </div>
+              </Link>
             );
           })}
         </div>

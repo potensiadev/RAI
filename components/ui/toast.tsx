@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
-import { X, CheckCircle, AlertCircle, AlertTriangle, Info, RotateCcw } from "lucide-react";
+import { X, CheckCircle2, AlertCircle, Info } from "lucide-react";
 
 // ─────────────────────────────────────────────────
 // Types
@@ -27,7 +27,6 @@ interface ToastContextValue {
   toasts: Toast[];
   addToast: (toast: Omit<Toast, "id">) => string;
   removeToast: (id: string) => void;
-  // Convenience methods
   success: (title: string, description?: string) => string;
   error: (title: string, description?: string, action?: ToastAction) => string;
   warning: (title: string, description?: string) => string;
@@ -69,8 +68,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
 
     setToasts((prev) => [...prev, newToast]);
 
-    // Auto dismiss (default 5s, errors 8s)
-    const duration = toast.duration ?? (toast.type === "error" ? 8000 : 5000);
+    const duration = toast.duration ?? 5000;
     if (duration > 0) {
       setTimeout(() => removeToast(id), duration);
     }
@@ -115,7 +113,7 @@ function ToastContainer({ toasts, onRemove }: ToastContainerProps) {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-3 w-full max-w-md pointer-events-none p-4">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
       ))}
@@ -133,63 +131,48 @@ interface ToastItemProps {
 }
 
 const iconMap = {
-  success: CheckCircle,
+  success: CheckCircle2,
   error: AlertCircle,
-  warning: AlertTriangle,
+  warning: AlertCircle,
   info: Info,
 };
 
 const styleMap = {
-  success: {
-    bg: "bg-emerald-500/10",
-    border: "border-emerald-500/30",
-    icon: "text-emerald-400",
-  },
-  error: {
-    bg: "bg-red-500/10",
-    border: "border-red-500/30",
-    icon: "text-red-400",
-  },
-  warning: {
-    bg: "bg-amber-500/10",
-    border: "border-amber-500/30",
-    icon: "text-amber-400",
-  },
-  info: {
-    bg: "bg-blue-500/10",
-    border: "border-blue-500/30",
-    icon: "text-blue-400",
-  },
+  success: "text-emerald-600",
+  error: "text-rose-600",
+  warning: "text-amber-600",
+  info: "text-blue-600",
 };
 
 function ToastItem({ toast, onRemove }: ToastItemProps) {
   const Icon = iconMap[toast.type];
-  const styles = styleMap[toast.type];
+  const iconColor = styleMap[toast.type];
 
   return (
     <div
-      className={`
-        ${styles.bg} ${styles.border}
-        border rounded-lg p-4 shadow-lg backdrop-blur-sm
-        animate-in slide-in-from-right-full duration-300
-      `}
+      className="pointer-events-auto w-full bg-white/95 backdrop-blur-md border border-gray-100/50 
+                 rounded-2xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.08)] 
+                 animate-in slide-in-from-top-full duration-500 ease-out"
     >
-      <div className="flex items-start gap-3">
-        <Icon className={`w-5 h-5 ${styles.icon} flex-shrink-0 mt-0.5`} />
+      <div className="flex gap-4">
+        <div className={`mt-0.5 ${iconColor}`}>
+          <Icon className="w-5 h-5" />
+        </div>
 
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-white">{toast.title}</p>
+        <div className="flex-1 space-y-1">
+          <p className="font-semibold text-gray-900 leading-tight">
+            {toast.title}
+          </p>
           {toast.description && (
-            <p className="text-xs text-slate-400 mt-1">{toast.description}</p>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              {toast.description}
+            </p>
           )}
-
           {toast.action && (
             <button
               onClick={toast.action.onClick}
-              className="mt-2 flex items-center gap-1 text-xs font-medium text-neon-cyan
-                       hover:text-neon-cyan/80 transition-colors"
+              className="mt-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
             >
-              <RotateCcw className="w-3 h-3" />
               {toast.action.label}
             </button>
           )}
@@ -197,7 +180,7 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
 
         <button
           onClick={() => onRemove(toast.id)}
-          className="text-slate-500 hover:text-slate-300 transition-colors"
+          className="text-gray-400 hover:text-gray-600 transition-colors -mt-1 -mr-1 p-1"
         >
           <X className="w-4 h-4" />
         </button>
@@ -205,9 +188,5 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
     </div>
   );
 }
-
-// ─────────────────────────────────────────────────
-// Export
-// ─────────────────────────────────────────────────
 
 export type { Toast, ToastAction, ToastType };

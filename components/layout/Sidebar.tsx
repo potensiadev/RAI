@@ -1,12 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Upload, Users, BarChart3, ShieldAlert, Settings, Hexagon, Briefcase } from "lucide-react";
+import { Upload, Users, BarChart3, ShieldAlert, Settings, Hexagon, Briefcase, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import CreditCounter from "./CreditCounter";
-import { FLOATING_PHYSICS } from "@/lib/physics";
 
 const NAV_ITEMS = [
     { icon: Users, label: "Candidates", href: "/candidates" },
@@ -25,18 +24,15 @@ export default function Sidebar() {
     };
 
     return (
-        <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-white/5 bg-white/[0.02] backdrop-blur-xl flex flex-col justify-between p-6">
-            {/* Brand - Issue #8: 클릭시 홈으로 이동 */}
-            <Link href="/candidates" className="flex items-center gap-3 mb-10 hover:opacity-80 transition-opacity">
-                <motion.div
-                    animate={FLOATING_PHYSICS.y}
-                    className="p-2 bg-primary/20 rounded-lg border border-primary/50 text-primary box-shadow-glow"
-                >
-                    <Hexagon size={24} fill="currentColor" fillOpacity={0.2} />
-                </motion.div>
+        <aside className="fixed left-0 top-0 z-40 h-screen w-64 bg-white border-r border-gray-100 flex flex-col justify-between p-6">
+            {/* Brand */}
+            <Link href="/candidates" className="flex items-center gap-3 mb-10 group">
+                <div className="p-2 bg-primary/5 rounded-xl border border-primary/10 text-primary group-hover:bg-primary/10 transition-colors">
+                    <Hexagon size={24} fill="currentColor" fillOpacity={0.1} />
+                </div>
                 <div>
-                    <h1 className="font-bold text-lg tracking-tight text-white">RAI</h1>
-                    <p className="text-[10px] text-slate-400 tracking-widest uppercase">Recruitment AI</p>
+                    <h1 className="font-bold text-lg tracking-tight text-gray-900 leading-none">RAI</h1>
+                    <p className="text-[10px] text-gray-400 tracking-widest uppercase font-medium mt-1">Recruitment AI</p>
                 </div>
             </Link>
 
@@ -49,15 +45,15 @@ export default function Sidebar() {
                             key={item.label}
                             href={item.href}
                             className={cn(
-                                "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-colors group relative",
+                                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group relative",
                                 active
-                                    ? "bg-white/5 text-white font-medium"
-                                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                                    ? "bg-gray-50 text-gray-900"
+                                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-50/50"
                             )}
                         >
                             <item.icon size={18} className={cn(
                                 "transition-colors",
-                                active ? "text-primary" : "text-slate-500 group-hover:text-white"
+                                active ? "text-primary" : "text-gray-400 group-hover:text-gray-600"
                             )} />
                             {item.label}
 
@@ -65,22 +61,41 @@ export default function Sidebar() {
                             {active && (
                                 <motion.div
                                     layoutId="sidebar-active"
-                                    className="absolute left-0 w-1 h-6 bg-primary rounded-r-full"
+                                    className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-primary rounded-r-full"
                                 />
                             )}
 
                             {/* Risk Alert Badge */}
                             {item.alert && (
-                                <span className="ml-auto w-2 h-2 rounded-full bg-risk animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]" />
+                                <span className="ml-auto w-2 h-2 rounded-full bg-rose-500 shadow-sm" />
                             )}
                         </Link>
                     );
                 })}
             </nav>
 
-            {/* Footer / Credits */}
-            <div className="pt-6 border-t border-white/5">
-                <CreditCounter />
+            {/* Footer */}
+            <div className="space-y-6">
+                {/* Credit Counter */}
+                <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
+                    <CreditCounter />
+                </div>
+
+                {/* User Profile / Logout */}
+                <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                            <Users size={14} />
+                        </div>
+                        <div className="text-xs">
+                            <p className="font-medium text-gray-900">User Account</p>
+                            <p className="text-gray-400">Pro Plan</p>
+                        </div>
+                    </div>
+                    <button className="text-gray-400 hover:text-gray-600 transition-colors">
+                        <LogOut size={16} />
+                    </button>
+                </div>
             </div>
         </aside>
     );

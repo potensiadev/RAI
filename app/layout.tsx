@@ -26,12 +26,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
         className={cn(
           inter.variable,
           jetbrainsMono.variable,
-          "antialiased bg-deep-space text-foreground min-h-screen font-sans"
+          "antialiased bg-background text-foreground min-h-screen font-sans"
         )}
       >
         <QueryProvider>

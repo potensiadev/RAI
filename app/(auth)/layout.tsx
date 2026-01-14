@@ -16,8 +16,8 @@ export default function AuthLayout({
   }, []);
 
   return (
-    <div className="h-screen overflow-hidden flex items-center justify-center bg-deep-space">
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-ai/5" />
+    <div className="h-screen overflow-hidden flex items-center justify-center bg-gray-50">
+      <div className="absolute inset-0 bg-gradient-to-br from-white via-transparent to-primary/5" />
       <div className="relative z-10 w-full max-w-md px-4">
         {children}
       </div>

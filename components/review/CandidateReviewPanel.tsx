@@ -14,6 +14,7 @@ import {
   Mail,
   MapPin,
   Shield,
+  AlertTriangle,
 } from "lucide-react";
 import EditableField from "./EditableField";
 import CareerTimelineOrbit from "@/components/detail/CareerTimelineOrbit";
@@ -256,7 +257,7 @@ export default function CandidateReviewPanel({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 text-neon-cyan animate-spin" />
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
       </div>
     );
   }
@@ -270,8 +271,8 @@ export default function CandidateReviewPanel({
 
       {/* Save Actions */}
       {hasChanges && (
-        <div className="flex items-center justify-between p-4 rounded-xl bg-blue-500/10 border border-blue-500/30">
-          <div className="flex items-center gap-2 text-blue-400">
+        <div className="flex items-center justify-between p-4 rounded-xl bg-blue-50 border border-blue-200 shadow-sm sticky top-4 z-20">
+          <div className="flex items-center gap-2 text-blue-700">
             <Save className="w-5 h-5" />
             <span className="text-sm font-medium">
               {Object.keys(changes).length}개 필드가 수정되었습니다
@@ -281,9 +282,9 @@ export default function CandidateReviewPanel({
             <button
               onClick={handleReset}
               disabled={isSaving}
-              className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600
-                       text-slate-300 text-sm font-medium transition-colors
-                       disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50
+                       text-gray-600 text-sm font-medium transition-colors
+                       disabled:opacity-50 flex items-center gap-2 shadow-sm"
             >
               <RotateCcw className="w-4 h-4" />
               초기화
@@ -292,9 +293,9 @@ export default function CandidateReviewPanel({
               ref={saveButtonRef}
               onClick={handleSave}
               disabled={isSaving || isLoading}
-              className="px-4 py-2 rounded-lg bg-neon-cyan hover:bg-neon-cyan/80
-                       text-slate-900 text-sm font-semibold transition-colors
-                       disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90
+                       text-white text-sm font-semibold transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
             >
               {isSaving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -308,13 +309,13 @@ export default function CandidateReviewPanel({
       )}
 
       {/* Basic Info Section */}
-      <section className="p-6 rounded-xl bg-slate-800/50 border border-slate-700">
+      <section className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
-          <User className="w-5 h-5 text-neon-cyan" />
-          <h2 className="text-lg font-semibold text-white">기본 정보</h2>
+          <User className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-semibold text-gray-900">기본 정보</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <EditableField
             label="이름"
             fieldKey="name"
@@ -335,22 +336,22 @@ export default function CandidateReviewPanel({
         </div>
 
         {/* 개인정보 영역 - Issue #4: PII는 DB만 보호, UI는 전체 표시 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-700/50">
-            <Phone className="w-4 h-4 text-slate-400" />
-            <span className="text-sm text-slate-300 font-mono">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
+            <Phone className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-700 font-mono">
               {candidate.phone || "미등록"}
             </span>
           </div>
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-700/50">
-            <Mail className="w-4 h-4 text-slate-400" />
-            <span className="text-sm text-slate-300 font-mono">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
+            <Mail className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-700 font-mono">
               {candidate.email || "미등록"}
             </span>
           </div>
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-700/50">
-            <MapPin className="w-4 h-4 text-slate-400" />
-            <span className="text-sm text-slate-300">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
+            <MapPin className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-700">
               {candidate.address || "미등록"}
             </span>
           </div>
@@ -358,22 +359,22 @@ export default function CandidateReviewPanel({
       </section>
 
       {/* Career Section */}
-      <section className="p-6 rounded-xl bg-slate-800/50 border border-slate-700">
+      <section className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
-          <Briefcase className="w-5 h-5 text-neon-purple" />
-          <h2 className="text-lg font-semibold text-white">경력</h2>
+          <Briefcase className="w-5 h-5 text-purple-500" />
+          <h2 className="text-lg font-semibold text-gray-900">경력</h2>
         </div>
 
         {/* 총 경력 연수 - 읽기 전용 (경력에서 자동 계산) */}
-        <div className="mb-4">
-          <label className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1 block">
+        <div className="mb-6">
+          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
             총 경력 연수
           </label>
-          <div className="px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700">
-            <span className="text-sm text-white font-medium">
+          <div className="px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 inline-flex items-center gap-2">
+            <span className="text-base text-gray-900 font-medium">
               {formatExperience(calculatedExperience)}
             </span>
-            <span className="text-xs text-slate-500 ml-2">
+            <span className="text-xs text-gray-400">
               (경력 기간에서 자동 계산)
             </span>
           </div>
@@ -384,10 +385,10 @@ export default function CandidateReviewPanel({
       </section>
 
       {/* Education Section */}
-      <section className="p-6 rounded-xl bg-slate-800/50 border border-slate-700">
+      <section className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
-          <GraduationCap className="w-5 h-5 text-emerald-400" />
-          <h2 className="text-lg font-semibold text-white">학력</h2>
+          <GraduationCap className="w-5 h-5 text-emerald-500" />
+          <h2 className="text-lg font-semibold text-gray-900">학력</h2>
         </div>
 
         <div className="space-y-3">
@@ -395,40 +396,40 @@ export default function CandidateReviewPanel({
             <EducationItem key={index} education={edu} />
           ))}
           {(!candidate.education || candidate.education.length === 0) && (
-            <p className="text-sm text-slate-500 italic">학력 정보가 없습니다</p>
+            <p className="text-sm text-gray-400 italic">학력 정보가 없습니다</p>
           )}
         </div>
       </section>
 
       {/* Skills Section */}
-      <section className="p-6 rounded-xl bg-slate-800/50 border border-slate-700">
+      <section className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
-          <Code className="w-5 h-5 text-yellow-400" />
-          <h2 className="text-lg font-semibold text-white">스킬</h2>
+          <Code className="w-5 h-5 text-amber-500" />
+          <h2 className="text-lg font-semibold text-gray-900">스킬</h2>
         </div>
 
         <div className="flex flex-wrap gap-2">
           {candidate.skills?.map((skill: string, index: number) => (
             <span
               key={index}
-              className="px-3 py-1 rounded-full bg-slate-700 text-sm text-slate-300
-                       border border-slate-600 hover:border-neon-cyan/50 transition-colors"
+              className="px-3 py-1 rounded-full bg-slate-50 text-sm text-slate-700
+                       border border-slate-200 hover:border-primary/50 transition-colors font-medium"
             >
               {skill}
             </span>
           ))}
           {(!candidate.skills || candidate.skills.length === 0) && (
-            <p className="text-sm text-slate-500 italic">스킬 정보가 없습니다</p>
+            <p className="text-sm text-gray-400 italic">스킬 정보가 없습니다</p>
           )}
         </div>
       </section>
 
       {/* Projects Section */}
       {candidate.projects && candidate.projects.length > 0 && (
-        <section className="p-6 rounded-xl bg-slate-800/50 border border-slate-700">
+        <section className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
-            <FolderKanban className="w-5 h-5 text-orange-400" />
-            <h2 className="text-lg font-semibold text-white">프로젝트</h2>
+            <FolderKanban className="w-5 h-5 text-orange-500" />
+            <h2 className="text-lg font-semibold text-gray-900">프로젝트</h2>
           </div>
 
           <div className="space-y-4">
@@ -440,10 +441,10 @@ export default function CandidateReviewPanel({
       )}
 
       {/* Summary Section */}
-      <section className="p-6 rounded-xl bg-slate-800/50 border border-slate-700">
+      <section className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
-          <User className="w-5 h-5 text-blue-400" />
-          <h2 className="text-lg font-semibold text-white">AI 요약</h2>
+          <User className="w-5 h-5 text-blue-500" />
+          <h2 className="text-lg font-semibold text-gray-900">AI 요약</h2>
         </div>
 
         <EditableField
@@ -456,16 +457,16 @@ export default function CandidateReviewPanel({
         />
 
         {candidate.strengths && candidate.strengths.length > 0 && (
-          <div className="mt-4">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+          <div className="mt-6">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
               강점
             </span>
-            <div className="flex flex-wrap gap-2 mt-2">
+            <div className="flex flex-wrap gap-2 mt-3">
               {candidate.strengths.map((strength: string, index: number) => (
                 <span
                   key={index}
-                  className="px-3 py-1 rounded-lg bg-emerald-500/10 text-sm text-emerald-400
-                           border border-emerald-500/30"
+                  className="px-3 py-1 rounded-lg bg-emerald-50 text-sm text-emerald-600
+                           border border-emerald-100 font-medium"
                 >
                   {strength}
                 </span>
@@ -482,15 +483,15 @@ export default function CandidateReviewPanel({
 // Education Item Component
 function EducationItem({ education }: { education: Education }) {
   return (
-    <div className="p-4 rounded-lg bg-slate-700/30 border border-slate-600/50">
+    <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="font-medium text-white">{education.school}</h3>
-          <p className="text-sm text-slate-400">
+          <h3 className="font-semibold text-gray-900">{education.school}</h3>
+          <p className="text-sm text-gray-500 mt-1">
             {education.major} • {education.degree}
           </p>
         </div>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-gray-400 font-medium">
           {education.endYear || "재학중"}
         </span>
       </div>
@@ -501,23 +502,23 @@ function EducationItem({ education }: { education: Education }) {
 // Project Item Component
 function ProjectItem({ project }: { project: Project }) {
   return (
-    <div className="p-4 rounded-lg bg-slate-700/30 border border-slate-600/50">
+    <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="font-medium text-white">{project.name}</h3>
-          <p className="text-sm text-slate-400">{project.role}</p>
+          <h3 className="font-semibold text-gray-900">{project.name}</h3>
+          <p className="text-sm text-gray-500 mt-0.5">{project.role}</p>
         </div>
-        <span className="text-xs text-slate-500">{project.period}</span>
+        <span className="text-xs text-gray-400 font-medium">{project.period}</span>
       </div>
       {project.description && (
-        <p className="mt-2 text-sm text-slate-400">{project.description}</p>
+        <p className="mt-2 text-sm text-gray-600 leading-relaxed">{project.description}</p>
       )}
       {project.technologies && project.technologies.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2">
+        <div className="flex flex-wrap gap-1 mt-3">
           {project.technologies.map((tech: string, index: number) => (
             <span
               key={index}
-              className="px-2 py-0.5 text-xs rounded bg-slate-600 text-slate-300"
+              className="px-2 py-0.5 text-xs rounded bg-white border border-gray-200 text-gray-600"
             >
               {tech}
             </span>
@@ -550,9 +551,9 @@ function FieldConfidenceSummary({ fieldConfidence }: { fieldConfidence: Record<s
 
   // 신뢰도별 색상
   const getConfidenceConfig = (conf: number) => {
-    if (conf >= 0.95) return { color: "text-emerald-400", bg: "bg-emerald-400", label: "높음" };
-    if (conf >= 0.8) return { color: "text-yellow-400", bg: "bg-yellow-400", label: "보통" };
-    return { color: "text-red-400", bg: "bg-red-400", label: "낮음" };
+    if (conf >= 0.95) return { color: "text-emerald-600", bg: "bg-emerald-500", border: "border-emerald-200", bgLight: "bg-emerald-50", label: "높음" };
+    if (conf >= 0.8) return { color: "text-yellow-600", bg: "bg-yellow-500", border: "border-yellow-200", bgLight: "bg-yellow-50", label: "보통" };
+    return { color: "text-red-600", bg: "bg-red-500", border: "border-red-200", bgLight: "bg-red-50", label: "낮음" };
   };
 
   // 평균 신뢰도 계산
@@ -567,15 +568,15 @@ function FieldConfidenceSummary({ fieldConfidence }: { fieldConfidence: Record<s
   const lowConfFields = Object.entries(fieldConfidence).filter(([, v]) => v < 0.8);
 
   return (
-    <section className="p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+    <section className="p-4 rounded-xl bg-white border border-gray-200 shadow-sm">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-primary" />
-          <h2 className="text-sm font-semibold text-white">AI 분석 신뢰도</h2>
+          <h2 className="text-sm font-semibold text-gray-900">AI 분석 신뢰도</h2>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">평균</span>
-          <span className={`text-sm font-mono ${getConfidenceConfig(avgConfidence).color}`}>
+          <span className="text-xs text-gray-500">평균</span>
+          <span className={`text-sm font-mono font-bold ${getConfidenceConfig(avgConfidence).color}`}>
             {Math.round(avgConfidence * 100)}%
           </span>
         </div>
@@ -583,50 +584,53 @@ function FieldConfidenceSummary({ fieldConfidence }: { fieldConfidence: Record<s
 
       {/* 신뢰도 분포 */}
       <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+        <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-100">
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="text-xs text-emerald-400">높음 (95%+)</span>
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-xs text-emerald-700 font-medium">높음 (95%+)</span>
           </div>
-          <p className="text-lg font-semibold text-white mt-1">{highConfFields.length}개</p>
+          <p className="text-lg font-bold text-gray-900 mt-1">{highConfFields.length}개</p>
         </div>
-        <div className="p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+        <div className="p-3 rounded-lg bg-yellow-50 border border-yellow-100">
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-yellow-400" />
-            <span className="text-xs text-yellow-400">보통 (80-94%)</span>
+            <div className="w-2 h-2 rounded-full bg-yellow-500" />
+            <span className="text-xs text-yellow-700 font-medium">보통 (80-94%)</span>
           </div>
-          <p className="text-lg font-semibold text-white mt-1">{medConfFields.length}개</p>
+          <p className="text-lg font-bold text-gray-900 mt-1">{medConfFields.length}개</p>
         </div>
-        <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20">
+        <div className="p-3 rounded-lg bg-red-50 border border-red-100">
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-red-400" />
-            <span className="text-xs text-red-400">낮음 (&lt;80%)</span>
+            <div className="w-2 h-2 rounded-full bg-red-500" />
+            <span className="text-xs text-red-700 font-medium">낮음 (&lt;80%)</span>
           </div>
-          <p className="text-lg font-semibold text-white mt-1">{lowConfFields.length}개</p>
+          <p className="text-lg font-bold text-gray-900 mt-1">{lowConfFields.length}개</p>
         </div>
       </div>
 
       {/* 낮은 신뢰도 필드 상세 (80% 미만인 경우에만 표시) */}
       {lowConfFields.length > 0 && (
-        <div className="mt-3 p-3 rounded-lg bg-red-500/5 border border-red-500/20">
-          <p className="text-xs text-red-400 mb-2 font-medium">검토가 필요한 필드:</p>
+        <div className="mt-3 p-3 rounded-lg bg-red-50 border border-red-100">
+          <div className="flex items-center gap-2 mb-2 text-red-600">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <p className="text-xs font-semibold">검토가 필요한 필드:</p>
+          </div>
           <div className="space-y-2">
             {lowConfFields.map(([key, value]) => {
               const config = getConfidenceConfig(value);
               return (
                 <div key={key} className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-gray-600 font-medium">
                     {fieldLabels[key] || key}
                   </span>
                   <div className="flex items-center gap-2">
                     {/* Progress bar */}
-                    <div className="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                    <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full ${config.bg}`}
                         style={{ width: `${Math.round(value * 100)}%` }}
                       />
                     </div>
-                    <span className={`text-xs font-mono ${config.color}`}>
+                    <span className={`text-xs font-mono font-medium ${config.color}`}>
                       {Math.round(value * 100)}%
                     </span>
                   </div>

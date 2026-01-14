@@ -351,12 +351,12 @@ export default function UploadPage() {
       {/* Header */}
       <div>
         <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 rounded-lg bg-primary/20 text-primary">
+          <div className="p-2 rounded-lg bg-primary/10 text-primary">
             <Upload size={24} />
           </div>
-          <h1 className="text-3xl font-bold text-white">이력서 업로드</h1>
+          <h1 className="text-3xl font-bold text-gray-900">이력서 업로드</h1>
         </div>
-        <p className="text-slate-400">
+        <p className="text-gray-500">
           이력서 파일을 업로드하면 AI가 자동으로 분석하여 후보자 정보를 추출합니다.
         </p>
       </div>
@@ -369,21 +369,21 @@ export default function UploadPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             className={cn(
-              "p-4 rounded-xl border",
+              "p-4 rounded-xl border shadow-sm",
               stats.error === 0
-                ? "bg-emerald-500/10 border-emerald-500/30"
-                : "bg-yellow-500/10 border-yellow-500/30"
+                ? "bg-emerald-50 border-emerald-100"
+                : "bg-yellow-50 border-yellow-100"
             )}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {stats.error === 0 ? (
-                  <CheckCircle className="w-6 h-6 text-emerald-400" />
+                  <CheckCircle className="w-6 h-6 text-emerald-500" />
                 ) : (
-                  <AlertTriangle className="w-6 h-6 text-yellow-400" />
+                  <AlertTriangle className="w-6 h-6 text-yellow-500" />
                 )}
                 <div>
-                  <p className="font-medium text-white">
+                  <p className="font-medium text-gray-900">
                     업로드 완료: {stats.success}개 성공
                     {stats.error > 0 && `, ${stats.error}개 실패`}
                   </p>
@@ -391,8 +391,8 @@ export default function UploadPage() {
               </div>
               <button
                 onClick={() => router.push("/candidates")}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10
-                         hover:bg-white/20 text-white text-sm font-medium transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white
+                         hover:bg-gray-50 text-gray-900 border border-gray-200 text-sm font-medium transition-colors shadow-sm"
               >
                 후보자 목록으로 이동
                 <ArrowRight size={16} />
@@ -409,22 +409,22 @@ export default function UploadPage() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="p-4 rounded-xl bg-slate-800/50 border border-slate-700"
+            className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm"
           >
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-white">
+              <span className="text-sm font-medium text-gray-900">
                 업로드 진행 중...
               </span>
-              <span className="text-sm text-slate-400">
+              <span className="text-sm text-gray-500">
                 {stats.success + stats.error} / {stats.total} ({progressPercent}%)
               </span>
             </div>
-            <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${progressPercent}%` }}
                 transition={{ duration: 0.3 }}
-                className="h-full bg-gradient-to-r from-primary to-emerald-500 rounded-full"
+                className="h-full bg-primary rounded-full"
               />
             </div>
           </motion.div>
@@ -462,19 +462,19 @@ export default function UploadPage() {
           >
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">
+              <h3 className="text-lg font-semibold text-gray-900">
                 파일 목록 ({stats.total}/{MAX_FILES})
               </h3>
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-slate-400">
-                  대기: <span className="text-white">{stats.pending}</span>
+                <span className="text-gray-500">
+                  대기: <span className="text-gray-900">{stats.pending}</span>
                 </span>
-                <span className="text-slate-400">
-                  완료: <span className="text-emerald-400">{stats.success}</span>
+                <span className="text-gray-500">
+                  완료: <span className="text-emerald-600">{stats.success}</span>
                 </span>
                 {stats.error > 0 && (
-                  <span className="text-slate-400">
-                    실패: <span className="text-red-400">{stats.error}</span>
+                  <span className="text-gray-500">
+                    실패: <span className="text-red-500">{stats.error}</span>
                   </span>
                 )}
               </div>
@@ -490,20 +490,20 @@ export default function UploadPage() {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
                   className={cn(
-                    "flex items-center gap-3 p-3 rounded-lg border transition-colors",
-                    file.status === "success" && "bg-emerald-500/10 border-emerald-500/30",
-                    file.status === "error" && "bg-red-500/10 border-red-500/30",
-                    file.status === "uploading" && "bg-blue-500/10 border-blue-500/30",
-                    file.status === "pending" && "bg-slate-800/50 border-slate-700"
+                    "flex items-center gap-3 p-3 rounded-lg border transition-colors shadow-sm",
+                    file.status === "success" && "bg-white border-emerald-100",
+                    file.status === "error" && "bg-white border-red-100",
+                    file.status === "uploading" && "bg-white border-blue-100",
+                    file.status === "pending" && "bg-white border-gray-100"
                   )}
                 >
                   {/* Icon */}
                   <div className={cn(
                     "p-2 rounded-lg",
-                    file.status === "success" && "bg-emerald-500/20 text-emerald-400",
-                    file.status === "error" && "bg-red-500/20 text-red-400",
-                    file.status === "uploading" && "bg-blue-500/20 text-blue-400",
-                    file.status === "pending" && "bg-slate-700 text-slate-400"
+                    file.status === "success" && "bg-emerald-50 text-emerald-600",
+                    file.status === "error" && "bg-red-50 text-red-600",
+                    file.status === "uploading" && "bg-blue-50 text-blue-600",
+                    file.status === "pending" && "bg-gray-50 text-gray-500"
                   )}>
                     {file.status === "success" ? (
                       <CheckCircle size={18} />
@@ -516,10 +516,10 @@ export default function UploadPage() {
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">
+                    <p className="text-sm font-medium text-gray-900 truncate">
                       {file.file.name}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-gray-500">
                       {file.error || `${(file.file.size / 1024 / 1024).toFixed(2)} MB`}
                     </p>
                   </div>
@@ -528,7 +528,7 @@ export default function UploadPage() {
                   {file.status === "error" && !isUploading && (
                     <button
                       onClick={() => retryFile(file.id)}
-                      className="p-1.5 rounded-lg hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 transition-colors"
+                      className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 hover:text-blue-700 transition-colors"
                       title="재시도"
                     >
                       <RotateCcw size={16} />
@@ -539,7 +539,7 @@ export default function UploadPage() {
                   {file.status !== "uploading" && (
                     <button
                       onClick={() => removeFile(file.id)}
-                      className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-500 hover:text-white transition-colors"
+                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-900 transition-colors"
                     >
                       <X size={16} />
                     </button>
@@ -555,7 +555,7 @@ export default function UploadPage() {
                 <button
                   onClick={retryAllFailed}
                   className="flex-1 py-4 rounded-xl font-semibold text-lg transition-all flex items-center justify-center gap-2
-                           bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30"
+                           bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 shadow-sm"
                 >
                   <RotateCcw className="w-5 h-5" />
                   실패 {stats.error}개 재시도
@@ -568,9 +568,9 @@ export default function UploadPage() {
                   onClick={uploadAll}
                   disabled={isUploading}
                   className={cn(
-                    "flex-1 py-4 rounded-xl font-semibold text-lg transition-all flex items-center justify-center gap-2",
+                    "flex-1 py-4 rounded-xl font-semibold text-lg transition-all flex items-center justify-center gap-2 shadow-sm",
                     isUploading
-                      ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                       : "bg-primary hover:bg-primary/90 text-white"
                   )}
                 >
@@ -624,10 +624,10 @@ function InfoCard({
   icon: string;
 }) {
   return (
-    <div className="p-4 rounded-xl bg-slate-800/30 border border-slate-700">
+    <div className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm">
       <div className="text-2xl mb-2">{icon}</div>
-      <h4 className="font-medium text-white">{title}</h4>
-      <p className="text-sm text-slate-400">{description}</p>
+      <h4 className="font-medium text-gray-900">{title}</h4>
+      <p className="text-sm text-gray-500">{description}</p>
     </div>
   );
 }

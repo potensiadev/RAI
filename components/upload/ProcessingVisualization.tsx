@@ -60,21 +60,21 @@ export default function ProcessingVisualization({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="p-6 rounded-2xl bg-slate-800/50 border border-slate-700 overflow-hidden"
+            className="p-6 rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden"
         >
             {/* Header */}
             <div className="flex items-center gap-3 mb-6">
                 <motion.div
                     animate={{ rotate: phase !== "complete" ? 360 : 0 }}
                     transition={{ duration: 2, repeat: phase !== "complete" ? Infinity : 0, ease: "linear" }}
-                    className="p-2 rounded-lg bg-primary/20 text-primary"
+                    className="p-2 rounded-lg bg-primary/10 text-primary"
                 >
                     <Cpu size={20} />
                 </motion.div>
                 <div>
-                    <h3 className="text-white font-semibold">AI 처리 중</h3>
+                    <h3 className="text-gray-900 font-semibold">AI 처리 중</h3>
                     {fileName && (
-                        <p className="text-sm text-slate-400 truncate max-w-[200px]">{fileName}</p>
+                        <p className="text-sm text-gray-500 truncate max-w-[200px]">{fileName}</p>
                     )}
                 </div>
             </div>
@@ -82,20 +82,20 @@ export default function ProcessingVisualization({
             {/* Cross-Check Beam Animation (Phase 2) */}
             <AnimatePresence>
                 {beamActive && (
-                    <div className="relative h-16 mb-6 rounded-xl bg-slate-900/50 overflow-hidden">
+                    <div className="relative h-16 mb-6 rounded-xl bg-gray-50 border border-gray-100 overflow-hidden">
                         {/* GPT-4o Beam (Blue) */}
                         <motion.div
                             initial={{ x: "-100%", opacity: 0 }}
                             animate={{ x: "100%", opacity: [0, 1, 1, 0] }}
                             transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                            className="absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-blue-500/40 to-transparent"
+                            className="absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-blue-500/20 to-transparent"
                         />
                         {/* Gemini Beam (Orange) */}
                         <motion.div
                             initial={{ x: "200%", opacity: 0 }}
                             animate={{ x: "-100%", opacity: [0, 1, 1, 0] }}
                             transition={{ duration: 2, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-                            className="absolute inset-y-0 right-0 w-1/3 bg-gradient-to-r from-transparent via-orange-500/40 to-transparent"
+                            className="absolute inset-y-0 right-0 w-1/3 bg-gradient-to-r from-transparent via-orange-500/20 to-transparent"
                         />
                         {/* Center Merge Effect */}
                         <motion.div
@@ -104,13 +104,13 @@ export default function ProcessingVisualization({
                             className="absolute inset-0 flex items-center justify-center"
                         >
                             <div className="flex items-center gap-3">
-                                <span className="text-xs text-blue-400 font-mono">GPT-4o</span>
+                                <span className="text-xs text-blue-600 font-mono font-medium">GPT-4o</span>
                                 <motion.div
                                     animate={{ scale: [0.8, 1.2, 0.8] }}
                                     transition={{ duration: 0.5, repeat: Infinity }}
-                                    className="w-2 h-2 rounded-full bg-emerald-400"
+                                    className="w-2 h-2 rounded-full bg-emerald-500"
                                 />
-                                <span className="text-xs text-orange-400 font-mono">Gemini</span>
+                                <span className="text-xs text-orange-600 font-mono font-medium">Gemini</span>
                             </div>
                         </motion.div>
                     </div>
@@ -141,14 +141,14 @@ export default function ProcessingVisualization({
                             <motion.div
                                 animate={{
                                     scale: isCurrent ? [1, 1.1, 1] : 1,
-                                    borderColor: isComplete || isCurrent ? "rgb(139, 92, 246)" : "rgb(51, 65, 85)",
+                                    borderColor: isComplete || isCurrent ? "rgb(139, 92, 246)" : "rgb(226, 232, 240)",
                                 }}
                                 transition={{ duration: 0.5, repeat: isCurrent ? Infinity : 0 }}
                                 className={`
-                                    w-10 h-10 rounded-full border-2 flex items-center justify-center mb-2
-                                    ${isComplete ? "bg-primary/20 text-primary" : ""}
-                                    ${isCurrent ? "bg-primary/30 text-primary" : ""}
-                                    ${!isComplete && !isCurrent ? "bg-slate-800 text-slate-500" : ""}
+                                    w-10 h-10 rounded-full border-2 flex items-center justify-center mb-2 shadow-sm
+                                    ${isComplete ? "bg-primary/10 text-primary" : ""}
+                                    ${isCurrent ? "bg-primary/20 text-primary" : ""}
+                                    ${!isComplete && !isCurrent ? "bg-white text-gray-300" : ""}
                                 `}
                             >
                                 {isComplete ? (
@@ -159,10 +159,10 @@ export default function ProcessingVisualization({
                             </motion.div>
 
                             {/* Label */}
-                            <span className={`text-xs font-medium ${isCurrent ? "text-primary" : isComplete ? "text-slate-300" : "text-slate-500"}`}>
+                            <span className={`text-xs font-medium ${isCurrent ? "text-primary" : isComplete ? "text-gray-700" : "text-gray-400"}`}>
                                 {p.label}
                             </span>
-                            <span className="text-[10px] text-slate-500">{p.description}</span>
+                            <span className="text-[10px] text-gray-400">{p.description}</span>
                         </div>
                     );
                 })}
@@ -173,7 +173,7 @@ export default function ProcessingVisualization({
                 key={phase}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-center text-sm text-slate-400 mt-4"
+                className="text-center text-sm text-gray-500 mt-4"
             >
                 {phase === "routing" && "파일 형식을 분석하고 있습니다..."}
                 {phase === "analyzing" && "GPT-4o와 Gemini가 교차 검증 중입니다..."}

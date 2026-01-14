@@ -50,6 +50,7 @@ import {
   sanitizeSkillsArray,
   sanitizeSkill,
   parseSearchQuery,
+  sanitizeString,
   MAX_SKILLS_ARRAY_SIZE,
   MAX_KEYWORD_LENGTH,
   MAX_QUERY_LENGTH,
@@ -157,15 +158,7 @@ function sanitizeArrayValue(value: string): string {
   return value.replace(/[{}]/g, "").trim();
 }
 
-/**
- * 일반 문자열 살균 (위험 문자 제거)
- */
-function sanitizeString(value: string, maxLength: number = 100): string {
-  return value
-    .replace(/[<>'"`;]/g, "")  // XSS/SQL 위험 문자 제거
-    .trim()
-    .slice(0, maxLength);
-}
+// sanitizeString is now imported from @/lib/search/sanitize
 
 /**
  * DB row를 CandidateSearchResult로 변환

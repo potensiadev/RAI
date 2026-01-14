@@ -2,20 +2,23 @@
 
 @theme {
   /* Colors */
-  --color-deep-space: #050510;
-  --color-primary: #8b5cf6;
-  --color-ai: #22d3ee;
-  --color-risk: #f43f5e;
+  --color-primary: #2563eb; /* Trust Blue */
+  --color-secondary: #475569; /* Slate 600 */
+  --color-accent: #f59e0b; /* Amber 500 */
+  --color-background: #ffffff;
+  --color-foreground: #0f172a; /* Slate 900 */
+  --color-muted: #f1f5f9; /* Slate 100 */
+  --color-border: #e2e8f0; /* Slate 200 */
   
   /* Fonts */
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains-mono);
 }
 
-/* Reset & Deep Space Base */
+/* Base Styles */
 :root {
-  --background: #050510;
-  --foreground: #ededed;
+  --background: #ffffff;
+  --foreground: #0f172a;
 }
 
 body {

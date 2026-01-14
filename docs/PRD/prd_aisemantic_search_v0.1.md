@@ -1,8 +1,8 @@
 # PRD: 이력서 원본 텍스트 Semantic 검색 v0.1
 
-> **문서 버전**: 0.1.2
+> **문서 버전**: 0.1.3
 > **작성일**: 2026-01-14
-> **상태**: Phase 2 E2E 테스트 완료 ✅ | 프로덕션 배포 대기
+> **상태**: Phase 4 프로덕션 배포 완료 ✅
 
 ---
 
@@ -249,8 +249,8 @@ Acceptance Criteria:
 |-------|-----|-----|-----|
 | **Phase 1** | DB 스키마 마이그레이션, Python 청킹 로직 | Week 1 | ✅ 완료 |
 | **Phase 2** | RPC 함수 수정, 검색 API 테스트 | Week 2 | ✅ 완료 |
-| **Phase 3** | QA 검증, 기존 데이터 백필 (선택) | Week 3 | ⏳ 대기 |
-| **Phase 4** | 프로덕션 배포, 모니터링 | Week 4 | ⏳ 대기 |
+| **Phase 3** | QA 검증, 기존 데이터 백필 (선택) | Week 3 | ⏳ 필요시 실행 |
+| **Phase 4** | 프로덕션 배포, 모니터링 | Week 4 | ✅ 완료 |
 
 ---
 
@@ -334,6 +334,7 @@ Acceptance Criteria:
 | 0.1 | 2026-01-14 | AI Assistant | 최초 작성 |
 | 0.1.1 | 2026-01-14 | AI Assistant | Phase 1 구현 완료, 체크리스트 업데이트 |
 | 0.1.2 | 2026-01-14 | AI Assistant | Phase 2 E2E 테스트 완료, 테스트 결과 추가 |
+| 0.1.3 | 2026-01-14 | AI Assistant | Phase 4 프로덕션 배포 완료 |
 
 ---
 
@@ -420,3 +421,43 @@ Keywords only in raw text (not in structured data):
 ### 테스트 파일
 - `tests/e2e/raw-text-search.spec.ts` - Playwright E2E 테스트
 - `apps/worker/tests/test_raw_text_chunks.py` - 유닛 테스트 (15개)
+
+---
+
+## 15. 프로덕션 배포
+
+### 배포 일시
+- 2026-01-14
+
+### 배포 내역
+
+| 항목 | 상태 | 비고 |
+|-----|-----|-----|
+| Railway Worker | ✅ 배포됨 | Health check 정상 |
+| Supabase Migration 032 | ✅ 적용됨 | raw_full, raw_section ENUM 추가 |
+| search_candidates RPC | ✅ 업데이트됨 | raw 타입 가중치 적용 |
+
+### 프로덕션 E2E 테스트 결과
+
+```
+=== Production E2E Test (2026-01-14) ===
+Worker Health: healthy (mode: phase_1)
+Process API: OK (chunk_count: 6, embedding_tokens: 660)
+DB Migration: 032_raw_text_chunks.sql applied
+```
+
+### 기존 데이터 백필
+
+기존 후보자 데이터에 대한 raw 청크는 아직 생성되지 않음.
+백필 필요 시 다음 스크립트 실행:
+
+```bash
+cd apps/worker
+python scripts/backfill_raw_chunks.py --batch-size=10
+```
+
+### 주의사항
+
+1. **새 이력서**: 업로드 시 자동으로 raw 청크 생성됨
+2. **기존 이력서**: 백필 스크립트 실행 필요 (선택사항)
+3. **Gemini API**: 429 Quota 초과 시 OpenAI로 자동 폴백

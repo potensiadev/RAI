@@ -142,6 +142,7 @@ interface CandidateReviewPanelProps {
   fieldConfidence?: FieldConfidence;
   onSave?: (updates: Partial<CandidateDetail>) => Promise<void>;
   isLoading?: boolean;
+  onKeywordSelect?: (keyword: string) => void;
 }
 
 // Warning detection based on field confidence
@@ -175,6 +176,7 @@ export default function CandidateReviewPanel({
   fieldConfidence = {},
   onSave,
   isLoading = false,
+  onKeywordSelect,
 }: CandidateReviewPanelProps) {
   const [changes, setChanges] = useState<Partial<CandidateDetail>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -412,8 +414,10 @@ export default function CandidateReviewPanel({
           {candidate.skills?.map((skill: string, index: number) => (
             <span
               key={index}
-              className="px-3 py-1 rounded-full bg-slate-50 text-sm text-slate-700
-                       border border-slate-200 hover:border-primary/50 transition-colors font-medium"
+              onClick={() => onKeywordSelect?.(skill)}
+              className={`px-3 py-1 rounded-full bg-slate-50 text-sm text-slate-700
+                       border border-slate-200 font-medium transition-colors
+                       ${onKeywordSelect ? "cursor-pointer hover:border-primary hover:text-primary hover:bg-primary/5" : ""}`}
             >
               {skill}
             </span>

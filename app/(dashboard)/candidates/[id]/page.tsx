@@ -143,6 +143,8 @@ export default function CandidateDetailPage() {
     version: number;
     createdAt: string;
   }>>([]);
+  // New state for highlighting
+  const [highlightKeyword, setHighlightKeyword] = useState<string | null>(null);
 
   // ─────────────────────────────────────────────────
   // Refs for concurrency control
@@ -392,6 +394,12 @@ export default function CandidateDetailPage() {
     }
   }, [candidateId, fetchExportUsage]);
 
+  // Handle keyword selection from review panel
+  const handleKeywordSelect = (keyword: string) => {
+    setHighlightKeyword(keyword);
+    setShowSplitView(true);
+  };
+
   // Blind export handler
   const handleBlindExport = async () => {
     if (isExporting) return;
@@ -627,12 +635,13 @@ export default function CandidateDetailPage() {
 
       {/* Main Content - Split View or Regular */}
       {showSplitView ? (
-        <SplitViewer pdfUrl={pdfUrl || undefined} isLoading={pdfLoading}>
+        <SplitViewer pdfUrl={pdfUrl || undefined} isLoading={pdfLoading} highlightKeyword={highlightKeyword}>
           <CandidateReviewPanel
             candidate={candidate}
             fieldConfidence={fieldConfidence}
             onSave={handleSave}
             isLoading={isSaving}
+            onKeywordSelect={handleKeywordSelect}
           />
         </SplitViewer>
       ) : (
@@ -641,6 +650,7 @@ export default function CandidateDetailPage() {
           fieldConfidence={fieldConfidence}
           onSave={handleSave}
           isLoading={isSaving}
+          onKeywordSelect={handleKeywordSelect}
         />
       )}
     </div>

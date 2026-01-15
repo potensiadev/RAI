@@ -3,14 +3,16 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { FileText, Cpu, ChevronLeft, ChevronRight, Maximize2, Minimize2, Loader2 } from "lucide-react";
+import PDFViewer from "@/components/ui/PDFViewer";
 
 interface SplitViewerProps {
     pdfUrl?: string;
     isLoading?: boolean;
-    children: React.ReactNode;  // AI 분석 결과 (CandidateReviewPanel)
+    highlightKeyword?: string | null;
+    children: React.ReactNode;
 }
 
-export default function SplitViewer({ pdfUrl, isLoading = false, children }: SplitViewerProps) {
+export default function SplitViewer({ pdfUrl, isLoading = false, highlightKeyword, children }: SplitViewerProps) {
     const [splitRatio, setSplitRatio] = useState(50); // 0-100
     const [isCollapsed, setIsCollapsed] = useState<"left" | "right" | null>(null);
 
@@ -64,11 +66,13 @@ export default function SplitViewer({ pdfUrl, isLoading = false, children }: Spl
                             <p className="text-sm font-medium">원본 이력서를 불러오고 있습니다.</p>
                         </div>
                     ) : pdfUrl ? (
-                        <iframe
-                            src={pdfUrl}
-                            className="w-full h-full rounded-lg border border-gray-200 shadow-sm bg-white"
-                            title="PDF Viewer"
-                        />
+                        // Using the new PDFViewer with highlighting support
+                        // Note: We need to pass highlightKeyword prop if available. 
+                        // For now, let's keep it simple and update the parent later to pass it.
+                        // Actually, SplitViewerProps doesn't have highlightKeyword yet.
+                        <div className="w-full h-full rounded-lg border border-gray-200 shadow-sm bg-gray-50 overflow-hidden">
+                            <PDFViewer url={pdfUrl} highlightKeyword={highlightKeyword} />
+                        </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
                             <FileText size={48} className="mb-4 opacity-20" />

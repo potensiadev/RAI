@@ -194,34 +194,34 @@ const searchResults: Record<string, {
   },
 };
 
-// Testimonials 데이터
+// Testimonials 데이터 - 결과 중심
 const testimonials = [
   {
-    quote: "JD 받으면 구글링부터 했는데, 이제 그냥 붙여넣기 하면 끝이에요. 월 40시간은 아끼는 것 같아요.",
-    metric: "월 40시간 절약",
+    quote: "솔직히 JD 오면 한숨부터 나왔어요. 기술 용어 검색하고, 이력서 뒤지고... 하루가 끝나있더라고요. 지금은 클라이언트한테 '오늘 중으로 보내드릴게요'라고 말해요. 진짜로요.",
+    metric: "같은 날 후보 제안",
     author: "김소연",
-    role: "시니어 파트너",
-    company: "Executive Search Korea",
+    role: "시니어 파트너 · 12년차",
+    company: "IT/테크 전문",
     avatarBg: "from-violet-500 to-purple-600",
-    avatarUrl: null, // Replace with actual photo URL when available
+    avatarUrl: null,
   },
   {
-    quote: "5년치 이력서 3,000개를 드디어 활용하게 됐어요. 예전 후보 찾느라 폴더 뒤지던 시간이 0이 됐습니다.",
-    metric: "3,000개 이력서 자산화",
+    quote: "PC에 이력서가 5,000개 넘어요. 근데 막상 찾으려면 기억도 안 나고, 폴더도 엉망이고. 그 후보들이 다 돈인데 썩히고 있었던 거죠. 이제는 '3년 전 그 후보'도 10초면 찾아요.",
+    metric: "5,000개 이력서 자산화",
     author: "박준혁",
-    role: "헤드헌터",
-    company: "Tech Talent Partners",
+    role: "헤드헌터 · 8년차",
+    company: "반도체/제조",
     avatarBg: "from-blue-500 to-cyan-600",
-    avatarUrl: null, // Replace with actual photo URL when available
+    avatarUrl: null,
   },
   {
-    quote: "JD 받고 같은 날 후보 3명 제안했어요. 클라이언트가 깜짝 놀라더라고요. 경쟁사보다 하루 빨랐습니다.",
-    metric: "첫 제안까지 5분",
+    quote: "경쟁사보다 하루 늦게 제안하면 끝이에요. 그 하루 때문에 성사 직전에 뺏긴 적이 한두 번이 아니에요. 지금은 JD 받고 1시간 안에 제안해요. 클라이언트가 '벌써요?' 그래요.",
+    metric: "경쟁사보다 하루 빠르게",
     author: "이민지",
-    role: "리크루팅 매니저",
-    company: "Global HR Solutions",
+    role: "팀장 · 10년차",
+    company: "금융/핀테크",
     avatarBg: "from-emerald-500 to-teal-600",
-    avatarUrl: null, // Replace with actual photo URL when available
+    avatarUrl: null,
   },
 ];
 
@@ -231,7 +231,7 @@ const pricingTiers = [
     name: "Free",
     price: "0",
     period: "월",
-    description: "시작하기 좋은 플랜",
+    description: "일단 써보세요",
     features: ["월 100건 분석", "기본 검색", "이메일 지원"],
     cta: "무료로 시작하기",
     popular: false,
@@ -240,18 +240,18 @@ const pricingTiers = [
     name: "Pro",
     price: "99,000",
     period: "월",
-    description: "성장하는 팀을 위한",
+    description: "월 1건 추가 성사 = 1,500만원",
     features: ["무제한 분석", "스마트 검색", "JD 자동 매칭", "팀 협업 (3명)", "우선 지원"],
-    cta: "무료로 시작하기",
+    cta: "14일 무료 체험",
     popular: true,
   },
   {
     name: "Enterprise",
     price: "문의",
     period: "",
-    description: "대규모 조직을 위한",
+    description: "서치펌 전체 생산성 UP",
     features: ["무제한 분석", "API 액세스", "전담 매니저", "커스텀 연동", "SLA 보장"],
-    cta: "문의하기",
+    cta: "상담 신청",
     popular: false,
   },
 ];
@@ -301,12 +301,6 @@ export default function LandingPage() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [showExitPopup, setShowExitPopup] = useState(false);
   const [exitPopupShown, setExitPopupShown] = useState(false);
-
-  // Lead Capture State
-  const [showLeadCapture, setShowLeadCapture] = useState(false);
-  const [leadName, setLeadName] = useState("");
-  const [leadEmail, setLeadEmail] = useState("");
-  const [leadSubmitting, setLeadSubmitting] = useState(false);
 
   // Demo Section Refs
   const demo1Ref = useRef<HTMLDivElement>(null);
@@ -379,6 +373,31 @@ export default function LandingPage() {
     document.addEventListener("mouseleave", handleMouseLeave);
     return () => document.removeEventListener("mouseleave", handleMouseLeave);
   }, [mounted, exitPopupShown]);
+
+  // Back button detection - show exit popup when user tries to leave
+  useEffect(() => {
+    if (!mounted) return;
+
+    // Push two states to history so back button is always available
+    window.history.pushState({ page: "landing", step: 1 }, "");
+    window.history.pushState({ page: "landing", step: 2 }, "");
+
+    const handlePopState = () => {
+      // Always show popup on back button if not already shown
+      setExitPopupShown((prev) => {
+        if (!prev) {
+          setShowExitPopup(true);
+          // Push state again to prevent actual navigation
+          window.history.pushState({ page: "landing", step: 2 }, "");
+          return true;
+        }
+        return prev;
+      });
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [mounted]);
 
   // Demo 3 typing animation text
   const demo3TypingText = "경력 10년 이상의 컨설팅펌 출신 전략기획 후보자 찾아줘";
@@ -583,38 +602,9 @@ export default function LandingPage() {
     }, 800);
   };
 
-  // Lead Capture Handlers
+  // Signup Handler - directly navigate to signup
   const handleSignupClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    setShowLeadCapture(true);
-  };
-
-  const handleLeadSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!leadEmail.trim()) return;
-
-    setLeadSubmitting(true);
-
-    // Simulate API call (replace with actual lead capture API)
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    // Store lead data (in real implementation, send to backend/CRM)
-    console.log("Lead captured:", { name: leadName, email: leadEmail });
-
-    // Reset and redirect to signup
-    setLeadSubmitting(false);
-    setShowLeadCapture(false);
-    setLeadName("");
-    setLeadEmail("");
-
-    // Redirect to signup with email pre-filled
-    window.location.href = `/signup?email=${encodeURIComponent(leadEmail)}&name=${encodeURIComponent(leadName)}`;
-  };
-
-  const handleSkipLeadCapture = () => {
-    setShowLeadCapture(false);
-    setLeadName("");
-    setLeadEmail("");
     window.location.href = "/signup";
   };
 
@@ -635,11 +625,8 @@ export default function LandingPage() {
       ============================================ */}
       <nav className="border-b border-gray-100 bg-white/80 backdrop-blur-md sticky top-0 z-50" role="navigation" aria-label="메인 네비게이션">
         <div className="max-w-7xl mx-auto px-6 md:px-8 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-xl font-bold">RAI</span>
+          <Link href="/" className="flex items-center">
+            <span className="text-xl font-bold">Srchd</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-8">
@@ -719,30 +706,20 @@ export default function LandingPage() {
         ============================================ */}
         <section className="relative px-6 md:px-8 py-16 md:py-24 max-w-7xl mx-auto">
           <div className="text-center max-w-4xl mx-auto">
-            {/* Social Proof Badge */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium mb-8"
-            >
-              <span>헤드헌터 500명 이상 사용 중</span>
-            </motion.div>
 
-            {/* Main Headline */}
+            {/* Main Headline - 고통을 정확히 찌르는 */}
             <motion.h1
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
               className="text-4xl md:text-6xl lg:text-7xl font-bold text-gray-900 mb-6 leading-[1.1] tracking-tight"
             >
-              JD 받고{" "}
-              <span className="text-primary">5분 만에</span>
+              이력서 3,000개가
               <br />
-              후보자 3명 제안하세요
+              <span className="text-primary">돈이 되고 있나요?</span>
             </motion.h1>
 
-            {/* Pain Point */}
+            {/* Pain Point - 구체적인 상황 묘사 */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -750,22 +727,22 @@ export default function LandingPage() {
               className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto mb-4 leading-relaxed"
             >
               <p className="text-gray-500 mb-2">
-                "Kubernetes, GraphQL이 뭐지?" 검색하고 이해하는데 2시간...
+                분명 작년에 딱 맞는 후보 봤는데... 어느 폴더였지?
                 <br className="hidden md:block" />
-                이력서 폴더 뒤지면서 하나씩 열어보고 읽느라 2시간, 후보 제안은 내일로...
+                결국 못 찾아서 처음부터 소싱. <span className="text-red-500 font-medium">그 시간에 경쟁사는 벌써 제안 완료.</span>
               </p>
             </motion.div>
 
-            {/* Solution */}
+            {/* Solution - 결과 중심 */}
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
               className="text-lg md:text-xl text-gray-900 max-w-2xl mx-auto mb-10"
             >
-              <strong>JD만 붙이세요.</strong> RAI가 JD의 모든 내용을 분석하고,
+              <strong>쌓아둔 이력서가 검색되는 순간,</strong>
               <br className="hidden md:block" />
-              바쁘신 헤드헌터님의 후보자 데이터에서 최적의 후보를 즉시 찾아드립니다.
+              헤드헌터의 하루가 완전히 달라집니다.
             </motion.p>
 
             {/* CTA Buttons */}
@@ -777,21 +754,21 @@ export default function LandingPage() {
             >
               <button
                 onClick={handleSignupClick}
-                className="group flex items-center gap-2 px-8 py-4 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold text-lg transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+                className="group flex items-center gap-0 px-8 py-4 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold text-lg transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
               >
                 무료로 시작하기
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                <ArrowRight className="w-15 h-6 group-hover:translate-x-1 transition-transform" />
               </button>
-              <button
+              {/* <button
                 onClick={() => document.getElementById("demo-section")?.scrollIntoView({ behavior: "smooth" })}
                 className="group flex items-center gap-2 px-8 py-4 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold text-lg transition-all"
               >
                 <Play className="w-5 h-5" />
                 데모 보기
-              </button>
+              </button> */}
             </motion.div>
 
-            {/* Hero Stats */}
+            {/* Hero Stats - 결과 중심 수치 */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -800,31 +777,31 @@ export default function LandingPage() {
             >
               <div className="text-center">
                 <div className="flex flex-col items-center gap-1 mb-1">
-                  <span className="text-2xl md:text-4xl font-bold text-gray-900">5분</span>
+                  <span className="text-2xl md:text-4xl font-bold text-primary">6시간</span>
                 </div>
-                <p className="text-xs md:text-sm text-gray-500">JD 받고 첫 후보 제안</p>
-                <p className="text-xs text-gray-400 hidden md:block">기존 6시간 → 5분</p>
+                <p className="text-xs md:text-sm text-gray-500">매일 버리는 시간</p>
+                <p className="text-xs text-gray-400 hidden md:block">검색 · 정리 · 블라인드 처리</p>
               </div>
               <div className="text-center">
                 <div className="flex flex-col items-center gap-1 mb-1">
-                  <span className="text-2xl md:text-4xl font-bold text-gray-900">0분</span>
+                  <span className="text-2xl md:text-4xl font-bold text-primary">40%</span>
                 </div>
-                <p className="text-xs md:text-sm text-gray-500">JD 기술 용어 공부</p>
-                <p className="text-xs text-gray-400 hidden md:block">AI가 자동 해석</p>
+                <p className="text-xs md:text-sm text-gray-500">행정업무 비율</p>
+                <p className="text-xs text-gray-400 hidden md:block">영업할 시간이 없다</p>
               </div>
               <div className="text-center">
                 <div className="flex flex-col items-center gap-1 mb-1">
-                  <span className="text-2xl md:text-4xl font-bold text-gray-900">3,000+</span>
+                  <span className="text-2xl md:text-4xl font-bold text-primary">90%</span>
                 </div>
-                <p className="text-xs md:text-sm text-gray-500">이력서 검색 가능</p>
-                <p className="text-xs text-gray-400 hidden md:block">폴더 → 자산화</p>
+                <p className="text-xs md:text-sm text-gray-500">죽어있는 이력서</p>
+                <p className="text-xs text-gray-400 hidden md:block">PC에서 썩는 중</p>
               </div>
             </motion.div>
           </div>
         </section>
 
         {/* ============================================
-            SECTION 2: PAIN POINT
+            SECTION 2: PAIN POINT - 진짜 아픈 곳을 찌른다
         ============================================ */}
         <section className="px-6 md:px-8 py-20 max-w-7xl mx-auto">
           <motion.div
@@ -833,30 +810,37 @@ export default function LandingPage() {
             viewport={{ once: true }}
             className="text-center mb-12"
           >
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">혹시 이런 경험 있으신가요?</h2>
+            <p className="text-primary font-medium mb-2">솔직히 말해볼게요</p>
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+              이력서는 쌓이는데,<br className="md:hidden" /> 왜 일은 안 줄어들까요?
+            </h2>
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-6">
-            {/* Pain 1 */}
+            {/* Pain 1 - 죽은 자산 */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               className="bg-red-50 border border-red-100 rounded-2xl p-6"
             >
-              <div className="text-3xl mb-4">📧</div>
-              <h4 className="font-bold text-gray-900 mb-2">오전 9시, 새 JD 도착</h4>
-              <p className="text-gray-600 text-sm mb-3 italic">
-                "MLOps Engineer, Feature Store 경험 필수, Kubeflow/Airflow 우대..."
+              <div className="text-3xl mb-4">💀</div>
+              <h4 className="font-bold text-gray-900 mb-2">PC에서 썩는 이력서</h4>
+              <p className="text-gray-600 text-sm mb-3">
+                5년간 모은 이력서 3,000개.<br />
+                바로 찾을 수 있는 건 몇 개?
               </p>
-              <p className="text-gray-500 text-sm mb-4">→ "이게 다 뭐지?" 구글링 시작 🔍</p>
+              <p className="text-gray-500 text-sm mb-4">
+                폴더 정리 안 되고, 검색 안 되고, 결국 <strong className="text-red-600">처음부터 소싱</strong>.
+                그 이력서들 다 돈인데.
+              </p>
               <div className="flex items-center gap-2 text-red-600 text-sm font-medium">
-                <Clock className="w-4 h-4" />
-                <span>2시간 소요</span>
+                <DollarSign className="w-4 h-4" />
+                <span>매달 수백만원 기회비용</span>
               </div>
             </motion.div>
 
-            {/* Pain 2 */}
+            {/* Pain 2 - 시간 낭비 */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -864,19 +848,23 @@ export default function LandingPage() {
               transition={{ delay: 0.1 }}
               className="bg-orange-50 border border-orange-100 rounded-2xl p-6"
             >
-              <div className="text-3xl mb-4">📁</div>
-              <h4 className="font-bold text-gray-900 mb-2">오후 1시, 후보자 찾기</h4>
-              <p className="text-gray-600 text-sm mb-3 italic">
-                "그 후보... 작년에 봤는데... 2022년 폴더? 개발자 폴더? 시니어 폴더?"
+              <div className="text-3xl mb-4">⏰</div>
+              <h4 className="font-bold text-gray-900 mb-2">하루의 40%가 행정업무</h4>
+              <p className="text-gray-600 text-sm mb-3">
+                이력서 정리, 블라인드 처리,<br />
+                JD 분석, 폴더 검색...
               </p>
-              <p className="text-gray-500 text-sm mb-4">→ 폴더 10개 열어서 Ctrl+F 🗂️</p>
+              <p className="text-gray-500 text-sm mb-4">
+                <strong className="text-orange-600">클라이언트 만날 시간이 없어요.</strong><br />
+                영업이 줄면 매출이 줄고, 악순환.
+              </p>
               <div className="flex items-center gap-2 text-orange-600 text-sm font-medium">
                 <Clock className="w-4 h-4" />
-                <span>3시간 소요</span>
+                <span>하루 6시간 낭비</span>
               </div>
             </motion.div>
 
-            {/* Pain 3 */}
+            {/* Pain 3 - 경쟁 */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -884,29 +872,37 @@ export default function LandingPage() {
               transition={{ delay: 0.2 }}
               className="bg-gray-100 border border-gray-200 rounded-2xl p-6"
             >
-              <div className="text-3xl mb-4">😰</div>
-              <h4 className="font-bold text-gray-900 mb-2">오후 6시, 결과</h4>
-              <p className="text-gray-600 text-sm mb-3 italic">"오늘 제안 못하겠네... 내일 아침에 보내야지"</p>
-              <p className="text-gray-500 text-sm mb-4">→ 경쟁사가 먼저 제안할 수도 ⚠️</p>
+              <div className="text-3xl mb-4">🏃</div>
+              <h4 className="font-bold text-gray-900 mb-2">경쟁사는 이미 제안 완료</h4>
+              <p className="text-gray-600 text-sm mb-3">
+                "내일 보내드릴게요" 했는데,<br />
+                클라이언트가 이미 면접 잡았대요.
+              </p>
+              <p className="text-gray-500 text-sm mb-4">
+                <strong className="text-gray-700">하루 늦으면 끝.</strong><br />
+                성사 직전에 뺏긴 경험, 한두 번이 아니잖아요.
+              </p>
               <div className="flex items-center gap-2 text-gray-600 text-sm font-medium">
                 <AlertTriangle className="w-4 h-4" />
-                <span>기회 손실</span>
+                <span>성사율 하락</span>
               </div>
             </motion.div>
           </div>
 
-          {/* Solution Teaser */}
+          {/* Solution Teaser - 결과 약속 */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="mt-10 text-center"
+            className="mt-12 text-center"
           >
             <div className="inline-block bg-emerald-50 border border-emerald-200 rounded-2xl px-8 py-6">
-              <p className="text-emerald-800">
-                <strong className="text-lg">RAI를 쓰면?</strong>
-                <br />
-                <span className="text-emerald-600">JD 도착 → 5분 후 후보 3명 제안 완료 ✅</span>
+              <p className="text-gray-600 text-sm mb-2">서치드를 쓰면</p>
+              <p className="text-emerald-800 text-xl md:text-2xl font-bold mb-2">
+                JD 받고 5분 후, 후보 3명 제안.
+              </p>
+              <p className="text-emerald-600 text-sm">
+                경쟁사보다 <strong>하루 빠르게</strong>. 그 차이가 성사를 만듭니다.
               </p>
             </div>
           </motion.div>
@@ -918,7 +914,7 @@ export default function LandingPage() {
         ============================================ */}
         <section className="bg-gray-50 px-6 md:px-8 py-10 border-y border-gray-200">
           <div className="max-w-7xl mx-auto">
-            <p className="text-center text-sm text-gray-500 mb-6 font-medium">국내 Top 서치펌들이 신뢰하는 솔루션</p>
+            <p className="text-center text-sm text-gray-500 mb-6 font-medium">이 고민, 당신만의 문제가 아닙니다</p>
             <div className="flex items-center justify-center gap-6 md:gap-12 flex-wrap opacity-50">
               {companyLogos.map((logo) => (
                 <div key={logo} className="text-gray-400 font-semibold text-sm md:text-base">
@@ -930,164 +926,58 @@ export default function LandingPage() {
         </section>
 
         {/* ============================================
-            SECTION 4: DEMO #1 - 이력서 분석
+            SECTION 4: DEMO - 이력서 분석 (Seamless Embedded)
         ============================================ */}
-        <section id="demo-section" className="bg-gray-50 px-6 md:px-8 py-20">
-          <div className="max-w-6xl mx-auto">
+        <section id="demo-section" className="py-20">
+          <div className="max-w-7xl mx-auto px-6 md:px-8">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="text-center mb-10"
+              className="text-center mb-12"
             >
-              <span className="inline-block px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-medium mb-4">
-                DEMO 1
-              </span>
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">이력서 업로드, 30초 만에 분석 완료</h2>
-              <p className="text-gray-600">수십 페이지 이력서도 즉시 구조화된 데이터로 변환됩니다</p>
+              <h2 className="text-3xl md:text-5xl font-bold text-gray-900 mb-4">이력서 읽느라 하루가 끝났나요?</h2>
+              <p className="text-lg text-gray-600">30페이지 이력서도 30초면 핵심만 정리</p>
             </motion.div>
+          </div>
 
+          {/* Full-width seamless demo */}
+          <motion.div
+            ref={demo1Ref}
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            role="region"
+            aria-label="이력서 분석 데모"
+          >
+            <img
+              src="/demo-resume-analysis.gif"
+              alt="Srchd 이력서 분석 데모"
+              className="w-full h-auto"
+              loading="lazy"
+            />
+          </motion.div>
+
+          <div className="max-w-7xl mx-auto px-6 md:px-8">
+            {/* Feature highlights */}
             <motion.div
-              ref={demo1Ref}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="bg-gray-900 rounded-3xl p-6 md:p-10 shadow-2xl"
-              role="region"
-              aria-label="이력서 분석 데모"
-              aria-live="polite"
+              className="grid grid-cols-3 gap-6 mt-12"
             >
-              {/* Demo Header */}
-              <div className="flex items-center gap-2 mb-6" aria-hidden="true">
-                <div className="w-3 h-3 rounded-full bg-red-500" />
-                <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                <div className="w-3 h-3 rounded-full bg-green-500" />
-                <span className="ml-4 text-gray-300 text-sm">RAI - 이력서 분석</span>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4 md:gap-6">
-                {/* Left: Upload */}
-                <div className="space-y-3 md:space-y-4">
-                  <div
-                    className={`border-2 border-dashed rounded-2xl p-6 md:p-8 text-center transition-all ${
-                      demo1Step !== "idle" ? "border-primary bg-primary/10" : "border-gray-700 bg-gray-800"
-                    }`}
-                  >
-                    {demo1Step === "idle" && (
-                      <>
-                        <Upload className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-3 md:mb-4 text-gray-400" />
-                        <p className="text-white font-medium mb-1 md:mb-2 text-sm md:text-base">이력서를 드래그하거나 클릭하세요</p>
-                        <p className="text-gray-300 text-xs md:text-sm">PDF, HWP, DOCX 지원</p>
-                      </>
-                    )}
-                    {demo1Step === "uploading" && (
-                      <>
-                        <FileText className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-3 md:mb-4 text-primary" />
-                        <p className="text-white font-medium mb-1 md:mb-2 text-sm md:text-base">이력서_박지현_2024.pdf</p>
-                        <p className="text-gray-300 text-xs md:text-sm">2.4 MB</p>
-                      </>
-                    )}
-                    {(demo1Step === "analyzing" || demo1Step === "complete") && (
-                      <>
-                        <FileText className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-3 md:mb-4 text-primary" />
-                        <p className="text-white font-medium mb-1 md:mb-2 text-sm md:text-base">이력서_박지현_2024.pdf</p>
-                        <p className="text-emerald-400 text-xs md:text-sm">✓ 업로드 완료</p>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Progress */}
-                  {demo1Step === "analyzing" && (
-                    <div className="bg-gray-800 rounded-xl p-4">
-                      <div className="flex items-center gap-3 mb-3">
-                        <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                        <span className="text-white">AI가 분석 중입니다...</span>
-                      </div>
-                      <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div
-                          className="bg-primary h-2 rounded-full transition-all duration-100"
-                          style={{ width: `${demo1Progress}%` }}
-                        />
-                      </div>
-                      <p className="text-gray-300 text-sm mt-2">{Math.ceil((100 - demo1Progress) / 10)}초 남음</p>
-                    </div>
-                  )}
-
-                  {/* Analysis Steps */}
-                  <div className="space-y-2">
-                    {[
-                      { label: "텍스트 추출", done: demo1Progress > 25 },
-                      { label: "경력 파싱", done: demo1Progress > 50 },
-                      { label: "스킬 분석", done: demo1Progress > 75 },
-                      { label: "완료", done: demo1Step === "complete" },
-                    ].map((step, i) => (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-3 p-3 rounded-lg ${
-                          step.done ? "bg-gray-800" : "bg-gray-800/50"
-                        }`}
-                      >
-                        <CheckCircle className={`w-5 h-5 ${step.done ? "text-emerald-400" : "text-gray-600"}`} />
-                        <span className={step.done ? "text-white" : "text-gray-500"}>{step.label}</span>
-                      </div>
-                    ))}
-                  </div>
+              {[
+                { label: "분석 시간", value: "30초", desc: "30페이지 이력서 기준" },
+                { label: "추출 정확도", value: "94%", desc: "AI 교차 검증" },
+                { label: "지원 형식", value: "5종", desc: "PDF, HWP, DOCX 등" },
+              ].map((stat, i) => (
+                <div key={i} className="text-center py-6">
+                  <p className="text-3xl md:text-4xl font-bold text-primary">{stat.value}</p>
+                  <p className="text-base font-semibold text-gray-900 mt-2">{stat.label}</p>
+                  <p className="text-sm text-gray-500 mt-1">{stat.desc}</p>
                 </div>
-
-                {/* Right: Result */}
-                <div className="bg-gray-800 rounded-2xl p-4 md:p-6">
-                  <div className="flex items-center justify-between mb-3 md:mb-4">
-                    <h3 className="text-white font-semibold text-sm md:text-base">분석 결과</h3>
-                    {demo1Step === "complete" && (
-                      <span className="px-2 md:px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs md:text-sm font-medium">
-                        신뢰도 {demoResumeResult.confidence}%
-                      </span>
-                    )}
-                  </div>
-
-                  {demo1Step === "complete" ? (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2 md:space-y-3">
-                      {[
-                        { label: "이름", value: demoResumeResult.name },
-                        { label: "현재 직책", value: `${demoResumeResult.currentRole} @ ${demoResumeResult.currentCompany}` },
-                        { label: "총 경력", value: demoResumeResult.totalExperience },
-                        { label: "학력", value: demoResumeResult.education },
-                      ].map((field, i) => (
-                        <div key={i} className="p-2 md:p-3 bg-gray-700/50 rounded-xl">
-                          <p className="text-gray-300 text-xs mb-0.5 md:mb-1">{field.label}</p>
-                          <p className="text-white font-medium text-sm md:text-base truncate">{field.value}</p>
-                        </div>
-                      ))}
-                      <div className="p-2 md:p-3 bg-gray-700/50 rounded-xl">
-                        <p className="text-gray-300 text-xs mb-1.5 md:mb-2">핵심 스킬</p>
-                        <div className="flex flex-wrap gap-1.5 md:gap-2">
-                          {demoResumeResult.skills.slice(0, 4).map((skill) => (
-                            <span key={skill} className="px-2 py-1 rounded-full bg-primary/20 text-primary text-xs">
-                              {skill}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-48 md:h-64 text-gray-500">
-                      <FileSearch className="w-10 h-10 md:w-12 md:h-12 mb-3 md:mb-4" />
-                      <p className="text-sm md:text-base">이력서를 업로드하면</p>
-                      <p className="text-sm md:text-base">분석 결과가 표시됩니다</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Auto-play indicator */}
-              {demo1Step === "idle" && (
-                <div className="mt-6 flex justify-center">
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-800 text-gray-300 text-sm">
-                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                    데모가 곧 시작됩니다
-                  </div>
-                </div>
-              )}
+              ))}
             </motion.div>
           </div>
         </section>
@@ -1159,7 +1049,7 @@ export default function LandingPage() {
             >
               <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <Search className="w-5 h-5 text-emerald-500" />
-                RAI와 함께
+                서치드와 함께
               </h4>
               <div className="bg-white rounded-xl p-4 mb-4">
                 <div className="flex items-center gap-2 border border-gray-200 rounded-lg p-3 mb-3">
@@ -1226,8 +1116,9 @@ export default function LandingPage() {
               <span className="inline-block px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-sm font-medium mb-4">
                 DEMO 2
               </span>
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">JD만 붙이면, 후보자가 나옵니다</h2>
-              <p className="text-gray-300">기술 용어를 몰라도 됩니다. AI가 해석하고 매칭합니다.</p>
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">어려운 기술 용어 검색하면서 포지션 분석하세요?</h2>
+              <p className="text-gray-300">"Feature Store가 뭐지?" </p>
+              <p className="text-gray-300">JD 업로드하면 내 후보자들 중에서 적합한 후보를 찾아줍니다.</p>
             </motion.div>
 
             <motion.div
@@ -1247,7 +1138,7 @@ export default function LandingPage() {
                     <span className="w-6 h-6 rounded-full bg-purple-500 text-white text-sm flex items-center justify-center font-bold">
                       1
                     </span>
-                    <h4 className="text-white font-medium">JD 붙여넣기</h4>
+                    <h4 className="text-white font-medium">JD 업로드</h4>
                   </div>
                   <div className="bg-gray-700 rounded-xl p-3 h-48 overflow-hidden">
                     {demo2Step !== "idle" ? (
@@ -1521,8 +1412,8 @@ export default function LandingPage() {
               </div>
               <ArrowRight className="w-6 h-6 text-gray-500 rotate-90 md:rotate-0" />
               <div className="text-center md:text-left">
-                <p className="text-gray-300 text-sm">RAI</p>
-                <p className="text-white">JD 붙이기 10초 + 자동 매칭 = <strong className="text-emerald-400">1분</strong></p>
+                <p className="text-gray-300 text-sm">서치드</p>
+                <p className="text-white">JD 업로드 + 자동 매칭 = <strong className="text-emerald-400">30초 이내</strong></p>
               </div>
             </motion.div>
           </div>
@@ -1539,7 +1430,7 @@ export default function LandingPage() {
             className="text-center mb-12"
           >
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
-              JD 기술 용어,
+              JD에 있는 전문 용어, 기술 용어
               <br />
               <span className="text-primary">몰라도 됩니다</span>
             </h2>
@@ -1555,14 +1446,14 @@ export default function LandingPage() {
             <div className="grid grid-cols-3 bg-gray-50 border-b border-gray-200">
               <div className="p-4"></div>
               <div className="p-4 text-center border-l border-gray-200">
-                <span className="text-red-600 font-medium">RAI 없이</span>
+                <span className="text-red-600 font-medium">서치드 없이</span>
               </div>
               <div className="p-4 text-center border-l border-gray-200">
-                <span className="text-emerald-600 font-medium">RAI와 함께</span>
+                <span className="text-emerald-600 font-medium">서치드와 함께</span>
               </div>
             </div>
             {[
-              { label: "JD 기술 용어 이해", before: "2시간", beforeSub: "구글링 & 공부", after: "0분", afterSub: "AI가 자동 해석" },
+              { label: "전문/기술 용어 이해", before: "2시간", beforeSub: "구글링 & 공부", after: "0분", afterSub: "AI가 자동 해석" },
               { label: "적합 후보 기준 정리", before: "1시간", beforeSub: "수동 정리", after: "즉시", afterSub: "자동 파싱" },
               { label: "후보자 검색", before: "3시간", beforeSub: "폴더 뒤지기", after: "3초", afterSub: "즉시 매칭" },
             ].map((row, i) => (
@@ -1603,7 +1494,7 @@ export default function LandingPage() {
             </h4>
             <div className="grid md:grid-cols-2 gap-4">
               <div className="bg-white rounded-xl p-4">
-                <h5 className="font-medium text-red-600 mb-2">❌ RAI 없이</h5>
+                <h5 className="font-medium text-red-600 mb-2">❌ 서치드 없이</h5>
                 <ol className="text-sm text-gray-600 space-y-1 list-decimal list-inside">
                   <li>"Feature Store가 뭐지?" 검색</li>
                   <li>"Feast vs Tecton 차이점" 공부</li>
@@ -1613,7 +1504,7 @@ export default function LandingPage() {
                 <p className="text-red-600 text-sm font-medium mt-3">→ 2시간+ 소요</p>
               </div>
               <div className="bg-white rounded-xl p-4">
-                <h5 className="font-medium text-emerald-600 mb-2">✅ RAI와 함께</h5>
+                <h5 className="font-medium text-emerald-600 mb-2">✅ 서치드와 함께</h5>
                 <ol className="text-sm text-gray-600 space-y-1 list-decimal list-inside">
                   <li>JD 붙여넣기</li>
                   <li>AI: "Feature Store = ML 피처 관리"</li>
@@ -1640,11 +1531,11 @@ export default function LandingPage() {
               <span className="inline-block px-3 py-1 rounded-full bg-orange-100 text-orange-700 text-sm font-medium mb-4">
                 DEMO 3
               </span>
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">생각나는 대로 검색하세요</h2>
+              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">폴더 10개 뒤져도 그 후보가 안 나와요?</h2>
               <p className="text-gray-600">
-                복잡한 필터 조합 대신, 원하는 후보를 말로 설명하세요.
+                "분명 작년에 딱 맞는 사람 봤는데..." Ctrl+F 지옥 끝.
                 <br />
-                RAI가 정확히 이해하고 찾아드립니다.
+                말로 설명하면 3초 만에 찾아드립니다.
               </p>
             </motion.div>
 
@@ -1916,8 +1807,8 @@ export default function LandingPage() {
               viewport={{ once: true }}
               className="text-center mb-12"
             >
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">헤드헌터들의 실제 후기</h2>
-              <p className="text-gray-300">RAI를 사용하는 채용 전문가들의 이야기</p>
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">이 분들도 똑같이 고민했어요</h2>
+              <p className="text-gray-300">그리고 지금은 경쟁사보다 하루 먼저 제안합니다</p>
             </motion.div>
 
             <div className="grid md:grid-cols-3 gap-6">
@@ -1981,8 +1872,8 @@ export default function LandingPage() {
             viewport={{ once: true }}
             className="text-center mb-12"
           >
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">투명한 요금제</h2>
-            <p className="text-gray-600">팀 규모에 맞는 플랜을 선택하세요. 언제든 업그레이드 가능합니다.</p>
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">월 10만원으로 하루 6시간 되찾으세요</h2>
+            <p className="text-gray-600">하루 일찍 제안하면 성사율이 달라집니다. 그 시간을 드립니다.</p>
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-6">
@@ -2054,7 +1945,7 @@ export default function LandingPage() {
           </div>
 
           <p className="text-center text-gray-500 mt-8">
-            모든 플랜에 14일 무료 체험이 포함됩니다. 신용카드 없이 시작하세요.
+            14일 써보고 결정하세요. 신용카드 필요 없고, 안 맞으면 안 쓰면 됩니다.
           </p>
         </section>
 
@@ -2068,11 +1959,11 @@ export default function LandingPage() {
             viewport={{ once: true }}
             className="p-10 md:p-12 rounded-3xl bg-gradient-to-br from-primary to-blue-600 text-white text-center shadow-2xl"
           >
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">지금 바로 시작하세요</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">내일도 6시간 낭비하실 건가요?</h2>
             <p className="text-white/80 text-lg mb-8 max-w-md mx-auto">
-              14일 무료 체험으로 RAI의 모든 기능을 경험해보세요.
+              오늘 가입하면 내일부터 경쟁사보다 하루 빠르게 제안합니다.
               <br />
-              신용카드 없이 바로 시작할 수 있습니다.
+              그 하루가 성사를 만듭니다.
             </p>
 
             <button
@@ -2123,7 +2014,7 @@ export default function LandingPage() {
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm text-gray-500">© 2025 RAI. All rights reserved.</span>
+            <span className="text-sm text-gray-500">© 2025 Srchd. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-6 text-sm text-gray-500">
             <Link href="/terms" className="hover:text-primary transition-colors">
@@ -2178,12 +2069,12 @@ export default function LandingPage() {
                 </div>
 
                 <h2 id="exit-popup-title" className="text-2xl font-bold text-gray-900 mb-3">
-                  잠깐만요!
+                  그 이력서, 계속 썩히실 건가요?
                 </h2>
                 <p className="text-gray-600 mb-6">
-                  지금 가입하시면 <strong className="text-primary">14일 무료 체험</strong>과 함께
+                  내일 또 폴더 뒤지고, 또 못 찾고, 또 처음부터 소싱.
                   <br />
-                  온보딩 가이드를 보내드려요.
+                  <strong className="text-primary">그 악순환, 오늘 끊으세요.</strong>
                 </p>
 
                 {/* Benefits */}
@@ -2191,15 +2082,15 @@ export default function LandingPage() {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm text-gray-700">
                       <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                      <span>신용카드 없이 바로 시작</span>
+                      <span>내일부터 경쟁사보다 하루 빠르게</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-700">
                       <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                      <span>14일 동안 모든 기능 무료 사용</span>
+                      <span>14일 무료, 신용카드 없이 시작</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-700">
                       <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                      <span>언제든지 취소 가능</span>
+                      <span>안 맞으면 그냥 안 쓰면 됩니다</span>
                     </div>
                   </div>
                 </div>
@@ -2220,7 +2111,7 @@ export default function LandingPage() {
                   onClick={() => setShowExitPopup(false)}
                   className="mt-3 text-sm text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  나중에 할게요
+                  아니요, 내일도 폴더 뒤질게요
                 </button>
               </div>
             </motion.div>
@@ -2228,116 +2119,6 @@ export default function LandingPage() {
         )}
       </AnimatePresence>
 
-      {/* ============================================
-          LEAD CAPTURE MODAL
-      ============================================ */}
-      <AnimatePresence>
-        {showLeadCapture && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
-            onClick={() => setShowLeadCapture(false)}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="lead-capture-title"
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ duration: 0.2 }}
-              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Close button */}
-              <button
-                onClick={() => setShowLeadCapture(false)}
-                className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 transition-colors"
-                aria-label="팝업 닫기"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              {/* Content */}
-              <div className="text-center">
-                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-5">
-                  <Zap className="w-7 h-7 text-primary" />
-                </div>
-
-                <h2 id="lead-capture-title" className="text-2xl font-bold text-gray-900 mb-2">
-                  시작 가이드를 보내드릴게요
-                </h2>
-                <p className="text-gray-500 mb-6 text-sm">
-                  5분 만에 첫 후보 제안하는 방법을
-                  <br />
-                  이메일로 받아보세요.
-                </p>
-
-                {/* Form */}
-                <form onSubmit={handleLeadSubmit} className="space-y-3">
-                  <input
-                    type="text"
-                    placeholder="이름"
-                    value={leadName}
-                    onChange={(e) => setLeadName(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-gray-900 placeholder:text-gray-400"
-                  />
-                  <input
-                    type="email"
-                    placeholder="업무용 이메일"
-                    value={leadEmail}
-                    onChange={(e) => setLeadEmail(e.target.value)}
-                    required
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-gray-900 placeholder:text-gray-400"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={leadSubmitting || !leadEmail.trim()}
-                    className="w-full py-3.5 rounded-xl bg-primary hover:bg-primary/90 disabled:bg-primary/50 text-white font-semibold transition-all flex items-center justify-center gap-2"
-                  >
-                    {leadSubmitting ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        처리 중...
-                      </>
-                    ) : (
-                      <>
-                        가이드 받고 시작하기
-                        <ArrowRight className="w-5 h-5" />
-                      </>
-                    )}
-                  </button>
-                </form>
-
-                {/* Benefits */}
-                <div className="mt-5 pt-5 border-t border-gray-100">
-                  <div className="flex items-center justify-center gap-4 text-xs text-gray-400">
-                    <span className="flex items-center gap-1">
-                      <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                      신용카드 불필요
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                      14일 무료
-                    </span>
-                  </div>
-                </div>
-
-                {/* Skip option */}
-                <button
-                  onClick={handleSkipLeadCapture}
-                  className="mt-4 text-sm text-gray-400 hover:text-primary transition-colors underline underline-offset-2"
-                >
-                  건너뛰고 바로 가입하기
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

@@ -16,8 +16,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RAI - Recruitment Asset Intelligence",
-  description: "Advanced HR Screener for top-tier headhunters",
+  title: "Srchd - AI 이력서 분석 플랫폼",
+  description: "서치드 - 헤드헌터를 위한 AI 기반 이력서 분석 및 후보자 검색 플랫폼",
 };
 
 export default function RootLayout({

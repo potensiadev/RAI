@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { apiSuccess, apiBadRequest, apiInternalError, apiUnauthorized } from "@/lib/api-response";
 import { withRateLimit } from "@/lib/rate-limit";
+import type { Database } from "@/types";
 
 // GET /api/projects - List all projects for the current user
 export async function GET(request: NextRequest) {
@@ -14,8 +15,8 @@ export async function GET(request: NextRequest) {
             return apiUnauthorized();
         }
 
-        const { data: projects, error } = await supabase
-            .from("projects")
+        const { data: projects, error } = await (supabase
+            .from("projects") as any)
             .select("*, project_candidates(count)")
             .eq("user_id", user.id)
             .eq("status", "active")
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
 // POST /api/projects - Create a new project
 export async function POST(request: NextRequest) {
     try {
-        const rateLimitRes = await withRateLimit(request, "projects_write");
+        const rateLimitRes = await withRateLimit(request, "default");
         if (rateLimitRes) return rateLimitRes;
 
         const supabase = await createClient();
@@ -57,8 +58,8 @@ export async function POST(request: NextRequest) {
             return apiBadRequest("Project name is required");
         }
 
-        const { data, error } = await supabase
-            .from("projects")
+        const { data, error } = await (supabase
+            .from("projects") as any)
             .insert({
                 name: name.trim(),
                 description: description?.trim(),

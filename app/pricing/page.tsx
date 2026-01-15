@@ -128,11 +128,8 @@ export default function PricingPage() {
           }`}
       >
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-              <Sparkles className="w-5 h-5 text-primary" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-gray-900">RAI</span>
+          <Link href="/" className="flex items-center">
+            <span className="text-xl font-bold tracking-tight text-gray-900">Srchd</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-8">
@@ -359,7 +356,7 @@ export default function PricingPage() {
               <Sparkles className="w-4 h-4 text-gray-400" />
             </div>
             <span className="text-sm text-gray-500">
-              © 2025 RAI. All rights reserved.
+              © 2025 Srchd. All rights reserved.
             </span>
           </div>
           <div className="flex items-center gap-8 text-sm text-gray-500">

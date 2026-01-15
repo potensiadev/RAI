@@ -26,14 +26,8 @@ export default function Sidebar() {
     return (
         <aside className="fixed left-0 top-0 z-40 h-screen w-64 bg-white border-r border-gray-100 flex flex-col justify-between p-6">
             {/* Brand */}
-            <Link href="/candidates" className="flex items-center gap-3 mb-10 group">
-                <div className="p-2 bg-primary/5 rounded-xl border border-primary/10 text-primary group-hover:bg-primary/10 transition-colors">
-                    <Hexagon size={24} fill="currentColor" fillOpacity={0.1} />
-                </div>
-                <div>
-                    <h1 className="font-bold text-lg tracking-tight text-gray-900 leading-none">RAI</h1>
-                    <p className="text-[10px] text-gray-400 tracking-widest uppercase font-medium mt-1">Recruitment AI</p>
-                </div>
+            <Link href="/candidates" className="flex items-center mb-10">
+                <h1 className="font-bold text-xl tracking-tight text-gray-900">Srchd</h1>
             </Link>
 
             {/* Navigation */}

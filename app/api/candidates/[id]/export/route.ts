@@ -10,7 +10,6 @@ import {
 import { withRateLimit, getClientIP } from "@/lib/rate-limit";
 import { PLAN_CONFIG } from "@/lib/file-validation";
 import { type PlanType } from "@/types/auth";
-import { type PlanType } from "@/types/auth";
 import crypto from "crypto";
 import { generateBlindResumeHTML } from "@/lib/pdf/blind-export-generator";
 

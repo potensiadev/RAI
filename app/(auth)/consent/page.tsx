@@ -58,6 +58,30 @@ export default function ConsentPage() {
       const now = new Date().toISOString();
       const version = "2025.01.01";
 
+      // 먼저 users 테이블에 레코드가 있는지 확인하고, 없으면 생성
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: existingUser } = await (supabase as any)
+        .from("users")
+        .select("id")
+        .eq("id", user.id)
+        .single();
+
+      if (!existingUser) {
+        // users 테이블에 레코드 생성 (기본 필드만 사용)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: createUserError } = await (supabase as any)
+          .from("users")
+          .insert({
+            id: user.id,
+            email: user.email,
+          });
+
+        if (createUserError) {
+          console.error("users insert error:", createUserError);
+          throw new Error(`사용자 생성 실패: ${createUserError.message || createUserError.code || JSON.stringify(createUserError)}`);
+        }
+      }
+
       // 동의 기록 저장
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: consentError } = await (supabase as any)
@@ -77,7 +101,10 @@ export default function ConsentPage() {
           marketing_consent_agreed_at: consents.marketing ? now : null,
         });
 
-      if (consentError) throw consentError;
+      if (consentError) {
+        console.error("user_consents insert error:", consentError);
+        throw new Error(`동의 저장 실패: ${consentError.message || consentError.code || JSON.stringify(consentError)}`);
+      }
 
       // 사용자 프로필 업데이트
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,13 +116,24 @@ export default function ConsentPage() {
         })
         .eq("id", user.id);
 
-      if (userError) throw userError;
+      if (userError) {
+        console.error("users update error:", userError);
+        throw new Error(`프로필 업데이트 실패: ${userError.message || userError.code || JSON.stringify(userError)}`);
+      }
 
       router.push("/candidates");
       router.refresh();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Consent error:", err);
-      setError("동의 저장에 실패했습니다. 다시 시도해주세요.");
+      const errorMessage = err instanceof Error ? err.message : JSON.stringify(err);
+
+      // 이미 동의한 경우 (중복)
+      if (errorMessage.includes("duplicate") || errorMessage.includes("unique") || errorMessage.includes("already exists") || errorMessage.includes("23505")) {
+        router.push("/candidates");
+        router.refresh();
+        return;
+      }
+      setError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -109,7 +147,7 @@ export default function ConsentPage() {
         </div>
         <h1 className="text-2xl font-bold text-gray-900">서비스 이용 동의</h1>
         <p className="text-gray-500 text-sm">
-          HR Screener 서비스 이용을 위해 아래 약관에 동의해주세요.
+          서치드 서비스 이용을 위해 아래 약관에 동의해주세요.
         </p>
       </div>
 
@@ -270,7 +308,7 @@ function ThirdPartyGuaranteeContent() {
       <h3 className="text-gray-900">제3자 개인정보 처리 보증 약관</h3>
       <p><strong>시행일:</strong> 2025년 1월 1일</p>
       <h4 className="text-gray-800">제1조 (목적)</h4>
-      <p>본 약관은 HR Screener 서비스를 이용하여 제3자의 개인정보가 포함된 이력서를 처리하는 과정에서 사용자의 책임과 의무를 명확히 합니다.</p>
+      <p>본 약관은 서치드 서비스를 이용하여 제3자의 개인정보가 포함된 이력서를 처리하는 과정에서 사용자의 책임과 의무를 명확히 합니다.</p>
       <h4 className="text-gray-800">제2조 (사용자의 보증)</h4>
       <p>사용자는 업로드하는 이력서에 대해 정보주체로부터 개인정보 수집·이용 동의를 받았음을 보증합니다.</p>
       <h4 className="text-gray-800">제3조 (사용자의 책임)</h4>
@@ -284,7 +322,7 @@ function TermsOfServiceContent() {
     <div className="prose prose-sm max-w-none text-gray-600">
       <h3 className="text-gray-900">서비스 이용약관</h3>
       <p><strong>시행일:</strong> 2025년 1월 1일</p>
-      <p>HR Screener 서비스 이용약관입니다.</p>
+      <p>서치드 서비스 이용약관입니다.</p>
     </div>
   );
 }
@@ -294,7 +332,7 @@ function PrivacyPolicyContent() {
     <div className="prose prose-sm max-w-none text-gray-600">
       <h3 className="text-gray-900">개인정보 처리방침</h3>
       <p><strong>시행일:</strong> 2025년 1월 1일</p>
-      <p>HR Screener 개인정보 처리방침입니다.</p>
+      <p>서치드 개인정보 처리방침입니다.</p>
     </div>
   );
 }

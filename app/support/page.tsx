@@ -3,7 +3,6 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
-  Sparkles,
   ChevronDown,
   Mail,
   MessageSquare,
@@ -12,6 +11,8 @@ import {
   Menu,
   X,
   Send,
+  AlertCircle,
+  Sparkles,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -27,9 +28,9 @@ const faqCategories = [
     title: "시작하기",
     faqs: [
       {
-        question: "RAI는 어떤 서비스인가요?",
+        question: "서치드는 어떤 서비스인가요?",
         answer:
-          "RAI는 AI 기반 이력서 분석 플랫폼입니다. 헤드헌터와 HR 담당자를 위해 이력서를 자동으로 분석하고, 후보자를 검색하며, 데이터를 안전하게 관리할 수 있습니다.",
+          "서치드는 AI 기반 이력서 분석 플랫폼입니다. 헤드헌터와 HR 담당자를 위해 이력서를 자동으로 분석하고, 후보자를 검색하며, 데이터를 안전하게 관리할 수 있습니다.",
       },
       {
         question: "어떤 파일 형식을 지원하나요?",
@@ -74,7 +75,7 @@ const faqCategories = [
       {
         question: "GDPR/PIPA를 준수하나요?",
         answer:
-          "네, RAI는 GDPR과 개인정보보호법(PIPA)을 준수합니다. 데이터 삭제 요청, 접근 권한 관리, 처리 동의 등을 지원합니다.",
+          "네, 서치드는 GDPR과 개인정보보호법(PIPA)을 준수합니다. 데이터 삭제 요청, 접근 권한 관리, 처리 동의 등을 지원합니다.",
       },
       {
         question: "데이터는 어디에 저장되나요?",
@@ -102,27 +103,6 @@ const faqCategories = [
           "결제일로부터 14일 이내 전액 환불이 가능합니다. 14일이 경과한 후에는 환불이 불가하며, 구독은 현재 결제 주기 종료 시까지 유지됩니다. 자세한 내용은 이용약관을 참조해 주세요.",
       },
     ],
-  },
-];
-
-const contactOptions = [
-  {
-    icon: Mail,
-    title: "이메일 문의",
-    description: "support@rai.kr로 문의해 주세요",
-    detail: "영업일 기준 24시간 내 답변",
-  },
-  {
-    icon: MessageSquare,
-    title: "채팅 지원",
-    description: "Professional 플랜 이상",
-    detail: "평일 09:00 - 18:00",
-  },
-  {
-    icon: FileText,
-    title: "문서 센터",
-    description: "상세 가이드와 튜토리얼",
-    detail: "준비 중",
   },
 ];
 
@@ -168,11 +148,70 @@ function ContactForm() {
     category: "",
     message: "",
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  const validateField = (name: string, value: string): string => {
+    switch (name) {
+      case "name":
+        if (!value.trim()) return "이름을 입력해주세요";
+        if (value.length < 2) return "이름은 2자 이상 입력해주세요";
+        return "";
+      case "email":
+        if (!value.trim()) return "이메일을 입력해주세요";
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) return "올바른 이메일 형식을 입력해주세요";
+        return "";
+      case "category":
+        if (!value) return "문의 유형을 선택해주세요";
+        return "";
+      case "message":
+        if (!value.trim()) return "문의 내용을 입력해주세요";
+        if (value.length < 10) return "문의 내용은 10자 이상 입력해주세요";
+        return "";
+      default:
+        return "";
+    }
+  };
+
+  const handleBlur = (name: string) => {
+    setTouched((prev) => ({ ...prev, [name]: true }));
+    const error = validateField(name, formData[name as keyof typeof formData]);
+    setErrors((prev) => ({ ...prev, [name]: error }));
+  };
+
+  const handleChange = (name: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (touched[name]) {
+      const error = validateField(name, value);
+      setErrors((prev) => ({ ...prev, [name]: error }));
+    }
+  };
+
+  const validateAll = (): boolean => {
+    const newErrors: Record<string, string> = {};
+    let isValid = true;
+
+    (Object.keys(formData) as Array<keyof typeof formData>).forEach((key) => {
+      const error = validateField(key, formData[key]);
+      if (error) {
+        newErrors[key] = error;
+        isValid = false;
+      }
+    });
+
+    setErrors(newErrors);
+    setTouched({ name: true, email: true, category: true, message: true });
+    return isValid;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!validateAll()) return;
+
     setIsSubmitting(true);
     await new Promise((resolve) => setTimeout(resolve, 1000));
     setIsSubmitting(false);
@@ -196,54 +235,78 @@ function ContactForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} noValidate className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">
-            이름
+            이름 <span className="text-rose-500">*</span>
           </label>
           <input
             type="text"
             id="name"
-            required
             value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
-                     text-gray-900 placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10
-                     transition-all"
+            onChange={(e) => handleChange("name", e.target.value)}
+            onBlur={() => handleBlur("name")}
+            className={`w-full px-4 py-3 rounded-xl bg-white border text-gray-900 placeholder-gray-400
+                     focus:outline-none focus:ring-4 transition-all
+                     ${errors.name && touched.name
+                       ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100"
+                       : "border-gray-200 focus:border-primary focus:ring-primary/10"}`}
             placeholder="홍길동"
+            aria-invalid={!!(errors.name && touched.name)}
+            aria-describedby={errors.name ? "name-error" : undefined}
           />
+          {errors.name && touched.name && (
+            <div id="name-error" className="flex items-center gap-1.5 mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+              <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+              <span className="text-sm text-rose-600">{errors.name}</span>
+            </div>
+          )}
         </div>
         <div>
           <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">
-            이메일
+            이메일 <span className="text-rose-500">*</span>
           </label>
           <input
-            type="email"
+            type="text"
             id="email"
-            required
             value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
-                     text-gray-900 placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10
-                     transition-all"
+            onChange={(e) => handleChange("email", e.target.value)}
+            onBlur={() => handleBlur("email")}
+            className={`w-full px-4 py-3 rounded-xl bg-white border text-gray-900 placeholder-gray-400
+                     focus:outline-none focus:ring-4 transition-all
+                     ${errors.email && touched.email
+                       ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100"
+                       : "border-gray-200 focus:border-primary focus:ring-primary/10"}`}
             placeholder="example@company.com"
+            aria-invalid={!!(errors.email && touched.email)}
+            aria-describedby={errors.email ? "email-error" : undefined}
           />
+          {errors.email && touched.email && (
+            <div id="email-error" className="flex items-center gap-1.5 mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+              <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+              <span className="text-sm text-rose-600">{errors.email}</span>
+            </div>
+          )}
         </div>
       </div>
 
       <div>
         <label htmlFor="category" className="block text-sm font-semibold text-gray-700 mb-2">
-          문의 유형
+          문의 유형 <span className="text-rose-500">*</span>
         </label>
         <select
           id="category"
-          required
           value={formData.category}
-          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-          className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
-                   text-gray-900 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10
-                   transition-all appearance-none cursor-pointer"
+          onChange={(e) => handleChange("category", e.target.value)}
+          onBlur={() => handleBlur("category")}
+          className={`w-full px-4 py-3 rounded-xl bg-white border text-gray-900
+                   focus:outline-none focus:ring-4 transition-all appearance-none cursor-pointer
+                   ${errors.category && touched.category
+                     ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100"
+                     : "border-gray-200 focus:border-primary focus:ring-primary/10"}`}
+          aria-invalid={!!(errors.category && touched.category)}
+          aria-describedby={errors.category ? "category-error" : undefined}
         >
           <option value="" className="text-gray-500">선택해 주세요</option>
           <option value="general">일반 문의</option>
@@ -252,23 +315,39 @@ function ContactForm() {
           <option value="enterprise">Enterprise 문의</option>
           <option value="partnership">제휴 문의</option>
         </select>
+        {errors.category && touched.category && (
+          <div id="category-error" className="flex items-center gap-1.5 mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+            <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+            <span className="text-sm text-rose-600">{errors.category}</span>
+          </div>
+        )}
       </div>
 
       <div>
         <label htmlFor="message" className="block text-sm font-semibold text-gray-700 mb-2">
-          문의 내용
+          문의 내용 <span className="text-rose-500">*</span>
         </label>
         <textarea
           id="message"
-          required
           rows={5}
           value={formData.message}
-          onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-          className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
-                   text-gray-900 placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10
-                   transition-all resize-none"
+          onChange={(e) => handleChange("message", e.target.value)}
+          onBlur={() => handleBlur("message")}
+          className={`w-full px-4 py-3 rounded-xl bg-white border text-gray-900 placeholder-gray-400
+                   focus:outline-none focus:ring-4 transition-all resize-none
+                   ${errors.message && touched.message
+                     ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100"
+                     : "border-gray-200 focus:border-primary focus:ring-primary/10"}`}
           placeholder="문의 내용을 자세히 작성해 주세요..."
+          aria-invalid={!!(errors.message && touched.message)}
+          aria-describedby={errors.message ? "message-error" : undefined}
         />
+        {errors.message && touched.message && (
+          <div id="message-error" className="flex items-center gap-1.5 mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+            <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+            <span className="text-sm text-rose-600">{errors.message}</span>
+          </div>
+        )}
       </div>
 
       <button
@@ -328,11 +407,8 @@ export default function SupportPage() {
           }`}
       >
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-              <Sparkles className="w-5 h-5 text-primary" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-gray-900">RAI</span>
+          <Link href="/" className="flex items-center">
+            <span className="text-xl font-bold tracking-tight text-gray-900">Srchd</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-8">
@@ -419,35 +495,7 @@ export default function SupportPage() {
             <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-gray-900 mb-6">
               어떻게 <span className="text-primary">도와드릴까요?</span>
             </h1>
-            <p className="text-xl text-gray-500 leading-relaxed">
-              자주 묻는 질문에서 답을 찾거나, 직접 문의해 주세요.
-            </p>
           </motion.div>
-        </div>
-
-        {/* Contact Options */}
-        <div className="max-w-5xl mx-auto mb-24">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {contactOptions.map((option, index) => (
-              <motion.div
-                key={option.title}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="p-8 rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all text-center"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-5 text-primary">
-                  <option.icon className="w-6 h-6" />
-                </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">{option.title}</h3>
-                <p className="text-sm text-gray-500 mb-4">{option.description}</p>
-                <div className="flex items-center justify-center gap-1.5 text-xs font-medium text-gray-400">
-                  <Clock className="w-3 h-3" />
-                  {option.detail}
-                </div>
-              </motion.div>
-            ))}
-          </div>
         </div>
 
         {/* FAQ Section */}
@@ -517,7 +565,7 @@ export default function SupportPage() {
               <Sparkles className="w-4 h-4 text-gray-400" />
             </div>
             <span className="text-sm text-gray-500">
-              © 2025 RAI. All rights reserved.
+              © 2025 Srchd. All rights reserved.
             </span>
           </div>
           <div className="flex items-center gap-8 text-sm text-gray-500">

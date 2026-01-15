@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>서치드</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #FAFAFA;
+      color: #111;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .section {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 72px 32px;
+    }
+
+    h1 {
+      font-size: 34px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 52px;
+      letter-spacing: -0.3px;
+    }
+
+    .timeline {
+      display: flex;
+      gap: 18px;
+      margin-bottom: 44px;
+    }
+
+    .card {
+      flex: 1;
+      background: #fff;
+      border-radius: 16px;
+      padding: 26px 24px;
+      border: 1px solid #E5E5E5;
+    }
+
+    /* Header: time + title on same row */
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .time-badge {
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      padding: 5px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .card:nth-child(1) .time-badge { background: #F97316; }
+    .card:nth-child(2) .time-badge { background: #EAB308; }
+    .card:nth-child(3) .time-badge { background: #EF4444; }
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #111;
+    }
+
+    /* Conversation bubble area - improved design */
+    .card-conversation {
+      position: relative;
+      margin-bottom: 16px;
+      padding: 16px 18px;
+      background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
+      border-radius: 12px;
+      border-left: 3px solid;
+    }
+
+    .card:nth-child(1) .card-conversation { border-left-color: #FB923C; }
+    .card:nth-child(2) .card-conversation { border-left-color: #FACC15; }
+    .card:nth-child(3) .card-conversation { border-left-color: #F87171; }
+
+    .card-conversation::before {
+      content: '"';
+      position: absolute;
+      top: 8px;
+      left: 12px;
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+      opacity: 0.15;
+    }
+
+    .card-conversation p {
+      font-size: 14px;
+      color: #374151;
+      line-height: 1.7;
+      font-weight: 500;
+      padding-left: 4px;
+    }
+
+    .card-conversation p span {
+      display: block;
+      color: #6B7280;
+      font-weight: 400;
+      margin-top: 4px;
+    }
+
+    .card-action {
+      font-size: 13px;
+      color: #6B7280;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-action .arrow {
+      color: #9CA3AF;
+    }
+
+    /* Footer: label first, then duration */
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px solid #E5E5E5;
+    }
+
+    .footer-left {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .label {
+      font-size: 12px;
+      color: #9CA3AF;
+      font-weight: 500;
+    }
+
+    .duration {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .card:nth-child(1) .duration { color: #EA580C; }
+    .card:nth-child(2) .duration { color: #CA8A04; }
+    .card:nth-child(3) .duration { color: #DC2626; }
+
+    .loss {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #DC2626;
+      background: #FEF2F2;
+      padding: 6px 12px;
+      border-radius: 8px;
+    }
+
+    /* Solution */
+    .solution {
+      background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+      border-radius: 20px;
+      padding: 36px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .solution-left h2 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 10px;
+    }
+
+    .solution-left p {
+      font-size: 15px;
+      color: rgba(255,255,255,0.9);
+      line-height: 1.6;
+    }
+
+    .solution-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .flow-item {
+      text-align: center;
+      color: rgba(255,255,255,0.95);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .flow-icon {
+      width: 52px;
+      height: 52px;
+      background: rgba(255,255,255,0.18);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 8px;
+    }
+
+    .flow-arrow {
+      color: rgba(255,255,255,0.5);
+      font-size: 18px;
+      font-weight: 500;
+    }
+
+    .result-box {
+      background: #fff;
+      border-radius: 14px;
+      padding: 18px 28px;
+      text-align: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    .result-time {
+      font-size: 36px;
+      font-weight: 800;
+      color: #059669;
+      letter-spacing: -1px;
+    }
+
+    .result-label {
+      font-size: 13px;
+      color: #6B7280;
+      margin-top: 4px;
+      font-weight: 500;
+    }
+
+    @media (max-width: 768px) {
+      .timeline {
+        flex-direction: column;
+      }
+      .solution {
+        flex-direction: column;
+        gap: 28px;
+        text-align: center;
+      }
+      .solution-right {
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="section">
+    <h1>혹시 이런 경험 있으신가요?</h1>
+
+    <div class="timeline">
+      <div class="card">
+        <div class="card-header">
+          <span class="time-badge">오전 9시</span>
+          <h3 class="card-title">새 JD 도착</h3>
+        </div>
+        <div class="card-conversation">
+          <p>MLOps Engineer,<br>Feature Store 경험 필수,<span>Kubeflow/Airflow 우대...</span></p>
+        </div>
+        <p class="card-action"><span class="arrow">→</span> "이게 다 뭐지?" 구글링 시작 🔍</p>
+        <div class="card-footer">
+          <div class="footer-left">
+            <span class="label">JD 파악만</span>
+            <span class="duration">⏱ 2시간 소요</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="time-badge">오후 1시</span>
+          <h3 class="card-title">후보자 찾기</h3>
+        </div>
+        <div class="card-conversation">
+          <p>그 후보... 작년에 봤는데...<span>2022년 폴더? 개발자 폴더?<br>시니어 폴더?</span></p>
+        </div>
+        <p class="card-action"><span class="arrow">→</span> 폴더 10개 열어서 Ctrl+F 📁</p>
+        <div class="card-footer">
+          <div class="footer-left">
+            <span class="label">후보자 찾기만</span>
+            <span class="duration">⏱ 3시간 소요</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="time-badge">오후 6시</span>
+          <h3 class="card-title">결과</h3>
+        </div>
+        <div class="card-conversation">
+          <p>오늘 제안 못하겠네...<span>내일 아침에 보내야지</span></p>
+        </div>
+        <p class="card-action"><span class="arrow">→</span> 경쟁사가 먼저 제안할 수도 ⚠️</p>
+        <div class="card-footer">
+          <div class="footer-left">
+            <span class="label">하루 종일</span>
+            <span class="duration">⏱ 5시간+ 소요</span>
+          </div>
+          <span class="loss">⚠ 기회 손실</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="solution">
+      <div class="solution-left">
+        <h2>서치드를 쓰면?</h2>
+        <p>JD 도착 → 5분 후 후보 3명 제안 완료 ✓</p>
+      </div>
+      <div class="solution-right">
+        <div class="flow-item">
+          <div class="flow-icon">
+            <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+            </svg>
+          </div>
+          <span>JD 도착</span>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-item">
+          <div class="flow-icon">
+            <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+            </svg>
+          </div>
+          <span>AI 분석</span>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="result-box">
+          <div class="result-time">5분</div>
+          <div class="result-label">후보 3명 완료</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

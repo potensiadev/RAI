@@ -54,74 +54,74 @@ const staggerContainer = {
 const coreFeatures = [
   {
     icon: Brain,
-    title: "2-Way AI Cross-Check",
+    title: "두 번 검증, 한 번에 정확하게",
     description:
-      "GPT-4o와 Gemini 1.5 Pro 두 개의 AI 엔진이 독립적으로 이력서를 분석하고 교차 검증하여 99.2% 정확도를 달성합니다.",
+      "두 개의 AI가 각각 이력서를 읽고 서로 검증합니다. 사람이 놓치는 것도, AI 하나가 틀리는 것도 잡아냅니다.",
     details: [
-      "독립적인 듀얼 AI 분석",
-      "교차 검증을 통한 오류 최소화",
-      "신뢰도 점수 제공",
-      "필드별 정확도 표시",
+      "99.2% 분석 정확도",
+      "오타·누락 자동 감지",
+      "신뢰도 점수로 한눈에 확인",
+      "어디가 불확실한지 바로 표시",
     ],
   },
   {
     icon: Shield,
-    title: "Privacy Shield",
+    title: "후보자 정보, 걱정 없이",
     description:
-      "AES-256-GCM 암호화와 자동 PII 마스킹으로 후보자의 민감한 개인정보를 안전하게 보호합니다.",
+      "이름, 연락처, 주민번호 같은 민감 정보는 자동으로 암호화됩니다. 규정 준수도 알아서.",
     details: [
-      "AES-256-GCM 암호화",
-      "자동 PII 탐지 및 마스킹",
-      "RLS 기반 데이터 격리",
-      "GDPR/PIPA 준수",
+      "금융권 수준 암호화 적용",
+      "민감정보 자동 감지·보호",
+      "팀원별 접근 권한 분리",
+      "개인정보보호법(PIPA) 준수",
     ],
   },
   {
     icon: Zap,
-    title: "30초 분석",
+    title: "이력서 올리고 30초면 끝",
     description:
-      "PDF, HWP, DOCX 등 다양한 형식의 이력서를 30초 이내에 구조화된 데이터로 변환합니다.",
+      "PDF든 HWP든 DOCX든, 그냥 올리세요. 30초 후엔 깔끔하게 정리된 프로필이 됩니다.",
     details: [
-      "PDF, HWP, DOCX 지원",
-      "평균 처리 시간 30초",
-      "비동기 병렬 처리",
-      "대용량 배치 업로드",
+      "어떤 파일 형식이든 OK",
+      "드래그 앤 드롭으로 간편 업로드",
+      "한 번에 여러 개도 가능",
+      "업로드하면 알아서 정리",
     ],
   },
   {
     icon: FileSearch,
-    title: "시맨틱 검색",
+    title: "원하는 인재, 말로 찾으세요",
     description:
-      "벡터 임베딩 기반 검색으로 키워드가 아닌 의미를 이해하여 최적의 후보자를 찾아냅니다.",
+      "\"마케팅 경력 3년, 스타트업 경험 있는 분\" 이렇게 검색하면 됩니다. 딱 맞는 후보자가 나옵니다.",
     details: [
-      "OpenAI 임베딩 기반",
-      "동의어 자동 확장",
-      "스킬 매칭 점수",
-      "고급 필터링",
+      "자연어로 검색 가능",
+      "비슷한 표현도 알아서 찾기",
+      "적합도 점수로 순위 확인",
+      "조건 필터로 더 정밀하게",
     ],
   },
   {
     icon: Users,
-    title: "중복 감지",
+    title: "같은 사람, 여러 이력서? 자동 정리",
     description:
-      "동일 후보자의 다른 버전 이력서를 자동으로 감지하고 효율적으로 버전 관리합니다.",
+      "한 후보자가 여러 번 지원했거나 버전이 다른 이력서가 있어도 자동으로 묶어줍니다.",
     details: [
-      "해시 기반 중복 탐지",
-      "유사도 점수 계산",
-      "버전 히스토리 관리",
-      "병합/삭제 옵션",
+      "중복 후보자 자동 감지",
+      "어떤 버전이 최신인지 표시",
+      "이력서 변경 이력 추적",
+      "원클릭으로 병합·정리",
     ],
   },
   {
     icon: Lock,
-    title: "블라인드 내보내기",
+    title: "공정한 채용을 위한 블라인드 이력서",
     description:
-      "개인 식별 정보를 제거한 블라인드 이력서를 PDF로 즉시 생성하여 공정한 채용을 지원합니다.",
+      "이름, 사진, 출신학교를 가린 이력서를 클릭 한 번으로 만들 수 있습니다. 실력만 보세요.",
     details: [
-      "원클릭 블라인드 PDF",
-      "선택적 필드 마스킹",
-      "커스텀 템플릿",
-      "배치 내보내기",
+      "클릭 한 번으로 PDF 생성",
+      "가릴 항목 직접 선택 가능",
+      "우리 회사 양식으로 커스텀",
+      "여러 명 한 번에 내보내기",
     ],
   },
 ];
@@ -130,13 +130,13 @@ const coreFeatures = [
 const additionalFeatures = [
   {
     icon: BarChart3,
-    title: "리스크 대시보드",
-    description: "데이터 품질 문제를 한눈에 파악하고 관리할 수 있습니다.",
+    title: "문제 있는 데이터, 먼저 알려드려요",
+    description: "누락된 정보, 이상한 날짜 같은 문제를 대시보드에서 바로 확인하세요.",
   },
   {
     icon: Sparkles,
-    title: "포지션 매칭",
-    description: "채용 포지션과 후보자를 자동으로 매칭하여 추천합니다.",
+    title: "이 포지션에 딱 맞는 후보자 추천",
+    description: "채용 공고만 등록하면, 적합한 후보자를 자동으로 찾아 추천해드립니다.",
   },
 ];
 
@@ -174,11 +174,8 @@ export default function ProductsPage() {
           }`}
       >
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-              <Sparkles className="w-5 h-5 text-primary" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-gray-900">RAI</span>
+          <Link href="/" className="flex items-center">
+            <span className="text-xl font-bold tracking-tight text-gray-900">Srchd</span>
           </Link>
 
           {/* Desktop Nav */}
@@ -265,14 +262,14 @@ export default function ProductsPage() {
             transition={{ duration: 0.6 }}
           >
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 mb-6 leading-tight">
-              AI 기반 이력서 분석의
+              이력서 검토에 쓰는 시간,
               <br />
-              <span className="text-primary">새로운 기준</span>
+              <span className="text-primary">90% 줄이세요</span>
             </h1>
             <p className="text-xl text-gray-500 leading-relaxed max-w-2xl mx-auto">
-              RAI는 최신 AI 기술을 활용하여 이력서 분석, 후보자 검색,
+              쌓여가는 이력서 더미에서 벗어나세요.
               <br className="hidden md:block" />
-              데이터 관리를 하나의 플랫폼에서 해결합니다.
+              AI가 분석하고, 당신은 면접에 집중하세요.
             </p>
           </motion.div>
         </div>
@@ -320,7 +317,7 @@ export default function ProductsPage() {
             viewport={{ once: true }}
             className="text-center mb-12"
           >
-            <h2 className="text-2xl font-bold text-gray-900">추가 기능</h2>
+            <h2 className="text-2xl font-bold text-gray-900">더 똑똑하게 일하기</h2>
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -358,19 +355,19 @@ export default function ProductsPage() {
 
             <div className="relative z-10">
               <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
-                지금 바로 시작하세요
+                다음 주 월요일,<br className="md:hidden" /> 이력서 걱정 없이 출근하세요
               </h2>
               <p className="text-blue-100 mb-10 max-w-lg mx-auto text-lg">
-                Closed Beta 기간 동안 모든 기능을 무료로 체험해보세요.
+                14일 무료 체험. 신용카드 필요 없음.
                 <br />
-                신용카드 없이 14일간 무료로 이용할 수 있습니다.
+                5분이면 첫 이력서 분석까지 완료됩니다.
               </p>
 
               <Link
                 href="/signup"
                 className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-primary hover:bg-blue-600 text-white font-semibold transition-all shadow-lg hover:shadow-xl hover:-translate-y-1"
               >
-                무료 체험 시작
+                무료로 시작하기
                 <ArrowRight className="w-5 h-5" />
               </Link>
             </div>
@@ -385,7 +382,7 @@ export default function ProductsPage() {
             <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-gray-400" />
             </div>
-            <span className="text-sm text-gray-500">© 2025 RAI. All rights reserved.</span>
+            <span className="text-sm text-gray-500">© 2025 Srchd. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-8 text-sm text-gray-500">
             <Link href="/terms" className="hover:text-gray-900 transition-colors">

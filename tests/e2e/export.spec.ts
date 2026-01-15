@@ -8,12 +8,9 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Blind Export Flow', () => {
     test.beforeEach(async ({ page }) => {
-        // 로그인
-        await page.goto('/login');
-        await page.fill('[data-testid="email-input"]', process.env.TEST_USER_EMAIL || 'test@example.com');
-        await page.fill('[data-testid="password-input"]', process.env.TEST_USER_PASSWORD || 'testpass123');
-        await page.click('[data-testid="login-button"]');
-        await page.waitForURL('/candidates');
+        // 인증은 auth.setup.ts에서 처리됨 (storageState 사용)
+        await page.goto('/candidates');
+        await page.waitForLoadState('networkidle');
     });
 
     test('should export candidate without PII', async ({ page }) => {

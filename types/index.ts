@@ -535,6 +535,51 @@ export interface Database {
           payment_id?: string | null;
         };
       };
+      projects: {
+        Row: {
+          id: string;
+          name: string;
+          description: string | null;
+          user_id: string;
+          status: 'active' | 'archived';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          name: string;
+          description?: string | null;
+          user_id: string;
+          status?: 'active' | 'archived';
+        };
+        Update: {
+          name?: string;
+          description?: string | null;
+          user_id?: string;
+          status?: 'active' | 'archived';
+        };
+      };
+      project_candidates: {
+        Row: {
+          project_id: string;
+          candidate_id: string;
+          notes: string | null;
+          status: 'saved' | 'contacted' | 'interview' | 'offer' | 'placed' | 'rejected';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          project_id: string;
+          candidate_id: string;
+          notes?: string | null;
+          status?: 'saved' | 'contacted' | 'interview' | 'offer' | 'placed' | 'rejected';
+        };
+        Update: {
+          project_id?: string;
+          candidate_id?: string;
+          notes?: string | null;
+          status?: 'saved' | 'contacted' | 'interview' | 'offer' | 'placed' | 'rejected';
+        };
+      };
     };
     Views: {
       [_ in never]: never;

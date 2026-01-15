@@ -16,18 +16,9 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Headhunter Persona Tests', () => {
   test.beforeEach(async ({ page }) => {
-    // Login for each test
-    const email = process.env.TEST_USER_EMAIL || 'test@example.com';
-    const password = process.env.TEST_USER_PASSWORD || 'testpass123';
-
-    await page.goto('/login');
-    await page.fill('[data-testid="email-input"]', email);
-    await page.fill('[data-testid="password-input"]', password);
-    await page.click('[data-testid="login-button"]');
-
-    // Wait for navigation or timeout
-    await page.waitForURL('**/candidates', { timeout: 10000 }).catch(() => {});
-    await page.waitForTimeout(500);
+    // 인증은 auth.setup.ts에서 처리됨 (storageState 사용)
+    await page.goto('/candidates');
+    await page.waitForLoadState('networkidle');
   });
 
   test.describe('HH-001: Morning Workflow - Candidate Review', () => {
@@ -373,16 +364,9 @@ test.describe('Headhunter Persona Tests', () => {
  */
 test.describe('Security: Headhunter Input Protection', () => {
   test.beforeEach(async ({ page }) => {
-    const email = process.env.TEST_USER_EMAIL || 'test@example.com';
-    const password = process.env.TEST_USER_PASSWORD || 'testpass123';
-
-    await page.goto('/login');
-    await page.fill('[data-testid="email-input"]', email);
-    await page.fill('[data-testid="password-input"]', password);
-    await page.click('[data-testid="login-button"]');
-
-    await page.waitForURL('**/candidates', { timeout: 10000 }).catch(() => {});
-    await page.waitForTimeout(500);
+    // 인증은 auth.setup.ts에서 처리됨 (storageState 사용)
+    await page.goto('/candidates');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should handle SQL injection attempts gracefully', async ({ page }) => {

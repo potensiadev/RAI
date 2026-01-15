@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Sidebar from "@/components/layout/Sidebar";
 
 export const metadata: Metadata = {
-  title: "HR Screener - Dashboard",
-  description: "AI-powered recruitment asset intelligence",
+  title: "Srchd - Dashboard",
+  description: "서치드 - AI 기반 이력서 분석 대시보드",
 };
 
 export default function DashboardLayout({

@@ -71,11 +71,8 @@ export default function PrivacyPage() {
           }`}
       >
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-              <Sparkles className="w-5 h-5 text-primary" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-gray-900">RAI</span>
+          <Link href="/" className="flex items-center">
+            <span className="text-xl font-bold tracking-tight text-gray-900">Srchd</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-8">
@@ -160,7 +157,7 @@ export default function PrivacyPage() {
               개인정보처리방침
             </h1>
             <p className="text-lg text-gray-500 leading-relaxed">
-              RAI는 이용자의 개인정보를 소중히 다루고 안전하게 보호합니다.
+              서치드는 이용자의 개인정보를 소중히 다루고 안전하게 보호합니다.
             </p>
             <p className="text-sm text-gray-400 mt-4">
               최종 수정일: 2025년 1월 13일 | 시행일: 2025년 1월 13일
@@ -399,7 +396,7 @@ export default function PrivacyPage() {
               <Sparkles className="w-4 h-4 text-gray-400" />
             </div>
             <span className="text-sm text-gray-500">
-              © 2025 RAI. All rights reserved.
+              © 2025 Srchd. All rights reserved.
             </span>
           </div>
           <div className="flex items-center gap-8 text-sm text-gray-500">

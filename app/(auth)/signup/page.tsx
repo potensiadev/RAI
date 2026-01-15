@@ -1,522 +1,129 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Sparkles, Loader2, UserCheck } from "lucide-react";
-
-type ExistingUser = {
-  exists: true;
-  provider: "email" | "google";
-  email: string;
-} | null;
+import { Sparkles, Loader2, Shield, Zap, Lock } from "lucide-react";
 
 export default function SignupPage() {
-  const router = useRouter();
-
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [existingUser, setExistingUser] = useState<ExistingUser>(null);
 
   const supabase = createClient();
 
-  // 이메일 중복 체크 및 가입 방법 확인 (API 호출)
-  const checkExistingUser = async (emailToCheck: string): Promise<{
-    exists: boolean;
-    provider: string | null;
-  }> => {
-    try {
-      const response = await fetch("/api/auth/check-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: emailToCheck }),
-      });
-
-      if (!response.ok) {
-        console.error("Email check failed:", response.status);
-        return { exists: false, provider: null };
-      }
-
-      const response_data = await response.json();
-      const result = response_data.data; // apiSuccess wraps in { success, data }
-      return { exists: result?.exists ?? false, provider: result?.provider ?? null };
-    } catch (error) {
-      console.error("Email check error:", error);
-      return { exists: false, provider: null };
-    }
-  };
-
-  const handleEmailSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    // 비밀번호 확인
-    if (password !== confirmPassword) {
-      setError("비밀번호가 일치하지 않습니다.");
-      return;
-    }
-
-    // 비밀번호 복잡도 검증
-    if (password.length < 8) {
-      setError("비밀번호는 8자 이상이어야 합니다.");
-      return;
-    }
-    if (!/[A-Z]/.test(password)) {
-      setError("비밀번호에 대문자가 포함되어야 합니다.");
-      return;
-    }
-    if (!/[a-z]/.test(password)) {
-      setError("비밀번호에 소문자가 포함되어야 합니다.");
-      return;
-    }
-    if (!/[0-9]/.test(password)) {
-      setError("비밀번호에 숫자가 포함되어야 합니다.");
-      return;
-    }
-
-    setIsLoading(true);
-
-    // 이메일 중복 체크 및 가입 방법 확인
-    const result = await checkExistingUser(email);
-    if (result.exists) {
-      // 에러 대신 로그인 전환 UI 표시
-      setExistingUser({
-        exists: true,
-        provider: result.provider as "email" | "google",
-        email: email,
-      });
-      setIsLoading(false);
-      return;
-    }
-
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: name,
-        },
-        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=/consent`,
-      },
-    });
-
-    if (error) {
-      setError(error.message);
-      setIsLoading(false);
-    } else {
-      router.push("/consent");
-      router.refresh();
-    }
-  };
-
-  // 기존 계정으로 로그인
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: existingUser?.email || email,
-      password,
-    });
-
-    if (error) {
-      if (error.message.includes("Invalid login credentials")) {
-        setError("비밀번호가 올바르지 않습니다. 다시 확인해주세요.");
-      } else {
-        setError(error.message);
-      }
-      setIsLoading(false);
-    } else {
-      router.push("/candidates");
-      router.refresh();
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/api/auth/callback?next=/candidates`,
-      },
-    });
-    if (error) setError(error.message);
-  };
-
   const handleGoogleSignup = async () => {
+    setIsLoading(true);
+    setError(null);
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/api/auth/callback?next=/consent`,
       },
     });
-    if (error) setError(error.message);
-  };
 
-  // 다른 이메일로 가입하기
-  const handleReset = () => {
-    setExistingUser(null);
-    setEmail("");
-    setPassword("");
-    setError(null);
+    if (error) {
+      setError(error.message);
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="space-y-6">
       {/* Logo */}
       <div className="text-center space-y-2">
-        <AnimatePresence mode="wait">
-          {existingUser ? (
-            <motion.div
-              key="welcome-back"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="w-16 h-16 mx-auto rounded-2xl bg-green-500 flex items-center justify-center shadow-lg shadow-green-500/30 mb-6"
-            >
-              <UserCheck className="w-8 h-8 text-white" />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="signup"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="w-16 h-16 mx-auto rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30 mb-6"
-            >
-              <Sparkles className="w-8 h-8 text-white" />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence mode="wait">
-          {existingUser ? (
-            <motion.div
-              key="welcome-text"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-            >
-              <h1 className="text-3xl font-bold text-gray-900 tracking-tight">반가워요!</h1>
-              <p className="text-gray-500 text-base">이미 회원이시네요</p>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="signup-text"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-            >
-              <h1 className="text-3xl font-bold text-gray-900 tracking-tight">회원가입</h1>
-              <p className="text-gray-500 text-base">
-                HR Screener에 오신 것을 환영합니다
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <h1 className="text-3xl font-bold text-gray-900 tracking-tight mb-2">Srchd</h1>
+        <p className="text-gray-500 text-base mb-4">
+          회원가입
+        </p>
       </div>
 
-      {/* Form Area */}
+      {/* Signup Card */}
       <div className="p-8 rounded-3xl bg-white shadow-2xl shadow-black/5 border border-gray-100 space-y-6">
-        <AnimatePresence mode="wait">
-          {existingUser ? (
-            // 로그인 전환 UI
-            <motion.div
-              key="login-mode"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              {existingUser.provider === "google" ? (
-                // Google 가입자용 UI
-                <div className="space-y-4">
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20"
-                  >
-                    <p className="text-blue-300 text-sm text-center">
-                      <span className="font-medium">{existingUser.email}</span>
-                      <br />
-                      <span className="text-blue-400/80">
-                        Google 계정으로 가입되어 있습니다
-                      </span>
-                    </p>
-                  </motion.div>
+        {error && (
+          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 text-sm">
+            {error}
+          </div>
+        )}
 
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                  >
-                    <Button
-                      type="button"
-                      className="w-full bg-white hover:bg-gray-100 text-gray-900"
-                      size="lg"
-                      onClick={handleGoogleLogin}
-                    >
-                      <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                        <path
-                          fill="#4285F4"
-                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                        />
-                        <path
-                          fill="#34A853"
-                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                        />
-                        <path
-                          fill="#FBBC05"
-                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                        />
-                        <path
-                          fill="#EA4335"
-                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                        />
-                      </svg>
-                      Google로 로그인하기
-                    </Button>
-                  </motion.div>
+        {/* Benefits */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 text-sm text-gray-600">
+            <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+              <Shield className="w-4 h-4 text-green-600" />
+            </div>
+            <span>Google 계정으로 안전하게 가입</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-gray-600">
+            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <Zap className="w-4 h-4 text-blue-600" />
+            </div>
+            <span>5초만에 빠른 회원가입 완료</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-gray-600">
+            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+              <Lock className="w-4 h-4 text-purple-600" />
+            </div>
+            <span>별도 비밀번호 설정 불필요</span>
+          </div>
+        </div>
 
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.3 }}
-                    className="text-center"
-                  >
-                    <button
-                      type="button"
-                      onClick={handleReset}
-                      className="text-sm text-slate-400 hover:text-primary transition-colors"
-                    >
-                      다른 이메일로 가입하기
-                    </button>
-                  </motion.div>
-                </div>
-              ) : (
-                // 이메일 가입자용 UI
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="p-4 rounded-lg bg-green-500/10 border border-green-500/20"
-                  >
-                    <p className="text-green-300 text-sm text-center">
-                      <span className="font-medium">{existingUser.email}</span>
-                      <br />
-                      <span className="text-green-400/80">
-                        계정이 이미 등록되어 있습니다
-                      </span>
-                    </p>
-                  </motion.div>
-
-                  {error && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
-                    >
-                      {error}
-                    </motion.div>
-                  )}
-
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15 }}
-                    className="space-y-2"
-                  >
-                    <Label htmlFor="login-password">비밀번호</Label>
-                    <Input
-                      id="login-password"
-                      type="password"
-                      placeholder="비밀번호를 입력하세요"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      autoFocus
-                    />
-                  </motion.div>
-
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                  >
-                    <Button
-                      type="submit"
-                      className="w-full"
-                      size="lg"
-                      disabled={isLoading}
-                    >
-                      {isLoading && (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      )}
-                      로그인하기
-                    </Button>
-                  </motion.div>
-
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.25 }}
-                    className="text-center space-y-2"
-                  >
-                    <Link
-                      href="/login"
-                      className="text-sm text-slate-400 hover:text-primary transition-colors block"
-                    >
-                      비밀번호를 잊으셨나요?
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={handleReset}
-                      className="text-sm text-slate-400 hover:text-primary transition-colors"
-                    >
-                      다른 이메일로 가입하기
-                    </button>
-                  </motion.div>
-                </form>
-              )}
-            </motion.div>
-          ) : (
-            // 기본 회원가입 폼
-            <motion.form
-              key="signup-mode"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              onSubmit={handleEmailSignup}
-              className="space-y-4"
-            >
-              {error && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                  {error}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="name">이름</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="홍길동"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
+        <div className="pt-2">
+          <Button
+            type="button"
+            className="w-full h-12 text-base font-medium"
+            size="lg"
+            onClick={handleGoogleSignup}
+            disabled={isLoading}
+            data-testid="google-signup-button"
+          >
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+            ) : (
+              <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                <path
+                  fill="white"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">이메일</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="name@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
+                <path
+                  fill="white"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">비밀번호</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="8자 이상"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
+                <path
+                  fill="white"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">비밀번호 확인</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  placeholder="비밀번호를 다시 입력하세요"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
+                <path
+                  fill="white"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                 />
-              </div>
+              </svg>
+            )}
+            Google로 시작하기
+          </Button>
+        </div>
 
-              <Button className="w-full" size="lg" disabled={isLoading}>
-                {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                계속하기
-              </Button>
-
-              <div className="relative py-2">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-gray-100" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white px-3 text-gray-400 font-medium">또는</span>
-                </div>
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                size="lg"
-                onClick={handleGoogleSignup}
-              >
-                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                  <path
-                    fill="currentColor"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  />
-                </svg>
-                Google로 시작하기
-              </Button>
-            </motion.form>
-          )}
-        </AnimatePresence>
+        <p className="text-xs text-gray-400 text-center">
+          가입 시{" "}
+          <Link href="/terms" className="underline hover:text-gray-600">
+            서비스 이용약관
+          </Link>
+          {" "}및{" "}
+          <Link href="/privacy" className="underline hover:text-gray-600">
+            개인정보처리방침
+          </Link>
+          에 동의하게 됩니다.
+        </p>
       </div>
 
       {/* Footer */}
-      <AnimatePresence mode="wait">
-        {!existingUser && (
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="text-center text-sm text-gray-500"
-          >
-            이미 계정이 있으신가요?{" "}
-            <Link href="/login" className="text-primary font-semibold hover:underline">
-              로그인
-            </Link>
-          </motion.p>
-        )}
-      </AnimatePresence>
+      <p className="text-center text-sm text-gray-500">
+        이미 계정이 있으신가요?{" "}
+        <Link href="/login" className="text-primary font-semibold hover:underline">
+          로그인
+        </Link>
+      </p>
     </div>
   );
 }

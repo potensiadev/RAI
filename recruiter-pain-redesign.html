@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>서치드 - 리크루터의 하루</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&family=Pretendard:wght@400;500;600&family=Caveat:wght@500&display=swap" rel="stylesheet">
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-warm: #FAF8F5;
+      --text-primary: #1A1A1A;
+      --text-secondary: #5C5C5C;
+      --text-muted: #8A8A8A;
+      --pain-coral: #E8654A;
+      --pain-coral-soft: #FDF3F0;
+      --pain-amber: #D4920A;
+      --pain-amber-soft: #FEF9EC;
+      --pain-red: #C73E3E;
+      --pain-red-soft: #FDF0F0;
+      --solution-teal: #0D7C66;
+      --solution-teal-soft: #E8F5F2;
+      --line-light: #E5E2DD;
+      --shadow-soft: rgba(26, 26, 26, 0.04);
+    }
+
+    body {
+      font-family: 'Pretendard', -apple-system, sans-serif;
+      background: var(--bg-warm);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 60px 40px 80px;
+      position: relative;
+    }
+
+    /* Headline Section */
+    .headline-section {
+      text-align: center;
+      margin-bottom: 64px;
+      position: relative;
+    }
+
+    .headline-tag {
+      font-family: 'Caveat', cursive;
+      font-size: 22px;
+      color: var(--pain-coral);
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+      opacity: 0;
+      animation: fadeSlideUp 0.6s ease forwards;
+    }
+
+    .headline {
+      font-family: 'Noto Serif KR', serif;
+      font-size: clamp(32px, 5vw, 48px);
+      font-weight: 600;
+      line-height: 1.35;
+      color: var(--text-primary);
+      opacity: 0;
+      animation: fadeSlideUp 0.6s ease 0.1s forwards;
+    }
+
+    .headline-underline {
+      display: inline-block;
+      position: relative;
+    }
+
+    .headline-underline::after {
+      content: '';
+      position: absolute;
+      bottom: 4px;
+      left: 0;
+      right: 0;
+      height: 12px;
+      background: linear-gradient(90deg, var(--pain-coral) 0%, var(--pain-amber) 100%);
+      opacity: 0.25;
+      z-index: -1;
+      transform: scaleX(0);
+      transform-origin: left;
+      animation: underlineExpand 0.8s ease 0.5s forwards;
+    }
+
+    /* Timeline Container */
+    .timeline-container {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 48px;
+    }
+
+    /* Connecting Line */
+    .timeline-line {
+      position: absolute;
+      top: 48px;
+      left: 10%;
+      right: 10%;
+      height: 2px;
+      background: var(--line-light);
+      z-index: 0;
+    }
+
+    .timeline-line::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--pain-coral), var(--pain-amber), var(--pain-red));
+      animation: lineProgress 2s ease 0.8s forwards;
+    }
+
+    /* Pain Cards */
+    .pain-card {
+      position: relative;
+      background: #FFFFFF;
+      border-radius: 20px;
+      padding: 32px 28px 28px;
+      box-shadow: 0 2px 24px var(--shadow-soft);
+      z-index: 1;
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    .pain-card:nth-child(1) { animation: fadeSlideUp 0.5s ease 0.3s forwards; }
+    .pain-card:nth-child(2) { animation: fadeSlideUp 0.5s ease 0.5s forwards; }
+    .pain-card:nth-child(3) { animation: fadeSlideUp 0.5s ease 0.7s forwards; }
+
+    .pain-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      border-radius: 20px 20px 0 0;
+    }
+
+    .pain-card:nth-child(1)::before { background: var(--pain-coral); }
+    .pain-card:nth-child(2)::before { background: var(--pain-amber); }
+    .pain-card:nth-child(3)::before { background: var(--pain-red); }
+
+    .card-time-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+
+    .pain-card:nth-child(1) .card-time-badge {
+      background: var(--pain-coral-soft);
+      color: var(--pain-coral);
+    }
+    .pain-card:nth-child(2) .card-time-badge {
+      background: var(--pain-amber-soft);
+      color: var(--pain-amber);
+    }
+    .pain-card:nth-child(3) .card-time-badge {
+      background: var(--pain-red-soft);
+      color: var(--pain-red);
+    }
+
+    .card-title {
+      font-family: 'Noto Serif KR', serif;
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+
+    .card-scenario {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      margin-bottom: 20px;
+      padding: 16px;
+      background: #FAFAFA;
+      border-radius: 12px;
+      border-left: 3px solid var(--line-light);
+      font-style: italic;
+    }
+
+    .card-action {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .card-action svg {
+      flex-shrink: 0;
+    }
+
+    .card-result {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px dashed var(--line-light);
+    }
+
+    .result-time {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .pain-card:nth-child(1) .result-time { color: var(--pain-coral); }
+    .pain-card:nth-child(2) .result-time { color: var(--pain-amber); }
+    .pain-card:nth-child(3) .result-time { color: var(--pain-red); }
+
+    .result-label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Loss indicator for card 3 */
+    .loss-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--pain-red);
+      padding: 6px 12px;
+      background: var(--pain-red-soft);
+      border-radius: 6px;
+    }
+
+    /* Hand-drawn annotation */
+    .annotation {
+      font-family: 'Caveat', cursive;
+      position: absolute;
+      font-size: 16px;
+      color: var(--pain-red);
+      opacity: 0;
+      animation: fadeIn 0.5s ease 1.5s forwards;
+    }
+
+    .annotation-arrow {
+      position: absolute;
+      opacity: 0;
+      animation: fadeIn 0.5s ease 1.5s forwards;
+    }
+
+    .card-3-annotation {
+      top: -30px;
+      right: 20px;
+      transform: rotate(-5deg);
+    }
+
+    /* Solution Section */
+    .solution-section {
+      position: relative;
+      margin-top: 20px;
+      opacity: 0;
+      animation: fadeSlideUp 0.6s ease 1.2s forwards;
+    }
+
+    .solution-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+
+    .divider-line {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--line-light), transparent);
+    }
+
+    .divider-text {
+      font-family: 'Caveat', cursive;
+      font-size: 20px;
+      color: var(--solution-teal);
+      white-space: nowrap;
+    }
+
+    .solution-card {
+      background: linear-gradient(135deg, var(--solution-teal) 0%, #0A6B58 100%);
+      border-radius: 24px;
+      padding: 40px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 40px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .solution-card::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .solution-content {
+      flex: 1;
+    }
+
+    .solution-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 12px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .solution-title {
+      font-family: 'Noto Serif KR', serif;
+      font-size: clamp(24px, 3.5vw, 32px);
+      font-weight: 600;
+      color: #FFFFFF;
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+
+    .solution-subtitle {
+      font-size: 16px;
+      color: rgba(255,255,255,0.8);
+    }
+
+    .solution-flow {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .flow-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .flow-icon {
+      width: 56px;
+      height: 56px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(10px);
+    }
+
+    .flow-label {
+      font-size: 13px;
+      color: rgba(255,255,255,0.8);
+      white-space: nowrap;
+    }
+
+    .flow-arrow {
+      color: rgba(255,255,255,0.4);
+    }
+
+    .flow-result {
+      background: #FFFFFF;
+      border-radius: 16px;
+      padding: 16px 24px;
+      text-align: center;
+    }
+
+    .flow-result-time {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--solution-teal);
+      line-height: 1;
+    }
+
+    .flow-result-unit {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .flow-result-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    /* Comparison badge */
+    .comparison-badge {
+      position: absolute;
+      bottom: -16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #FFFFFF;
+      border-radius: 100px;
+      padding: 10px 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0;
+      animation: badgePop 0.4s ease 1.8s forwards;
+    }
+
+    .comparison-old {
+      color: var(--pain-red);
+      text-decoration: line-through;
+      opacity: 0.7;
+    }
+
+    .comparison-arrow {
+      color: var(--text-muted);
+    }
+
+    .comparison-new {
+      color: var(--solution-teal);
+      font-weight: 700;
+    }
+
+    /* Animations */
+    @keyframes fadeSlideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes underlineExpand {
+      from { transform: scaleX(0); }
+      to { transform: scaleX(1); }
+    }
+
+    @keyframes lineProgress {
+      from { width: 0%; }
+      to { width: 100%; }
+    }
+
+    @keyframes badgePop {
+      0% {
+        opacity: 0;
+        transform: translateX(-50%) scale(0.8);
+      }
+      70% {
+        transform: translateX(-50%) scale(1.05);
+      }
+      100% {
+        opacity: 1;
+        transform: translateX(-50%) scale(1);
+      }
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .timeline-container {
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+
+      .timeline-line {
+        display: none;
+      }
+
+      .solution-card {
+        flex-direction: column;
+        text-align: center;
+        padding: 32px 24px 48px;
+      }
+
+      .solution-flow {
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Headline -->
+    <section class="headline-section">
+      <p class="headline-tag">Every recruiter knows this feeling...</p>
+      <h1 class="headline">혹시 <span class="headline-underline">이런 경험</span> 있으신가요?</h1>
+    </section>
+
+    <!-- Timeline -->
+    <div class="timeline-container">
+      <div class="timeline-line"></div>
+
+      <!-- Card 1: Morning -->
+      <article class="pain-card">
+        <div class="card-time-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          오전 9시
+        </div>
+        <h3 class="card-title">새 JD 도착</h3>
+        <p class="card-scenario">
+          "MLOps Engineer, Feature Store 경험 필수, Kubeflow/Airflow 우대..."
+        </p>
+        <div class="card-action">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+          "이게 다 뭐지?" 구글링 시작 🔍
+        </div>
+        <div class="card-result">
+          <span class="result-time">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+            2시간 소요
+          </span>
+          <span class="result-label">JD 파악만</span>
+        </div>
+      </article>
+
+      <!-- Card 2: Afternoon -->
+      <article class="pain-card">
+        <div class="card-time-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          오후 1시
+        </div>
+        <h3 class="card-title">후보자 찾기</h3>
+        <p class="card-scenario">
+          "그 후보... 작년에 봤는데... 2022년 폴더? 개발자 폴더? 시니어 폴더?"
+        </p>
+        <div class="card-action">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+          폴더 10개 열어서 Ctrl+F 📁
+        </div>
+        <div class="card-result">
+          <span class="result-time">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+            3시간 소요
+          </span>
+          <span class="result-label">후보자 찾기만</span>
+        </div>
+      </article>
+
+      <!-- Card 3: Evening -->
+      <article class="pain-card">
+        <span class="annotation card-3-annotation">매일 이러면 안되는데... 😓</span>
+        <div class="card-time-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          오후 6시
+        </div>
+        <h3 class="card-title">결과</h3>
+        <p class="card-scenario">
+          "오늘 제안 못하겠네... 내일 아침에 보내야지"
+        </p>
+        <div class="card-action">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+          경쟁사가 먼저 제안할 수도 ⚠️
+        </div>
+        <div class="card-result">
+          <span class="loss-indicator">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M12 9v4M12 17h.01"/>
+              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            </svg>
+            기회 손실
+          </span>
+          <span class="result-label">하루 종일 허탕</span>
+        </div>
+      </article>
+    </div>
+
+    <!-- Solution -->
+    <section class="solution-section">
+      <div class="solution-divider">
+        <span class="divider-line"></span>
+        <span class="divider-text">✨ 만약 이렇게 바뀐다면?</span>
+        <span class="divider-line"></span>
+      </div>
+
+      <div class="solution-card">
+        <div class="solution-content">
+          <span class="solution-brand">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="3" width="18" height="18" rx="4" fill="white" fill-opacity="0.2"/>
+              <path d="M8 12h8M12 8v8" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            서치드
+          </span>
+          <h2 class="solution-title">JD가 도착하면,<br/>5분 후 후보 3명 제안 완료</h2>
+          <p class="solution-subtitle">AI가 JD를 분석하고, 최적의 후보를 즉시 매칭합니다</p>
+        </div>
+
+        <div class="solution-flow">
+          <div class="flow-step">
+            <div class="flow-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+              </svg>
+            </div>
+            <span class="flow-label">JD 도착</span>
+          </div>
+
+          <svg class="flow-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+
+          <div class="flow-step">
+            <div class="flow-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35"/>
+              </svg>
+            </div>
+            <span class="flow-label">AI 분석</span>
+          </div>
+
+          <svg class="flow-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+
+          <div class="flow-result">
+            <div class="flow-result-time">5분</div>
+            <div class="flow-result-unit">만에</div>
+            <div class="flow-result-desc">후보 3명 제안 ✓</div>
+          </div>
+        </div>
+
+        <div class="comparison-badge">
+          <span class="comparison-old">5시간+</span>
+          <svg class="comparison-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+          <span class="comparison-new">5분</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

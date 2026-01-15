@@ -81,7 +81,16 @@
       "Bash(git restore:*)",
       "Bash(git reset:*)",
       "Bash(node -e:*)",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "Bash(xargs:*)",
+      "Bash(npm ls:*)",
+      "Skill(slack-gif-creator)",
+      "Skill(frontend-design)",
+      "Skill(canvas-design)",
+      "Bash(start \"\" \"D:\\\\RAI\\\\recruiter-pain-redesign.html\")",
+      "Bash(start \"\" \"D:\\\\RAI\\\\recruiter-pain-v2.html\")",
+      "Bash(start \"\" \"D:\\\\RAI\\\\recruiter-pain-v3.html\")",
+      "Skill(webapp-testing)"
     ]
   }
 }

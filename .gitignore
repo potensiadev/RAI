@@ -54,3 +54,4 @@ nul
 
 # Claude temp files
 tmpclaude-*
+tests/.auth/

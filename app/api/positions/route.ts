@@ -184,35 +184,35 @@ export async function POST(request: NextRequest) {
       return apiInternalError(`포지션 생성 실패: ${insertError.message || insertError.code || 'Unknown error'}`);
     }
 
-    // 자동 매칭 실행 (백그라운드)
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).rpc("save_position_matches", {
-        p_position_id: position.id,
-        p_user_id: user.id,
-        p_limit: 50,
-        p_min_score: 0.3,
-      });
-    } catch (matchError) {
-      console.warn("Initial matching failed:", matchError);
-      // 매칭 실패해도 포지션 생성 성공으로 처리
-    }
-
-    // 활동 로그 기록 (실패해도 포지션 생성 성공으로 처리)
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: activityError } = await (supabase as any).from("position_activities").insert({
-        position_id: position.id,
-        activity_type: "position_created",
-        description: `"${data.title}" 포지션이 생성되었습니다.`,
-        created_by: user.id,
-      });
-      if (activityError) {
-        console.warn("Activity log insert failed:", activityError);
+    // 자동 매칭 및 활동 로그는 non-blocking으로 실행 (응답 속도 최적화)
+    // Promise.allSettled를 사용하여 병렬로 실행하고 결과를 기다리지 않음
+    const backgroundTasks = async () => {
+      try {
+        await Promise.allSettled([
+          // 자동 매칭 실행
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (supabase as any).rpc("save_position_matches", {
+            p_position_id: position.id,
+            p_user_id: user.id,
+            p_limit: 50,
+            p_min_score: 0.3,
+          }),
+          // 활동 로그 기록
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (supabase as any).from("position_activities").insert({
+            position_id: position.id,
+            activity_type: "position_created",
+            description: `"${data.title}" 포지션이 생성되었습니다.`,
+            created_by: user.id,
+          }),
+        ]);
+      } catch (error) {
+        console.warn("Background tasks error:", error);
       }
-    } catch (activityLogError) {
-      console.warn("Activity log error:", activityLogError);
-    }
+    };
+
+    // Fire-and-forget: don't await background tasks for faster response
+    backgroundTasks().catch((err) => console.warn("Background tasks failed:", err));
 
     return apiSuccess(toPosition(position as Record<string, unknown>), {
       message: "포지션이 생성되었습니다.",

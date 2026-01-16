@@ -76,6 +76,7 @@ export default function NewPositionPage() {
   const [skillInput, setSkillInput] = useState("");
   const [preferredSkillInput, setPreferredSkillInput] = useState("");
   const [majorInput, setMajorInput] = useState("");
+  const [salaryError, setSalaryError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<FormData>({
     title: "",
@@ -179,6 +180,14 @@ export default function NewPositionPage() {
       return;
     }
 
+    // Salary validation
+    if (formData.salaryMin !== null && formData.salaryMax !== null && formData.salaryMax < formData.salaryMin) {
+      setSalaryError("연봉 상한 금액이 연봉 하한 금액보다 낮게 입력되었어요. 다시 확인해주세요.");
+      toast.error("오류", "연봉 상한 금액이 연봉 하한 금액보다 낮게 입력되었어요. 다시 확인해주세요.");
+      return;
+    }
+    setSalaryError(null);
+
     setIsSubmitting(true);
 
     try {
@@ -194,12 +203,14 @@ export default function NewPositionPage() {
         throw new Error(data.error?.message || "포지션 생성에 실패했습니다.");
       }
 
+      // Optimistic navigation: redirect immediately, toast in parallel
+      const targetUrl = `/positions/${data.data.id}`;
+      router.prefetch(targetUrl);
       toast.success("성공", "포지션이 생성되었습니다.");
-      router.push(`/positions/${data.data.id}`);
+      router.push(targetUrl);
     } catch (error) {
       console.error("Create position error:", error);
       toast.error("오류", error instanceof Error ? error.message : "포지션 생성에 실패했습니다.");
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -631,13 +642,23 @@ export default function NewPositionPage() {
                 min="0"
                 step="100"
                 value={formData.salaryMin ?? ""}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  salaryMin: e.target.value ? parseInt(e.target.value) : null,
-                })}
+                onChange={(e) => {
+                  const newMin = e.target.value ? parseInt(e.target.value) : null;
+                  setFormData({ ...formData, salaryMin: newMin });
+                  // Real-time validation
+                  if (newMin !== null && formData.salaryMax !== null && formData.salaryMax < newMin) {
+                    setSalaryError("연봉 상한 금액이 연봉 하한 금액보다 낮게 입력되었어요. 다시 확인해주세요.");
+                  } else {
+                    setSalaryError(null);
+                  }
+                }}
                 placeholder="예: 5000"
-                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
-                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                className={cn(
+                  "w-full px-4 py-3 rounded-xl bg-white border text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all",
+                  salaryError
+                    ? "border-red-400 focus:border-red-500 focus:ring-red-200"
+                    : "border-gray-200 focus:border-primary focus:ring-primary/20"
+                )}
               />
             </div>
 
@@ -648,16 +669,29 @@ export default function NewPositionPage() {
                 min="0"
                 step="100"
                 value={formData.salaryMax ?? ""}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  salaryMax: e.target.value ? parseInt(e.target.value) : null,
-                })}
+                onChange={(e) => {
+                  const newMax = e.target.value ? parseInt(e.target.value) : null;
+                  setFormData({ ...formData, salaryMax: newMax });
+                  // Real-time validation
+                  if (formData.salaryMin !== null && newMax !== null && newMax < formData.salaryMin) {
+                    setSalaryError("연봉 상한 금액이 연봉 하한 금액보다 낮게 입력되었어요. 다시 확인해주세요.");
+                  } else {
+                    setSalaryError(null);
+                  }
+                }}
                 placeholder="예: 8000"
-                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
-                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                className={cn(
+                  "w-full px-4 py-3 rounded-xl bg-white border text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all",
+                  salaryError
+                    ? "border-red-400 focus:border-red-500 focus:ring-red-200"
+                    : "border-gray-200 focus:border-primary focus:ring-primary/20"
+                )}
               />
             </div>
           </div>
+          {salaryError && (
+            <p className="text-sm text-red-500 mt-2">{salaryError}</p>
+          )}
         </section>
 
         {/* 우선순위 & 마감일 */}

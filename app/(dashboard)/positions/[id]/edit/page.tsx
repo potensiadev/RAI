@@ -83,6 +83,7 @@ export default function EditPositionPage() {
   const [skillInput, setSkillInput] = useState("");
   const [preferredSkillInput, setPreferredSkillInput] = useState("");
   const [majorInput, setMajorInput] = useState("");
+  const [salaryError, setSalaryError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<FormData>({
     title: "",
@@ -161,6 +162,14 @@ export default function EditPositionPage() {
       toast.error("오류", "최소 하나의 필수 스킬을 입력해주세요.");
       return;
     }
+
+    // Salary validation
+    if (formData.salaryMin !== null && formData.salaryMax !== null && formData.salaryMax < formData.salaryMin) {
+      setSalaryError("연봉 상한 금액이 연봉 하한 금액보다 낮게 입력되었어요. 다시 확인해주세요.");
+      toast.error("오류", "연봉 상한 금액이 연봉 하한 금액보다 낮게 입력되었어요. 다시 확인해주세요.");
+      return;
+    }
+    setSalaryError(null);
 
     setIsSubmitting(true);
 
@@ -244,40 +253,40 @@ export default function EditPositionPage() {
       <div className="flex items-center gap-4">
         <Link
           href={`/positions/${positionId}`}
-          className="p-2 rounded-lg hover:bg-white/5 transition-colors"
+          className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-900 transition-colors"
         >
-          <ArrowLeft className="w-5 h-5 text-slate-400" />
+          <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-white">포지션 수정</h1>
-          <p className="text-slate-400 text-sm mt-1">{formData.title}</p>
+          <h1 className="text-2xl font-bold text-gray-900">포지션 수정</h1>
+          <p className="text-gray-500 text-sm mt-1">{formData.title}</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* 기본 정보 */}
-        <section className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-          <div className="flex items-center gap-2 text-white font-medium">
-            <Briefcase className="w-5 h-5 text-primary" />
+        <section className="p-6 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
+            <Briefcase className="w-5 h-5 text-gray-400" />
             기본 정보
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-sm text-slate-400 mb-2">
-                포지션명 <span className="text-red-400">*</span>
+              <label className="block text-sm text-gray-500 mb-2">
+                포지션명 <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">
+              <label className="block text-sm text-gray-500 mb-2">
                 <Building2 className="w-4 h-4 inline mr-1" />
                 고객사
               </label>
@@ -285,29 +294,29 @@ export default function EditPositionPage() {
                 type="text"
                 value={formData.clientCompany}
                 onChange={(e) => setFormData({ ...formData, clientCompany: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">부서</label>
+              <label className="block text-sm text-gray-500 mb-2">부서</label>
               <input
                 type="text"
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">상태</label>
+              <label className="block text-sm text-gray-500 mb-2">상태</label>
               <select
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as PositionStatus })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white
-                         focus:outline-none focus:border-primary/50 cursor-pointer"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 text-gray-900
+                         focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 cursor-pointer transition-all"
               >
                 {STATUSES.map((s) => (
                   <option key={s.value} value={s.value}>
@@ -318,12 +327,12 @@ export default function EditPositionPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">우선순위</label>
+              <label className="block text-sm text-gray-500 mb-2">우선순위</label>
               <select
                 value={formData.priority}
                 onChange={(e) => setFormData({ ...formData, priority: e.target.value as PositionPriority })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white
-                         focus:outline-none focus:border-primary/50 cursor-pointer"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 text-gray-900
+                         focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 cursor-pointer transition-all"
               >
                 {PRIORITIES.map((p) => (
                   <option key={p.value} value={p.value}>
@@ -335,7 +344,7 @@ export default function EditPositionPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-slate-400 mb-2">
+            <label className="block text-sm text-gray-500 mb-2">
               <FileText className="w-4 h-4 inline mr-1" />
               상세 설명 (JD)
             </label>
@@ -343,22 +352,22 @@ export default function EditPositionPage() {
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={6}
-              className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                       text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50 resize-none"
+              className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                       text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none transition-all"
             />
           </div>
         </section>
 
         {/* 스킬 요건 */}
-        <section className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-          <div className="flex items-center gap-2 text-white font-medium">
-            <Users className="w-5 h-5 text-primary" />
+        <section className="p-6 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
+            <Users className="w-5 h-5 text-gray-400" />
             스킬 요건
           </div>
 
           <div>
-            <label className="block text-sm text-slate-400 mb-2">
-              필수 스킬 <span className="text-red-400">*</span>
+            <label className="block text-sm text-gray-500 mb-2">
+              필수 스킬 <span className="text-red-500">*</span>
             </label>
             <div className="flex gap-2">
               <input
@@ -371,14 +380,14 @@ export default function EditPositionPage() {
                     addSkill("required");
                   }
                 }}
-                placeholder="스킬 입력 후 Enter"
-                className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                placeholder="스킬 입력 후 Enter (쉼표로 여러 개 입력)"
+                className="flex-1 px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
               <button
                 type="button"
                 onClick={() => addSkill("required")}
-                className="px-4 py-3 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
+                className="px-4 py-3 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -388,13 +397,13 @@ export default function EditPositionPage() {
                 {formData.requiredSkills.map((skill) => (
                   <span
                     key={skill}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/20 text-primary text-sm"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-sm font-medium"
                   >
                     {skill}
                     <button
                       type="button"
                       onClick={() => removeSkill("required", skill)}
-                      className="hover:text-white transition-colors"
+                      className="hover:text-primary/70 transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -405,7 +414,7 @@ export default function EditPositionPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-slate-400 mb-2">우대 스킬</label>
+            <label className="block text-sm text-gray-500 mb-2">우대 스킬</label>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -418,13 +427,13 @@ export default function EditPositionPage() {
                   }
                 }}
                 placeholder="스킬 입력 후 Enter"
-                className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="flex-1 px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
               <button
                 type="button"
                 onClick={() => addSkill("preferred")}
-                className="px-4 py-3 rounded-xl bg-slate-700/50 text-slate-300 hover:bg-slate-700 transition-colors"
+                className="px-4 py-3 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -434,13 +443,13 @@ export default function EditPositionPage() {
                 {formData.preferredSkills.map((skill) => (
                   <span
                     key={skill}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/50 text-slate-300 text-sm"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium"
                   >
                     {skill}
                     <button
                       type="button"
                       onClick={() => removeSkill("preferred", skill)}
-                      className="hover:text-white transition-colors"
+                      className="hover:text-gray-900 transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -452,27 +461,27 @@ export default function EditPositionPage() {
         </section>
 
         {/* 경력 & 학력 */}
-        <section className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-          <div className="flex items-center gap-2 text-white font-medium">
-            <GraduationCap className="w-5 h-5 text-primary" />
+        <section className="p-6 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
+            <GraduationCap className="w-5 h-5 text-gray-400" />
             경력 & 학력
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-400 mb-2">최소 경력 (년)</label>
+              <label className="block text-sm text-gray-500 mb-2">최소 경력 (년)</label>
               <input
                 type="number"
                 min="0"
                 value={formData.minExpYears}
                 onChange={(e) => setFormData({ ...formData, minExpYears: parseInt(e.target.value) || 0 })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">최대 경력 (년)</label>
+              <label className="block text-sm text-gray-500 mb-2">최대 경력 (년)</label>
               <input
                 type="number"
                 min="0"
@@ -482,18 +491,18 @@ export default function EditPositionPage() {
                   maxExpYears: e.target.value ? parseInt(e.target.value) : null,
                 })}
                 placeholder="무관"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">학력 요건</label>
+              <label className="block text-sm text-gray-500 mb-2">학력 요건</label>
               <select
                 value={formData.requiredEducationLevel}
                 onChange={(e) => setFormData({ ...formData, requiredEducationLevel: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white
-                         focus:outline-none focus:border-primary/50 cursor-pointer"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 text-gray-900
+                         focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 cursor-pointer transition-all"
               >
                 {EDUCATION_LEVELS.map((level) => (
                   <option key={level.value} value={level.value}>
@@ -504,7 +513,7 @@ export default function EditPositionPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">우대 전공</label>
+              <label className="block text-sm text-gray-500 mb-2">우대 전공</label>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -517,13 +526,13 @@ export default function EditPositionPage() {
                     }
                   }}
                   placeholder="전공 입력"
-                  className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                           text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                  className="flex-1 px-4 py-3 rounded-xl bg-white border border-gray-200
+                           text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                 />
                 <button
                   type="button"
                   onClick={addMajor}
-                  className="px-3 rounded-xl bg-slate-700/50 text-slate-300 hover:bg-slate-700 transition-colors"
+                  className="px-3 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -533,11 +542,11 @@ export default function EditPositionPage() {
                   {formData.preferredMajors.map((major) => (
                     <span
                       key={major}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-700/50 text-slate-300 text-xs"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-medium"
                     >
                       {major}
                       <button type="button" onClick={() => removeMajor(major)}>
-                        <X className="w-3 h-3" />
+                        <X className="w-3 h-3 text-gray-400 hover:text-gray-600" />
                       </button>
                     </span>
                   ))}
@@ -548,20 +557,20 @@ export default function EditPositionPage() {
         </section>
 
         {/* 근무 조건 */}
-        <section className="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-          <div className="flex items-center gap-2 text-white font-medium">
-            <MapPin className="w-5 h-5 text-primary" />
+        <section className="p-6 rounded-2xl bg-white border border-gray-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 text-gray-900 font-medium">
+            <MapPin className="w-5 h-5 text-gray-400" />
             근무 조건
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-400 mb-2">근무 형태</label>
+              <label className="block text-sm text-gray-500 mb-2">근무 형태</label>
               <select
                 value={formData.jobType}
                 onChange={(e) => setFormData({ ...formData, jobType: e.target.value as JobType })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white
-                         focus:outline-none focus:border-primary/50 cursor-pointer"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 text-gray-900
+                         focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 cursor-pointer transition-all"
               >
                 {JOB_TYPES.map((type) => (
                   <option key={type.value} value={type.value}>
@@ -572,18 +581,19 @@ export default function EditPositionPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">근무지</label>
+              <label className="block text-sm text-gray-500 mb-2">근무지</label>
               <input
                 type="text"
                 value={formData.locationCity}
                 onChange={(e) => setFormData({ ...formData, locationCity: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                placeholder="예: 서울 강남"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">
+              <label className="block text-sm text-gray-500 mb-2">
                 <DollarSign className="w-4 h-4 inline mr-1" />
                 연봉 하한 (만원)
               </label>
@@ -592,33 +602,55 @@ export default function EditPositionPage() {
                 min="0"
                 step="100"
                 value={formData.salaryMin ?? ""}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  salaryMin: e.target.value ? parseInt(e.target.value) : null,
-                })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                onChange={(e) => {
+                  const newMin = e.target.value ? parseInt(e.target.value) : null;
+                  setFormData({ ...formData, salaryMin: newMin });
+                  // Real-time validation
+                  if (newMin !== null && formData.salaryMax !== null && formData.salaryMax < newMin) {
+                    setSalaryError("연봉 상한 금액이 연봉 하한 금액보다 낮게 입력되었어요. 다시 확인해주세요.");
+                  } else {
+                    setSalaryError(null);
+                  }
+                }}
+                placeholder="예: 5000"
+                className={cn(
+                  "w-full px-4 py-3 rounded-xl bg-white border text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all",
+                  salaryError
+                    ? "border-red-400 focus:border-red-500 focus:ring-red-200"
+                    : "border-gray-200 focus:border-primary focus:ring-primary/20"
+                )}
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">연봉 상한 (만원)</label>
+              <label className="block text-sm text-gray-500 mb-2">연봉 상한 (만원)</label>
               <input
                 type="number"
                 min="0"
                 step="100"
                 value={formData.salaryMax ?? ""}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  salaryMax: e.target.value ? parseInt(e.target.value) : null,
-                })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white placeholder:text-slate-500 focus:outline-none focus:border-primary/50"
+                onChange={(e) => {
+                  const newMax = e.target.value ? parseInt(e.target.value) : null;
+                  setFormData({ ...formData, salaryMax: newMax });
+                  // Real-time validation
+                  if (formData.salaryMin !== null && newMax !== null && newMax < formData.salaryMin) {
+                    setSalaryError("연봉 상한 금액이 연봉 하한 금액보다 낮게 입력되었어요. 다시 확인해주세요.");
+                  } else {
+                    setSalaryError(null);
+                  }
+                }}
+                placeholder="예: 8000"
+                className={cn(
+                  "w-full px-4 py-3 rounded-xl bg-white border text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all",
+                  salaryError
+                    ? "border-red-400 focus:border-red-500 focus:ring-red-200"
+                    : "border-gray-200 focus:border-primary focus:ring-primary/20"
+                )}
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-400 mb-2">
+              <label className="block text-sm text-gray-500 mb-2">
                 <Calendar className="w-4 h-4 inline mr-1" />
                 채용 마감일
               </label>
@@ -626,18 +658,21 @@ export default function EditPositionPage() {
                 type="date"
                 value={formData.deadline}
                 onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10
-                         text-white focus:outline-none focus:border-primary/50"
+                className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200
+                         text-gray-900 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
           </div>
+          {salaryError && (
+            <p className="text-sm text-red-500 mt-2">{salaryError}</p>
+          )}
         </section>
 
         {/* Submit Buttons */}
         <div className="flex items-center justify-end gap-4">
           <Link
             href={`/positions/${positionId}`}
-            className="px-6 py-3 rounded-xl text-slate-400 hover:text-white transition-colors"
+            className="px-6 py-3 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
           >
             취소
           </Link>
@@ -645,9 +680,9 @@ export default function EditPositionPage() {
             type="submit"
             disabled={isSubmitting}
             className={cn(
-              "flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-colors",
+              "flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all shadow-md active:scale-95",
               isSubmitting
-                ? "bg-primary/50 text-white/50 cursor-not-allowed"
+                ? "bg-primary/50 text-white cursor-not-allowed"
                 : "bg-primary hover:bg-primary/90 text-white"
             )}
           >

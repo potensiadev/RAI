@@ -35,7 +35,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Worker URL
-const WORKER_URL = process.env.WORKER_URL || "http://localhost:8000";
+const WORKER_URL = process.env.WORKER_URL || "http://localhost:3000";
 
 interface UploadResponse {
   success: boolean;
@@ -313,7 +313,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
     try {
       const response = await fetch(`${WORKER_URL}/pipeline`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": process.env.WEBHOOK_SECRET || "",
+        },
         body: JSON.stringify(workerPayload),
         signal: AbortSignal.timeout(WORKER_PIPELINE_TIMEOUT),
       });

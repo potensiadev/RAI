@@ -762,6 +762,12 @@ def process_resume(
             error_code="INTERNAL_ERROR",
             error_message=str(e)
         )
+        # 실패 시 candidate 상태도 업데이트
+        if candidate_id:
+            db_service.update_candidate_status(
+                candidate_id=candidate_id,
+                status="failed",
+            )
         notify_webhook(job_id, "failed", error=str(e))
         return {"success": False, "error": str(e)}
 
@@ -873,6 +879,12 @@ def full_pipeline(
             error_code="INTERNAL_ERROR",
             error_message=str(e)
         )
+        # 실패 시 candidate 상태도 업데이트
+        if candidate_id:
+            db_service.update_candidate_status(
+                candidate_id=candidate_id,
+                status="failed",
+            )
         notify_webhook(job_id, "failed", error=str(e))
         return {"success": False, "error": str(e)}
 

@@ -1267,6 +1267,13 @@ async def run_pipeline(
             error_message=str(e)[:500],
         )
 
+        # 실패 시 candidate 상태도 업데이트
+        if candidate_id:
+            db_service.update_candidate_status(
+                candidate_id=candidate_id,
+                status="failed",
+            )
+
 
 @app.post("/pipeline", response_model=PipelineResponse)
 async def pipeline_endpoint(

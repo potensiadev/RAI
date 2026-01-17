@@ -16,7 +16,7 @@ interface NetworkStatus {
  */
 export function useNetworkStatus(onReconnect?: () => void) {
   const [status, setStatus] = useState<NetworkStatus>({
-    isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
+    isOnline: true, // Hydration Mismatch 방지: 서버/클라이언트 초기값 일치
     wasOffline: false,
     lastOnline: null,
   });
@@ -168,8 +168,8 @@ function isNetworkError(error: unknown): boolean {
   if (error instanceof TypeError) {
     // fetch 실패 시 TypeError 발생
     return error.message.includes("Failed to fetch") ||
-           error.message.includes("NetworkError") ||
-           error.message.includes("Network request failed");
+      error.message.includes("NetworkError") ||
+      error.message.includes("Network request failed");
   }
   return false;
 }

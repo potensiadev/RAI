@@ -1,554 +1,555 @@
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Migration 020: 검색 고도화 + 포지션 매칭 기능
--- 2026-01-10
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
--- ══════════════════════════════════════════════════════════════════════════
--- PART 1: 검색 고도화 (Task 1 P0)
--- ══════════════════════════════════════════════════════════════════════════
-
--- 1.1 pg_trgm 확장 활성화 (Fuzzy 매칭용)
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
--- 1.2 candidates 테이블에 추가 인덱스
-CREATE INDEX IF NOT EXISTS idx_candidates_last_company ON candidates(last_company);
-CREATE INDEX IF NOT EXISTS idx_candidates_education_level ON candidates(education_level);
-CREATE INDEX IF NOT EXISTS idx_candidates_updated_at ON candidates(updated_at);
-
--- 1.3 Immutable 래퍼 함수 (인덱스용)
-CREATE OR REPLACE FUNCTION skills_to_text(skills TEXT[])
-RETURNS TEXT AS $$
-    SELECT array_to_string(skills, ' ')
-$$ LANGUAGE SQL IMMUTABLE PARALLEL SAFE;
-
--- 1.4 트라이그램 인덱스 (Fuzzy 스킬 매칭용)
-CREATE INDEX IF NOT EXISTS idx_candidates_skills_trgm ON candidates
-  USING GIN (skills_to_text(skills) gin_trgm_ops);
-
--- 1.5 search_candidates 함수 업데이트 (회사 필터 추가)
-CREATE OR REPLACE FUNCTION search_candidates(
-    p_user_id UUID,
-    p_query_embedding vector(1536),
-    p_match_count INTEGER DEFAULT 10,
-    p_exp_years_min INTEGER DEFAULT NULL,
-    p_exp_years_max INTEGER DEFAULT NULL,
-    p_skills TEXT[] DEFAULT NULL,
-    p_location TEXT DEFAULT NULL,
-    -- 신규 파라미터
-    p_companies TEXT[] DEFAULT NULL,
-    p_exclude_companies TEXT[] DEFAULT NULL,
-    p_education_level TEXT DEFAULT NULL
-)
-RETURNS TABLE (
-    id UUID,
-    name TEXT,
-    last_position TEXT,
-    last_company TEXT,
-    exp_years INTEGER,
-    skills TEXT[],
-    photo_url TEXT,
-    summary TEXT,
-    confidence_score FLOAT,
-    requires_review BOOLEAN,
-    risk_level TEXT,
-    created_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ,
-    match_score FLOAT
-) AS $$
-BEGIN
-    RETURN QUERY
-    WITH filtered_candidates AS (
-        SELECT c.*
-        FROM candidates c
-        WHERE c.user_id = p_user_id
-          AND c.is_latest = true
-          AND c.status = 'completed'
-          -- 기존 필터
-          AND (p_exp_years_min IS NULL OR c.exp_years >= p_exp_years_min)
-          AND (p_exp_years_max IS NULL OR c.exp_years <= p_exp_years_max)
-          AND (p_skills IS NULL OR c.skills && p_skills)
-          AND (p_location IS NULL OR c.location_city ILIKE '%' || p_location || '%')
-          -- 신규 필터: 회사 포함
-          AND (p_companies IS NULL OR EXISTS (
-              SELECT 1 FROM unnest(p_companies) AS comp
-              WHERE c.last_company ILIKE '%' || comp || '%'
-          ))
-          -- 신규 필터: 회사 제외
-          AND (p_exclude_companies IS NULL OR NOT EXISTS (
-              SELECT 1 FROM unnest(p_exclude_companies) AS comp
-              WHERE c.last_company ILIKE '%' || comp || '%'
-          ))
-          -- 신규 필터: 학력
-          AND (p_education_level IS NULL OR c.education_level = p_education_level)
-    ),
-    chunk_scores AS (
-        SELECT
-            cc.candidate_id,
-            MAX(
-                (1 - (cc.embedding <=> p_query_embedding)) *
-                CASE cc.chunk_type
-                    WHEN 'summary' THEN 1.0
-                    WHEN 'career' THEN 0.9
-                    WHEN 'skill' THEN 0.85
-                    WHEN 'project' THEN 0.8
-                    WHEN 'education' THEN 0.5
-                END
-            ) AS weighted_score
-        FROM candidate_chunks cc
-        WHERE cc.candidate_id IN (SELECT fc.id FROM filtered_candidates fc)
-        GROUP BY cc.candidate_id
-    )
-    SELECT
-        fc.id,
-        fc.name,
-        fc.last_position,
-        fc.last_company,
-        fc.exp_years,
-        fc.skills,
-        fc.photo_url,
-        fc.summary,
-        fc.confidence_score,
-        fc.requires_review,
-        fc.risk_level::TEXT,
-        fc.created_at,
-        fc.updated_at,
-        COALESCE(cs.weighted_score, 0) AS match_score
-    FROM filtered_candidates fc
-    LEFT JOIN chunk_scores cs ON fc.id = cs.candidate_id
-    ORDER BY match_score DESC
-    LIMIT p_match_count;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- ══════════════════════════════════════════════════════════════════════════
--- PART 2: 포지션 매칭 기능 (Task 2 P0)
--- ══════════════════════════════════════════════════════════════════════════
-
--- 2.1 positions 테이블
-CREATE TABLE IF NOT EXISTS positions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-
-    -- 기본 정보
-    title TEXT NOT NULL,
-    client_company TEXT,
-    department TEXT,
-
-    -- 상세 설명
-    description TEXT,
-    summary TEXT,
-
-    -- 필수 요건
-    required_skills TEXT[] DEFAULT '{}',
-    preferred_skills TEXT[] DEFAULT '{}',
-    min_exp_years INTEGER DEFAULT 0,
-    max_exp_years INTEGER,
-
-    -- 학력 요건
-    required_education_level TEXT,
-    preferred_majors TEXT[] DEFAULT '{}',
-
-    -- 근무 조건
-    location_city TEXT,
-    job_type TEXT DEFAULT 'full-time',
-    salary_min INTEGER,
-    salary_max INTEGER,
-
-    -- 벡터 검색용
-    embedding vector(1536),
-
-    -- 상태 관리
-    status TEXT DEFAULT 'open' CHECK (status IN ('open', 'paused', 'closed', 'filled')),
-    priority TEXT DEFAULT 'normal' CHECK (priority IN ('urgent', 'high', 'normal', 'low')),
-    deadline DATE,
-
-    -- 메타데이터
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 2.2 positions 인덱스
-CREATE INDEX IF NOT EXISTS idx_positions_user_id ON positions(user_id);
-CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
-CREATE INDEX IF NOT EXISTS idx_positions_priority ON positions(priority);
-CREATE INDEX IF NOT EXISTS idx_positions_skills ON positions USING GIN(required_skills);
-CREATE INDEX IF NOT EXISTS idx_positions_deadline ON positions(deadline);
-
--- 2.3 positions 벡터 인덱스
-CREATE INDEX IF NOT EXISTS idx_positions_embedding ON positions
-    USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
-
--- 2.4 position_candidates 테이블 (매칭 결과)
-CREATE TABLE IF NOT EXISTS position_candidates (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    position_id UUID NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
-    candidate_id UUID NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-
-    -- 매칭 점수 (0-1)
-    overall_score FLOAT NOT NULL,
-    skill_score FLOAT,
-    experience_score FLOAT,
-    education_score FLOAT,
-    semantic_score FLOAT,
-
-    -- 매칭 상세
-    matched_skills TEXT[] DEFAULT '{}',
-    missing_skills TEXT[] DEFAULT '{}',
-    match_explanation JSONB DEFAULT '{}',
-
-    -- 상태 관리
-    stage TEXT DEFAULT 'matched' CHECK (stage IN (
-        'matched', 'reviewed', 'contacted', 'interviewing',
-        'offered', 'placed', 'rejected', 'withdrawn'
-    )),
-    rejection_reason TEXT,
-    notes TEXT,
-
-    -- 타임스탬프
-    matched_at TIMESTAMPTZ DEFAULT NOW(),
-    stage_updated_at TIMESTAMPTZ DEFAULT NOW(),
-
-    UNIQUE(position_id, candidate_id)
-);
-
--- 2.5 position_candidates 인덱스
-CREATE INDEX IF NOT EXISTS idx_position_candidates_position ON position_candidates(position_id);
-CREATE INDEX IF NOT EXISTS idx_position_candidates_candidate ON position_candidates(candidate_id);
-CREATE INDEX IF NOT EXISTS idx_position_candidates_stage ON position_candidates(stage);
-CREATE INDEX IF NOT EXISTS idx_position_candidates_score ON position_candidates(overall_score DESC);
-
--- 2.6 position_activities 테이블 (활동 로그)
-CREATE TABLE IF NOT EXISTS position_activities (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    position_id UUID NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
-    candidate_id UUID REFERENCES candidates(id) ON DELETE SET NULL,
-
-    activity_type TEXT NOT NULL,
-    description TEXT,
-    metadata JSONB DEFAULT '{}',
-
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    created_by UUID REFERENCES users(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_position_activities_position ON position_activities(position_id);
-CREATE INDEX IF NOT EXISTS idx_position_activities_created ON position_activities(created_at DESC);
-
--- ══════════════════════════════════════════════════════════════════════════
--- PART 3: RLS 정책
--- ══════════════════════════════════════════════════════════════════════════
-
--- 3.1 positions RLS
-ALTER TABLE positions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS positions_select_own ON positions;
-CREATE POLICY positions_select_own ON positions
-    FOR SELECT USING (user_id = auth.uid());
-
-DROP POLICY IF EXISTS positions_insert_own ON positions;
-CREATE POLICY positions_insert_own ON positions
-    FOR INSERT WITH CHECK (user_id = auth.uid());
-
-DROP POLICY IF EXISTS positions_update_own ON positions;
-CREATE POLICY positions_update_own ON positions
-    FOR UPDATE USING (user_id = auth.uid());
-
-DROP POLICY IF EXISTS positions_delete_own ON positions;
-CREATE POLICY positions_delete_own ON positions
-    FOR DELETE USING (user_id = auth.uid());
-
--- 3.2 position_candidates RLS
-ALTER TABLE position_candidates ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS position_candidates_access ON position_candidates;
-CREATE POLICY position_candidates_access ON position_candidates
-    FOR ALL USING (
-        position_id IN (SELECT id FROM positions WHERE user_id = auth.uid())
-    );
-
--- 3.3 position_activities RLS
-ALTER TABLE position_activities ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS position_activities_access ON position_activities;
-CREATE POLICY position_activities_access ON position_activities
-    FOR ALL USING (
-        position_id IN (SELECT id FROM positions WHERE user_id = auth.uid())
-    );
-
--- ══════════════════════════════════════════════════════════════════════════
--- PART 4: 매칭 알고리즘 RPC 함수
--- ══════════════════════════════════════════════════════════════════════════
-
--- 4.1 포지션에 대한 후보자 매칭 함수
-CREATE OR REPLACE FUNCTION match_candidates_to_position(
-    p_position_id UUID,
-    p_user_id UUID,
-    p_limit INTEGER DEFAULT 50,
-    p_min_score FLOAT DEFAULT 0.0
-)
-RETURNS TABLE (
-    candidate_id UUID,
-    candidate_name TEXT,
-    last_position TEXT,
-    last_company TEXT,
-    exp_years INTEGER,
-    skills TEXT[],
-    photo_url TEXT,
-    overall_score FLOAT,
-    skill_score FLOAT,
-    experience_score FLOAT,
-    education_score FLOAT,
-    semantic_score FLOAT,
-    matched_skills TEXT[],
-    missing_skills TEXT[]
-) AS $$
-DECLARE
-    v_position RECORD;
-    v_required_skills_count INTEGER;
-BEGIN
-    -- 포지션 정보 조회
-    SELECT p.* INTO v_position
-    FROM positions p
-    WHERE p.id = p_position_id AND p.user_id = p_user_id;
-
-    IF v_position IS NULL THEN
-        RAISE EXCEPTION 'Position not found or access denied';
-    END IF;
-
-    v_required_skills_count := COALESCE(array_length(v_position.required_skills, 1), 0);
-
-    RETURN QUERY
-    WITH candidate_skill_match AS (
-        SELECT
-            c.id AS cid,
-            c.name,
-            c.last_position,
-            c.last_company,
-            c.exp_years,
-            c.skills,
-            c.photo_url,
-            c.education_level,
-            -- 매칭된 스킬
-            ARRAY(
-                SELECT s FROM unnest(v_position.required_skills) AS s
-                WHERE s = ANY(c.skills)
-            ) AS matched,
-            -- 부족한 스킬
-            ARRAY(
-                SELECT s FROM unnest(v_position.required_skills) AS s
-                WHERE NOT (s = ANY(c.skills))
-            ) AS missing
-        FROM candidates c
-        WHERE c.user_id = p_user_id
-          AND c.status = 'completed'
-          AND c.is_latest = true
-    ),
-    scores AS (
-        SELECT
-            csm.cid,
-            csm.name,
-            csm.last_position,
-            csm.last_company,
-            csm.exp_years,
-            csm.skills,
-            csm.photo_url,
-            csm.matched,
-            csm.missing,
-            -- Skill Score (0-1)
-            CASE
-                WHEN v_required_skills_count = 0 THEN 1.0
-                ELSE COALESCE(array_length(csm.matched, 1), 0)::FLOAT / v_required_skills_count
-            END AS s_score,
-            -- Experience Score (0-1)
-            CASE
-                WHEN csm.exp_years < v_position.min_exp_years THEN
-                    GREATEST(0.3, 1.0 - (v_position.min_exp_years - csm.exp_years) * 0.15)
-                WHEN v_position.max_exp_years IS NOT NULL AND csm.exp_years > v_position.max_exp_years THEN
-                    GREATEST(0.7, 1.0 - (csm.exp_years - v_position.max_exp_years) * 0.05)
-                ELSE 1.0
-            END AS e_score,
-            -- Education Score (0-1)
-            CASE
-                WHEN v_position.required_education_level IS NULL THEN 1.0
-                WHEN csm.education_level = v_position.required_education_level THEN 1.0
-                WHEN csm.education_level IN ('master', 'doctorate') AND v_position.required_education_level = 'bachelor' THEN 1.0
-                WHEN csm.education_level = 'doctorate' AND v_position.required_education_level = 'master' THEN 1.0
-                WHEN csm.education_level = 'bachelor' AND v_position.required_education_level IN ('master', 'doctorate') THEN 0.7
-                ELSE 0.5
-            END AS edu_score
-        FROM candidate_skill_match csm
-    ),
-    semantic_scores AS (
-        SELECT
-            cc.candidate_id,
-            MAX(1 - (cc.embedding <=> v_position.embedding)) AS sem_score
-        FROM candidate_chunks cc
-        WHERE cc.candidate_id IN (SELECT cid FROM scores)
-          AND cc.chunk_type = 'summary'
-          AND v_position.embedding IS NOT NULL
-        GROUP BY cc.candidate_id
-    ),
-    final_scores AS (
-        SELECT
-            s.cid,
-            s.name,
-            s.last_position,
-            s.last_company,
-            s.exp_years,
-            s.skills,
-            s.photo_url,
-            s.matched,
-            s.missing,
-            s.s_score,
-            s.e_score,
-            s.edu_score,
-            COALESCE(ss.sem_score, 0.5) AS sem_score,
-            -- Overall Score = Skill(40%) + Experience(25%) + Education(15%) + Semantic(20%)
-            (s.s_score * 0.40 + s.e_score * 0.25 + s.edu_score * 0.15 + COALESCE(ss.sem_score, 0.5) * 0.20) AS overall
-        FROM scores s
-        LEFT JOIN semantic_scores ss ON s.cid = ss.candidate_id
-    )
-    SELECT
-        fs.cid,
-        fs.name,
-        fs.last_position,
-        fs.last_company,
-        fs.exp_years,
-        fs.skills,
-        fs.photo_url,
-        fs.overall,
-        fs.s_score,
-        fs.e_score,
-        fs.edu_score,
-        fs.sem_score,
-        fs.matched,
-        fs.missing
-    FROM final_scores fs
-    WHERE fs.overall >= p_min_score
-    ORDER BY fs.overall DESC
-    LIMIT p_limit;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 4.2 매칭 결과 저장 함수
-CREATE OR REPLACE FUNCTION save_position_matches(
-    p_position_id UUID,
-    p_user_id UUID,
-    p_limit INTEGER DEFAULT 50,
-    p_min_score FLOAT DEFAULT 0.3
-)
-RETURNS INTEGER AS $$
-DECLARE
-    v_count INTEGER := 0;
-    v_match RECORD;
-BEGIN
-    -- 기존 'matched' 상태의 매칭만 삭제 (진행중인 것은 유지)
-    DELETE FROM position_candidates
-    WHERE position_id = p_position_id
-      AND stage = 'matched';
-
-    -- 새 매칭 저장
-    FOR v_match IN
-        SELECT * FROM match_candidates_to_position(p_position_id, p_user_id, p_limit, p_min_score)
-    LOOP
-        INSERT INTO position_candidates (
-            position_id,
-            candidate_id,
-            overall_score,
-            skill_score,
-            experience_score,
-            education_score,
-            semantic_score,
-            matched_skills,
-            missing_skills,
-            stage
-        ) VALUES (
-            p_position_id,
-            v_match.candidate_id,
-            v_match.overall_score,
-            v_match.skill_score,
-            v_match.experience_score,
-            v_match.education_score,
-            v_match.semantic_score,
-            v_match.matched_skills,
-            v_match.missing_skills,
-            'matched'
-        )
-        ON CONFLICT (position_id, candidate_id) DO UPDATE SET
-            overall_score = EXCLUDED.overall_score,
-            skill_score = EXCLUDED.skill_score,
-            experience_score = EXCLUDED.experience_score,
-            education_score = EXCLUDED.education_score,
-            semantic_score = EXCLUDED.semantic_score,
-            matched_skills = EXCLUDED.matched_skills,
-            missing_skills = EXCLUDED.missing_skills;
-
-        v_count := v_count + 1;
-    END LOOP;
-
-    -- 활동 로그 기록
-    INSERT INTO position_activities (position_id, activity_type, description, metadata, created_by)
-    VALUES (
-        p_position_id,
-        'matches_refreshed',
-        v_count || '명의 후보자가 매칭되었습니다.',
-        jsonb_build_object('match_count', v_count, 'min_score', p_min_score),
-        p_user_id
-    );
-
-    RETURN v_count;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 4.3 positions updated_at 트리거
-CREATE OR REPLACE FUNCTION update_positions_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trigger_positions_updated_at ON positions;
-CREATE TRIGGER trigger_positions_updated_at
-    BEFORE UPDATE ON positions
-    FOR EACH ROW
-    EXECUTE FUNCTION update_positions_updated_at();
-
--- 4.4 position_candidates stage 변경 트리거
-CREATE OR REPLACE FUNCTION update_position_candidates_stage_timestamp()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF OLD.stage IS DISTINCT FROM NEW.stage THEN
-        NEW.stage_updated_at = NOW();
-
-        -- 활동 로그 기록
-        INSERT INTO position_activities (position_id, candidate_id, activity_type, description, metadata)
-        VALUES (
-            NEW.position_id,
-            NEW.candidate_id,
-            'stage_changed',
-            '상태가 ' || OLD.stage || '에서 ' || NEW.stage || '로 변경되었습니다.',
-            jsonb_build_object('old_stage', OLD.stage, 'new_stage', NEW.stage)
-        );
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trigger_position_candidates_stage ON position_candidates;
-CREATE TRIGGER trigger_position_candidates_stage
-    BEFORE UPDATE ON position_candidates
-    FOR EACH ROW
-    EXECUTE FUNCTION update_position_candidates_stage_timestamp();
-
--- ══════════════════════════════════════════════════════════════════════════
--- PART 5: 코멘트
--- ══════════════════════════════════════════════════════════════════════════
-
-COMMENT ON TABLE positions IS '헤드헌터가 관리하는 채용 포지션 (JD)';
-COMMENT ON TABLE position_candidates IS '포지션-후보자 매칭 결과 및 진행 상태';
-COMMENT ON TABLE position_activities IS '포지션 관련 활동 로그';
-COMMENT ON FUNCTION match_candidates_to_position IS '포지션에 적합한 후보자 매칭 (스킬40% + 경력25% + 학력15% + 시맨틱20%)';
-COMMENT ON FUNCTION save_position_matches IS '매칭 결과를 position_candidates 테이블에 저장';
+-------------------------- --------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺----------------
+-------------------------- --------M--------i--------g--------r--------a--------t--------i--------o--------n-------- --------0--------2--------0--------:-------- --------寃----------------?--------?--------怨--------좊--------룄--------?--------?--------+-------- --------?--------ъ--------?--------?--------?--------留--------ㅼ--------묶-------- --------湲--------곕--------뒫----------------
+-------------------------- --------2--------0--------2--------6-----------------0--------1-----------------1--------0----------------
+-------------------------- --------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺--------?--------곣--------봺----------------
+----------------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+-------------------------- --------P--------A--------R--------T-------- --------1--------:-------- --------寃----------------?--------?--------怨--------좊--------룄--------?--------?--------(--------T--------a--------s--------k-------- --------1-------- --------P--------0--------)----------------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+----------------
+-------------------------- --------1--------.--------1-------- --------p--------g--------_--------t--------r--------g--------m-------- --------?--------뺤--------옣-------- --------?--------쒖--------꽦--------?--------?--------(--------F--------u--------z--------z--------y-------- --------留--------ㅼ--------묶--------?--------?----------------
+--------C--------R--------E--------A--------T--------E-------- --------E--------X--------T--------E--------N--------S--------I--------O--------N-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------p--------g--------_--------t--------r--------g--------m--------;----------------
+----------------
+-------------------------- --------1--------.--------2-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------?--------뚯--------씠--------釉--------붿--------뿉-------- --------異--------붽--------?-------- --------?--------몃--------뜳--------?--------?--------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y-------- --------O--------N-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(--------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------O--------N-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t-------- --------O--------N-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t--------)--------;----------------
+----------------
+-------------------------- --------1--------.--------3-------- --------I--------m--------m--------u--------t--------a--------b--------l--------e-------- --------?--------섑--------띁-------- --------?--------⑥--------닔-------- --------(--------?--------몃--------뜳--------?--------ㅼ--------슜--------)----------------
+--------C--------R--------E--------A--------T--------E-------- --------O--------R-------- --------R--------E--------P--------L--------A--------C--------E-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------s--------k--------i--------l--------l--------s--------_--------t--------o--------_--------t--------e--------x--------t--------(--------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]--------)----------------
+--------R--------E--------T--------U--------R--------N--------S-------- --------T--------E--------X--------T-------- --------A--------S-------- --------$--------$----------------
+-------- -------- -------- -------- --------S--------E--------L--------E--------C--------T-------- --------a--------r--------r--------a--------y--------_--------t--------o--------_--------s--------t--------r--------i--------n--------g--------(--------s--------k--------i--------l--------l--------s--------,-------- --------'-------- --------'--------)----------------
+--------$--------$-------- --------L--------A--------N--------G--------U--------A--------G--------E-------- --------S--------Q--------L-------- --------I--------M--------M--------U--------T--------A--------B--------L--------E-------- --------P--------A--------R--------A--------L--------L--------E--------L-------- --------S--------A--------F--------E--------;----------------
+----------------
+-------------------------- --------1--------.--------4-------- --------?--------몃--------씪--------?--------닿--------렇--------?--------?--------?--------몃--------뜳--------?--------?--------(--------F--------u--------z--------z--------y-------- --------?--------ㅽ--------궗-------- --------留--------ㅼ--------묶--------?--------?----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------s--------k--------i--------l--------l--------s--------_--------t--------r--------g--------m-------- --------O--------N-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------s----------------
+-------- -------- --------U--------S--------I--------N--------G-------- --------G--------I--------N-------- --------(--------s--------k--------i--------l--------l--------s--------_--------t--------o--------_--------t--------e--------x--------t--------(--------s--------k--------i--------l--------l--------s--------)-------- --------g--------i--------n--------_--------t--------r--------g--------m--------_--------o--------p--------s--------)--------;----------------
+----------------
+-------------------------- --------1--------.--------5-------- --------s--------e--------a--------r--------c--------h--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------?--------⑥--------닔-------- --------?--------낅--------뜲--------?--------댄--------듃-------- --------(--------?--------뚯--------궗-------- --------?--------꾪--------꽣-------- --------異--------붽--------?--------)----------------
+--------C--------R--------E--------A--------T--------E-------- --------O--------R-------- --------R--------E--------P--------L--------A--------C--------E-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------s--------e--------a--------r--------c--------h--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(----------------
+-------- -------- -------- -------- --------p--------_--------u--------s--------e--------r--------_--------i--------d-------- --------U--------U--------I--------D--------,----------------
+-------- -------- -------- -------- --------p--------_--------q--------u--------e--------r--------y--------_--------e--------m--------b--------e--------d--------d--------i--------n--------g-------- --------v--------e--------c--------t--------o--------r--------(--------1--------5--------3--------6--------)--------,----------------
+-------- -------- -------- -------- --------p--------_--------m--------a--------t--------c--------h--------_--------c--------o--------u--------n--------t-------- --------I--------N--------T--------E--------G--------E--------R-------- --------D--------E--------F--------A--------U--------L--------T-------- --------1--------0--------,----------------
+-------- -------- -------- -------- --------p--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s--------_--------m--------i--------n-------- --------I--------N--------T--------E--------G--------E--------R-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------U--------L--------L--------,----------------
+-------- -------- -------- -------- --------p--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s--------_--------m--------a--------x-------- --------I--------N--------T--------E--------G--------E--------R-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------U--------L--------L--------,----------------
+-------- -------- -------- -------- --------p--------_--------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------U--------L--------L--------,----------------
+-------- -------- -------- -------- --------p--------_--------l--------o--------c--------a--------t--------i--------o--------n-------- --------T--------E--------X--------T-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------U--------L--------L--------,----------------
+-------- -------- -------- -------- -------------------------- --------?--------좉--------퇋-------- --------?--------뚮--------씪--------誘--------명--------꽣----------------
+-------- -------- -------- -------- --------p--------_--------c--------o--------m--------p--------a--------n--------i--------e--------s-------- --------T--------E--------X--------T--------[--------]-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------U--------L--------L--------,----------------
+-------- -------- -------- -------- --------p--------_--------e--------x--------c--------l--------u--------d--------e--------_--------c--------o--------m--------p--------a--------n--------i--------e--------s-------- --------T--------E--------X--------T--------[--------]-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------U--------L--------L--------,----------------
+-------- -------- -------- -------- --------p--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------T--------E--------X--------T-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------U--------L--------L----------------
+--------)----------------
+--------R--------E--------T--------U--------R--------N--------S-------- --------T--------A--------B--------L--------E-------- --------(----------------
+-------- -------- -------- -------- --------i--------d-------- --------U--------U--------I--------D--------,----------------
+-------- -------- -------- -------- --------n--------a--------m--------e-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------l--------a--------s--------t--------_--------p--------o--------s--------i--------t--------i--------o--------n-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------e--------x--------p--------_--------y--------e--------a--------r--------s-------- --------I--------N--------T--------E--------G--------E--------R--------,----------------
+-------- -------- -------- -------- --------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]--------,----------------
+-------- -------- -------- -------- --------p--------h--------o--------t--------o--------_--------u--------r--------l-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------s--------u--------m--------m--------a--------r--------y-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------c--------o--------n--------f--------i--------d--------e--------n--------c--------e--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+-------- -------- -------- -------- --------r--------e--------q--------u--------i--------r--------e--------s--------_--------r--------e--------v--------i--------e--------w-------- --------B--------O--------O--------L--------E--------A--------N--------,----------------
+-------- -------- -------- -------- --------r--------i--------s--------k--------_--------l--------e--------v--------e--------l-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------c--------r--------e--------a--------t--------e--------d--------_--------a--------t-------- --------T--------I--------M--------E--------S--------T--------A--------M--------P--------T--------Z--------,----------------
+-------- -------- -------- -------- --------u--------p--------d--------a--------t--------e--------d--------_--------a--------t-------- --------T--------I--------M--------E--------S--------T--------A--------M--------P--------T--------Z--------,----------------
+-------- -------- -------- -------- --------m--------a--------t--------c--------h--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T----------------
+--------)-------- --------A--------S-------- --------$--------$----------------
+--------B--------E--------G--------I--------N----------------
+-------- -------- -------- -------- --------R--------E--------T--------U--------R--------N-------- --------Q--------U--------E--------R--------Y----------------
+-------- -------- -------- -------- --------W--------I--------T--------H-------- --------f--------i--------l--------t--------e--------r--------e--------d--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------A--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T-------- --------c--------.--------*----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------F--------R--------O--------M-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------c----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------c--------.--------u--------s--------e--------r--------_--------i--------d-------- --------=-------- --------p--------_--------u--------s--------e--------r--------_--------i--------d----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------c--------.--------i--------s--------_--------l--------a--------t--------e--------s--------t-------- --------=-------- --------t--------r--------u--------e----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------c--------.--------s--------t--------a--------t--------u--------s-------- --------=-------- --------'--------c--------o--------m--------p--------l--------e--------t--------e--------d--------'----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------湲--------곗--------〈-------- --------?--------꾪--------꽣----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------(--------p--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s--------_--------m--------i--------n-------- --------I--------S-------- --------N--------U--------L--------L-------- --------O--------R-------- --------c--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- -------->--------=-------- --------p--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s--------_--------m--------i--------n--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------(--------p--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s--------_--------m--------a--------x-------- --------I--------S-------- --------N--------U--------L--------L-------- --------O--------R-------- --------c--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- --------<--------=-------- --------p--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s--------_--------m--------a--------x--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------(--------p--------_--------s--------k--------i--------l--------l--------s-------- --------I--------S-------- --------N--------U--------L--------L-------- --------O--------R-------- --------c--------.--------s--------k--------i--------l--------l--------s-------- --------&--------&-------- --------p--------_--------s--------k--------i--------l--------l--------s--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------(--------p--------_--------l--------o--------c--------a--------t--------i--------o--------n-------- --------I--------S-------- --------N--------U--------L--------L-------- --------O--------R-------- --------c--------.--------l--------o--------c--------a--------t--------i--------o--------n--------_--------c--------i--------t--------y-------- --------I--------L--------I--------K--------E-------- --------'--------%--------'-------- --------|--------|-------- --------p--------_--------l--------o--------c--------a--------t--------i--------o--------n-------- --------|--------|-------- --------'--------%--------'--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------?--------좉--------퇋-------- --------?--------꾪--------꽣--------:-------- --------?--------뚯--------궗-------- --------?--------ы--------븿----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------(--------p--------_--------c--------o--------m--------p--------a--------n--------i--------e--------s-------- --------I--------S-------- --------N--------U--------L--------L-------- --------O--------R-------- --------E--------X--------I--------S--------T--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T-------- --------1-------- --------F--------R--------O--------M-------- --------u--------n--------n--------e--------s--------t--------(--------p--------_--------c--------o--------m--------p--------a--------n--------i--------e--------s--------)-------- --------A--------S-------- --------c--------o--------m--------p----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------c--------.--------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y-------- --------I--------L--------I--------K--------E-------- --------'--------%--------'-------- --------|--------|-------- --------c--------o--------m--------p-------- --------|--------|-------- --------'--------%--------'----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------)--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------?--------좉--------퇋-------- --------?--------꾪--------꽣--------:-------- --------?--------뚯--------궗-------- --------?--------쒖--------쇅----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------(--------p--------_--------e--------x--------c--------l--------u--------d--------e--------_--------c--------o--------m--------p--------a--------n--------i--------e--------s-------- --------I--------S-------- --------N--------U--------L--------L-------- --------O--------R-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T-------- --------1-------- --------F--------R--------O--------M-------- --------u--------n--------n--------e--------s--------t--------(--------p--------_--------e--------x--------c--------l--------u--------d--------e--------_--------c--------o--------m--------p--------a--------n--------i--------e--------s--------)-------- --------A--------S-------- --------c--------o--------m--------p----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------c--------.--------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y-------- --------I--------L--------I--------K--------E-------- --------'--------%--------'-------- --------|--------|-------- --------c--------o--------m--------p-------- --------|--------|-------- --------'--------%--------'----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------)--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------?--------좉--------퇋-------- --------?--------꾪--------꽣--------:-------- --------?--------숇--------젰----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------(--------p--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------I--------S-------- --------N--------U--------L--------L-------- --------O--------R-------- --------c--------.--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------=-------- --------p--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l--------)----------------
+-------- -------- -------- -------- --------)--------,----------------
+-------- -------- -------- -------- --------c--------h--------u--------n--------k--------_--------s--------c--------o--------r--------e--------s-------- --------A--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------c--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------M--------A--------X--------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------(--------1-------- ----------------- --------(--------c--------c--------.--------e--------m--------b--------e--------d--------d--------i--------n--------g-------- --------<--------=-------->-------- --------p--------_--------q--------u--------e--------r--------y--------_--------e--------m--------b--------e--------d--------d--------i--------n--------g--------)--------)-------- --------*----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------C--------A--------S--------E-------- --------c--------c--------.--------c--------h--------u--------n--------k--------_--------t--------y--------p--------e----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------'--------s--------u--------m--------m--------a--------r--------y--------'-------- --------T--------H--------E--------N-------- --------1--------.--------0----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------'--------c--------a--------r--------e--------e--------r--------'-------- --------T--------H--------E--------N-------- --------0--------.--------9----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------'--------s--------k--------i--------l--------l--------'-------- --------T--------H--------E--------N-------- --------0--------.--------8--------5----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------'--------p--------r--------o--------j--------e--------c--------t--------'-------- --------T--------H--------E--------N-------- --------0--------.--------8----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------'--------e--------d--------u--------c--------a--------t--------i--------o--------n--------'-------- --------T--------H--------E--------N-------- --------0--------.--------5----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------E--------N--------D----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------)-------- --------A--------S-------- --------w--------e--------i--------g--------h--------t--------e--------d--------_--------s--------c--------o--------r--------e----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------F--------R--------O--------M-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------c--------h--------u--------n--------k--------s-------- --------c--------c----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------c--------c--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d-------- --------I--------N-------- --------(--------S--------E--------L--------E--------C--------T-------- --------f--------c--------.--------i--------d-------- --------F--------R--------O--------M-------- --------f--------i--------l--------t--------e--------r--------e--------d--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------f--------c--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------G--------R--------O--------U--------P-------- --------B--------Y-------- --------c--------c--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d----------------
+-------- -------- -------- -------- --------)----------------
+-------- -------- -------- -------- --------S--------E--------L--------E--------C--------T----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------n--------a--------m--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------l--------a--------s--------t--------_--------p--------o--------s--------i--------t--------i--------o--------n--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------p--------h--------o--------t--------o--------_--------u--------r--------l--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------s--------u--------m--------m--------a--------r--------y--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------c--------o--------n--------f--------i--------d--------e--------n--------c--------e--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------r--------e--------q--------u--------i--------r--------e--------s--------_--------r--------e--------v--------i--------e--------w--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------r--------i--------s--------k--------_--------l--------e--------v--------e--------l--------:--------:--------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------c--------r--------e--------a--------t--------e--------d--------_--------a--------t--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------c--------.--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------C--------O--------A--------L--------E--------S--------C--------E--------(--------c--------s--------.--------w--------e--------i--------g--------h--------t--------e--------d--------_--------s--------c--------o--------r--------e--------,-------- --------0--------)-------- --------A--------S-------- --------m--------a--------t--------c--------h--------_--------s--------c--------o--------r--------e----------------
+-------- -------- -------- -------- --------F--------R--------O--------M-------- --------f--------i--------l--------t--------e--------r--------e--------d--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------f--------c----------------
+-------- -------- -------- -------- --------L--------E--------F--------T-------- --------J--------O--------I--------N-------- --------c--------h--------u--------n--------k--------_--------s--------c--------o--------r--------e--------s-------- --------c--------s-------- --------O--------N-------- --------f--------c--------.--------i--------d-------- --------=-------- --------c--------s--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d----------------
+-------- -------- -------- -------- --------O--------R--------D--------E--------R-------- --------B--------Y-------- --------m--------a--------t--------c--------h--------_--------s--------c--------o--------r--------e-------- --------D--------E--------S--------C----------------
+-------- -------- -------- -------- --------L--------I--------M--------I--------T-------- --------p--------_--------m--------a--------t--------c--------h--------_--------c--------o--------u--------n--------t--------;----------------
+--------E--------N--------D--------;----------------
+--------$--------$-------- --------L--------A--------N--------G--------U--------A--------G--------E-------- --------p--------l--------p--------g--------s--------q--------l-------- --------S--------E--------C--------U--------R--------I--------T--------Y-------- --------D--------E--------F--------I--------N--------E--------R--------;----------------
+----------------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+-------------------------- --------P--------A--------R--------T-------- --------2--------:-------- --------?--------ъ--------?--------?--------?--------留--------ㅼ--------묶-------- --------湲--------곕--------뒫-------- --------(--------T--------a--------s--------k-------- --------2-------- --------P--------0--------)----------------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+----------------
+-------------------------- --------2--------.--------1-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------?--------뚯--------씠--------釉--------?--------
+--------C--------R--------E--------A--------T--------E-------- --------T--------A--------B--------L--------E-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------(----------------
+-------- -------- -------- -------- --------i--------d-------- --------U--------U--------I--------D-------- --------P--------R--------I--------M--------A--------R--------Y-------- --------K--------E--------Y-------- --------D--------E--------F--------A--------U--------L--------T-------- --------g--------e--------n--------_--------r--------a--------n--------d--------o--------m--------_--------u--------u--------i--------d--------(--------)--------,----------------
+-------- -------- -------- -------- --------u--------s--------e--------r--------_--------i--------d-------- --------U--------U--------I--------D-------- --------N--------O--------T-------- --------N--------U--------L--------L-------- --------R--------E--------F--------E--------R--------E--------N--------C--------E--------S-------- --------u--------s--------e--------r--------s--------(--------i--------d--------)-------- --------O--------N-------- --------D--------E--------L--------E--------T--------E-------- --------C--------A--------S--------C--------A--------D--------E--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------湲--------곕--------낯-------- --------?--------뺣--------낫----------------
+-------- -------- -------- -------- --------t--------i--------t--------l--------e-------- --------T--------E--------X--------T-------- --------N--------O--------T-------- --------N--------U--------L--------L--------,----------------
+-------- -------- -------- -------- --------c--------l--------i--------e--------n--------t--------_--------c--------o--------m--------p--------a--------n--------y-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------d--------e--------p--------a--------r--------t--------m--------e--------n--------t-------- --------T--------E--------X--------T--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------?--------곸--------꽭-------- --------?--------ㅻ--------챸----------------
+-------- -------- -------- -------- --------d--------e--------s--------c--------r--------i--------p--------t--------i--------o--------n-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------s--------u--------m--------m--------a--------r--------y-------- --------T--------E--------X--------T--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------?--------꾩--------닔-------- --------?--------붽--------굔----------------
+-------- -------- -------- -------- --------r--------e--------q--------u--------i--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------{--------}--------'--------,----------------
+-------- -------- -------- -------- --------p--------r--------e--------f--------e--------r--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------{--------}--------'--------,----------------
+-------- -------- -------- -------- --------m--------i--------n--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- --------I--------N--------T--------E--------G--------E--------R-------- --------D--------E--------F--------A--------U--------L--------T-------- --------0--------,----------------
+-------- -------- -------- -------- --------m--------a--------x--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- --------I--------N--------T--------E--------G--------E--------R--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------?--------숇--------젰-------- --------?--------붽--------굔----------------
+-------- -------- -------- -------- --------r--------e--------q--------u--------i--------r--------e--------d--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------p--------r--------e--------f--------e--------r--------r--------e--------d--------_--------m--------a--------j--------o--------r--------s-------- --------T--------E--------X--------T--------[--------]-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------{--------}--------'--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------洹--------쇰--------Т-------- --------議--------곌--------굔----------------
+-------- -------- -------- -------- --------l--------o--------c--------a--------t--------i--------o--------n--------_--------c--------i--------t--------y-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------j--------o--------b--------_--------t--------y--------p--------e-------- --------T--------E--------X--------T-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------f--------u--------l--------l-----------------t--------i--------m--------e--------'--------,----------------
+-------- -------- -------- -------- --------s--------a--------l--------a--------r--------y--------_--------m--------i--------n-------- --------I--------N--------T--------E--------G--------E--------R--------,----------------
+-------- -------- -------- -------- --------s--------a--------l--------a--------r--------y--------_--------m--------a--------x-------- --------I--------N--------T--------E--------G--------E--------R--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------踰--------≫--------꽣-------- --------寃----------------?--------됱--------슜----------------
+-------- -------- -------- -------- --------e--------m--------b--------e--------d--------d--------i--------n--------g-------- --------v--------e--------c--------t--------o--------r--------(--------1--------5--------3--------6--------)--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------?--------곹--------깭-------- --------愿----------------由--------?--------
+-------- -------- -------- -------- --------s--------t--------a--------t--------u--------s-------- --------T--------E--------X--------T-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------o--------p--------e--------n--------'-------- --------C--------H--------E--------C--------K-------- --------(--------s--------t--------a--------t--------u--------s-------- --------I--------N-------- --------(--------'--------o--------p--------e--------n--------'--------,-------- --------'--------p--------a--------u--------s--------e--------d--------'--------,-------- --------'--------c--------l--------o--------s--------e--------d--------'--------,-------- --------'--------f--------i--------l--------l--------e--------d--------'--------)--------)--------,----------------
+-------- -------- -------- -------- --------p--------r--------i--------o--------r--------i--------t--------y-------- --------T--------E--------X--------T-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------n--------o--------r--------m--------a--------l--------'-------- --------C--------H--------E--------C--------K-------- --------(--------p--------r--------i--------o--------r--------i--------t--------y-------- --------I--------N-------- --------(--------'--------u--------r--------g--------e--------n--------t--------'--------,-------- --------'--------h--------i--------g--------h--------'--------,-------- --------'--------n--------o--------r--------m--------a--------l--------'--------,-------- --------'--------l--------o--------w--------'--------)--------)--------,----------------
+-------- -------- -------- -------- --------d--------e--------a--------d--------l--------i--------n--------e-------- --------D--------A--------T--------E--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------硫--------뷀--------?--------?--------곗--------씠--------?--------?--------
+-------- -------- -------- -------- --------c--------r--------e--------a--------t--------e--------d--------_--------a--------t-------- --------T--------I--------M--------E--------S--------T--------A--------M--------P--------T--------Z-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------O--------W--------(--------)--------,----------------
+-------- -------- -------- -------- --------u--------p--------d--------a--------t--------e--------d--------_--------a--------t-------- --------T--------I--------M--------E--------S--------T--------A--------M--------P--------T--------Z-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------O--------W--------(--------)----------------
+--------)--------;----------------
+----------------
+-------------------------- --------2--------.--------2-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------?--------몃--------뜳--------?--------?--------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------u--------s--------e--------r--------_--------i--------d-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------(--------u--------s--------e--------r--------_--------i--------d--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------s--------t--------a--------t--------u--------s-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------(--------s--------t--------a--------t--------u--------s--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------p--------r--------i--------o--------r--------i--------t--------y-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------(--------p--------r--------i--------o--------r--------i--------t--------y--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------s--------k--------i--------l--------l--------s-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------U--------S--------I--------N--------G-------- --------G--------I--------N--------(--------r--------e--------q--------u--------i--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------d--------e--------a--------d--------l--------i--------n--------e-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------(--------d--------e--------a--------d--------l--------i--------n--------e--------)--------;----------------
+----------------
+-------------------------- --------2--------.--------3-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------踰--------≫--------꽣-------- --------?--------몃--------뜳--------?--------?--------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------e--------m--------b--------e--------d--------d--------i--------n--------g-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s----------------
+-------- -------- -------- -------- --------U--------S--------I--------N--------G-------- --------i--------v--------f--------f--------l--------a--------t-------- --------(--------e--------m--------b--------e--------d--------d--------i--------n--------g-------- --------v--------e--------c--------t--------o--------r--------_--------c--------o--------s--------i--------n--------e--------_--------o--------p--------s--------)----------------
+-------- -------- -------- -------- --------W--------I--------T--------H-------- --------(--------l--------i--------s--------t--------s-------- --------=-------- --------1--------0--------0--------)--------;----------------
+----------------
+-------------------------- --------2--------.--------4-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------?--------뚯--------씠--------釉--------?--------(--------留--------ㅼ--------묶-------- --------寃--------곌--------낵--------)----------------
+--------C--------R--------E--------A--------T--------E-------- --------T--------A--------B--------L--------E-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------(----------------
+-------- -------- -------- -------- --------i--------d-------- --------U--------U--------I--------D-------- --------P--------R--------I--------M--------A--------R--------Y-------- --------K--------E--------Y-------- --------D--------E--------F--------A--------U--------L--------T-------- --------g--------e--------n--------_--------r--------a--------n--------d--------o--------m--------_--------u--------u--------i--------d--------(--------)--------,----------------
+-------- -------- -------- -------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d-------- --------U--------U--------I--------D-------- --------N--------O--------T-------- --------N--------U--------L--------L-------- --------R--------E--------F--------E--------R--------E--------N--------C--------E--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------(--------i--------d--------)-------- --------O--------N-------- --------D--------E--------L--------E--------T--------E-------- --------C--------A--------S--------C--------A--------D--------E--------,----------------
+-------- -------- -------- -------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d-------- --------U--------U--------I--------D-------- --------N--------O--------T-------- --------N--------U--------L--------L-------- --------R--------E--------F--------E--------R--------E--------N--------C--------E--------S-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(--------i--------d--------)-------- --------O--------N-------- --------D--------E--------L--------E--------T--------E-------- --------C--------A--------S--------C--------A--------D--------E--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------留--------ㅼ--------묶-------- --------?--------먯--------닔-------- --------(--------0-----------------1--------)----------------
+-------- -------- -------- -------- --------o--------v--------e--------r--------a--------l--------l--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T-------- --------N--------O--------T-------- --------N--------U--------L--------L--------,----------------
+-------- -------- -------- -------- --------s--------k--------i--------l--------l--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+-------- -------- -------- -------- --------e--------x--------p--------e--------r--------i--------e--------n--------c--------e--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+-------- -------- -------- -------- --------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+-------- -------- -------- -------- --------s--------e--------m--------a--------n--------t--------i--------c--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------留--------ㅼ--------묶-------- --------?--------곸--------꽭----------------
+-------- -------- -------- -------- --------m--------a--------t--------c--------h--------e--------d--------_--------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------{--------}--------'--------,----------------
+-------- -------- -------- -------- --------m--------i--------s--------s--------i--------n--------g--------_--------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------{--------}--------'--------,----------------
+-------- -------- -------- -------- --------m--------a--------t--------c--------h--------_--------e--------x--------p--------l--------a--------n--------a--------t--------i--------o--------n-------- --------J--------S--------O--------N--------B-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------{--------}--------'--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------?--------곹--------깭-------- --------愿----------------由--------?--------
+-------- -------- -------- -------- --------s--------t--------a--------g--------e-------- --------T--------E--------X--------T-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------m--------a--------t--------c--------h--------e--------d--------'-------- --------C--------H--------E--------C--------K-------- --------(--------s--------t--------a--------g--------e-------- --------I--------N-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------'--------m--------a--------t--------c--------h--------e--------d--------'--------,-------- --------'--------r--------e--------v--------i--------e--------w--------e--------d--------'--------,-------- --------'--------c--------o--------n--------t--------a--------c--------t--------e--------d--------'--------,-------- --------'--------i--------n--------t--------e--------r--------v--------i--------e--------w--------i--------n--------g--------'--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------'--------o--------f--------f--------e--------r--------e--------d--------'--------,-------- --------'--------p--------l--------a--------c--------e--------d--------'--------,-------- --------'--------r--------e--------j--------e--------c--------t--------e--------d--------'--------,-------- --------'--------w--------i--------t--------h--------d--------r--------a--------w--------n--------'----------------
+-------- -------- -------- -------- --------)--------)--------,----------------
+-------- -------- -------- -------- --------r--------e--------j--------e--------c--------t--------i--------o--------n--------_--------r--------e--------a--------s--------o--------n-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------n--------o--------t--------e--------s-------- --------T--------E--------X--------T--------,----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------?----------------?--------꾩--------뒪--------?--------ы--------봽----------------
+-------- -------- -------- -------- --------m--------a--------t--------c--------h--------e--------d--------_--------a--------t-------- --------T--------I--------M--------E--------S--------T--------A--------M--------P--------T--------Z-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------O--------W--------(--------)--------,----------------
+-------- -------- -------- -------- --------s--------t--------a--------g--------e--------_--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t-------- --------T--------I--------M--------E--------S--------T--------A--------M--------P--------T--------Z-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------O--------W--------(--------)--------,----------------
+----------------
+-------- -------- -------- -------- --------U--------N--------I--------Q--------U--------E--------(--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------,-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d--------)----------------
+--------)--------;----------------
+----------------
+-------------------------- --------2--------.--------5-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------?--------몃--------뜳--------?--------?--------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------p--------o--------s--------i--------t--------i--------o--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------s--------t--------a--------g--------e-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(--------s--------t--------a--------g--------e--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------s--------c--------o--------r--------e-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(--------o--------v--------e--------r--------a--------l--------l--------_--------s--------c--------o--------r--------e-------- --------D--------E--------S--------C--------)--------;----------------
+----------------
+-------------------------- --------2--------.--------6-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s-------- --------?--------뚯--------씠--------釉--------?--------(--------?--------쒕--------룞-------- --------濡--------쒓--------렇--------)----------------
+--------C--------R--------E--------A--------T--------E-------- --------T--------A--------B--------L--------E-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s-------- --------(----------------
+-------- -------- -------- -------- --------i--------d-------- --------U--------U--------I--------D-------- --------P--------R--------I--------M--------A--------R--------Y-------- --------K--------E--------Y-------- --------D--------E--------F--------A--------U--------L--------T-------- --------g--------e--------n--------_--------r--------a--------n--------d--------o--------m--------_--------u--------u--------i--------d--------(--------)--------,----------------
+-------- -------- -------- -------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d-------- --------U--------U--------I--------D-------- --------N--------O--------T-------- --------N--------U--------L--------L-------- --------R--------E--------F--------E--------R--------E--------N--------C--------E--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------(--------i--------d--------)-------- --------O--------N-------- --------D--------E--------L--------E--------T--------E-------- --------C--------A--------S--------C--------A--------D--------E--------,----------------
+-------- -------- -------- -------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d-------- --------U--------U--------I--------D-------- --------R--------E--------F--------E--------R--------E--------N--------C--------E--------S-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------(--------i--------d--------)-------- --------O--------N-------- --------D--------E--------L--------E--------T--------E-------- --------S--------E--------T-------- --------N--------U--------L--------L--------,----------------
+----------------
+-------- -------- -------- -------- --------a--------c--------t--------i--------v--------i--------t--------y--------_--------t--------y--------p--------e-------- --------T--------E--------X--------T-------- --------N--------O--------T-------- --------N--------U--------L--------L--------,----------------
+-------- -------- -------- -------- --------d--------e--------s--------c--------r--------i--------p--------t--------i--------o--------n-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------m--------e--------t--------a--------d--------a--------t--------a-------- --------J--------S--------O--------N--------B-------- --------D--------E--------F--------A--------U--------L--------T-------- --------'--------{--------}--------'--------,----------------
+----------------
+-------- -------- -------- -------- --------c--------r--------e--------a--------t--------e--------d--------_--------a--------t-------- --------T--------I--------M--------E--------S--------T--------A--------M--------P--------T--------Z-------- --------D--------E--------F--------A--------U--------L--------T-------- --------N--------O--------W--------(--------)--------,----------------
+-------- -------- -------- -------- --------c--------r--------e--------a--------t--------e--------d--------_--------b--------y-------- --------U--------U--------I--------D-------- --------R--------E--------F--------E--------R--------E--------N--------C--------E--------S-------- --------u--------s--------e--------r--------s--------(--------i--------d--------)----------------
+--------)--------;----------------
+----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s--------_--------p--------o--------s--------i--------t--------i--------o--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s--------(--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------)--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------I--------N--------D--------E--------X-------- --------I--------F-------- --------N--------O--------T-------- --------E--------X--------I--------S--------T--------S-------- --------i--------d--------x--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s--------_--------c--------r--------e--------a--------t--------e--------d-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s--------(--------c--------r--------e--------a--------t--------e--------d--------_--------a--------t-------- --------D--------E--------S--------C--------)--------;----------------
+----------------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+-------------------------- --------P--------A--------R--------T-------- --------3--------:-------- --------R--------L--------S-------- --------?--------뺤--------콉----------------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+----------------
+-------------------------- --------3--------.--------1-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------R--------L--------S----------------
+--------A--------L--------T--------E--------R-------- --------T--------A--------B--------L--------E-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------E--------N--------A--------B--------L--------E-------- --------R--------O--------W-------- --------L--------E--------V--------E--------L-------- --------S--------E--------C--------U--------R--------I--------T--------Y--------;----------------
+----------------
+--------D--------R--------O--------P-------- --------P--------O--------L--------I--------C--------Y-------- --------I--------F-------- --------E--------X--------I--------S--------T--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------s--------e--------l--------e--------c--------t--------_--------o--------w--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------P--------O--------L--------I--------C--------Y-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------s--------e--------l--------e--------c--------t--------_--------o--------w--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s----------------
+-------- -------- -------- -------- --------F--------O--------R-------- --------S--------E--------L--------E--------C--------T-------- --------U--------S--------I--------N--------G-------- --------(--------u--------s--------e--------r--------_--------i--------d-------- --------=-------- --------a--------u--------t--------h--------.--------u--------i--------d--------(--------)--------)--------;----------------
+----------------
+--------D--------R--------O--------P-------- --------P--------O--------L--------I--------C--------Y-------- --------I--------F-------- --------E--------X--------I--------S--------T--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------i--------n--------s--------e--------r--------t--------_--------o--------w--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------P--------O--------L--------I--------C--------Y-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------i--------n--------s--------e--------r--------t--------_--------o--------w--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s----------------
+-------- -------- -------- -------- --------F--------O--------R-------- --------I--------N--------S--------E--------R--------T-------- --------W--------I--------T--------H-------- --------C--------H--------E--------C--------K-------- --------(--------u--------s--------e--------r--------_--------i--------d-------- --------=-------- --------a--------u--------t--------h--------.--------u--------i--------d--------(--------)--------)--------;----------------
+----------------
+--------D--------R--------O--------P-------- --------P--------O--------L--------I--------C--------Y-------- --------I--------F-------- --------E--------X--------I--------S--------T--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------u--------p--------d--------a--------t--------e--------_--------o--------w--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------P--------O--------L--------I--------C--------Y-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------u--------p--------d--------a--------t--------e--------_--------o--------w--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s----------------
+-------- -------- -------- -------- --------F--------O--------R-------- --------U--------P--------D--------A--------T--------E-------- --------U--------S--------I--------N--------G-------- --------(--------u--------s--------e--------r--------_--------i--------d-------- --------=-------- --------a--------u--------t--------h--------.--------u--------i--------d--------(--------)--------)--------;----------------
+----------------
+--------D--------R--------O--------P-------- --------P--------O--------L--------I--------C--------Y-------- --------I--------F-------- --------E--------X--------I--------S--------T--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------d--------e--------l--------e--------t--------e--------_--------o--------w--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------P--------O--------L--------I--------C--------Y-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------d--------e--------l--------e--------t--------e--------_--------o--------w--------n-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s----------------
+-------- -------- -------- -------- --------F--------O--------R-------- --------D--------E--------L--------E--------T--------E-------- --------U--------S--------I--------N--------G-------- --------(--------u--------s--------e--------r--------_--------i--------d-------- --------=-------- --------a--------u--------t--------h--------.--------u--------i--------d--------(--------)--------)--------;----------------
+----------------
+-------------------------- --------3--------.--------2-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------R--------L--------S----------------
+--------A--------L--------T--------E--------R-------- --------T--------A--------B--------L--------E-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------E--------N--------A--------B--------L--------E-------- --------R--------O--------W-------- --------L--------E--------V--------E--------L-------- --------S--------E--------C--------U--------R--------I--------T--------Y--------;----------------
+----------------
+--------D--------R--------O--------P-------- --------P--------O--------L--------I--------C--------Y-------- --------I--------F-------- --------E--------X--------I--------S--------T--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------a--------c--------c--------e--------s--------s-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------P--------O--------L--------I--------C--------Y-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------a--------c--------c--------e--------s--------s-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s----------------
+-------- -------- -------- -------- --------F--------O--------R-------- --------A--------L--------L-------- --------U--------S--------I--------N--------G-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d-------- --------I--------N-------- --------(--------S--------E--------L--------E--------C--------T-------- --------i--------d-------- --------F--------R--------O--------M-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------W--------H--------E--------R--------E-------- --------u--------s--------e--------r--------_--------i--------d-------- --------=-------- --------a--------u--------t--------h--------.--------u--------i--------d--------(--------)--------)----------------
+-------- -------- -------- -------- --------)--------;----------------
+----------------
+-------------------------- --------3--------.--------3-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s-------- --------R--------L--------S----------------
+--------A--------L--------T--------E--------R-------- --------T--------A--------B--------L--------E-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s-------- --------E--------N--------A--------B--------L--------E-------- --------R--------O--------W-------- --------L--------E--------V--------E--------L-------- --------S--------E--------C--------U--------R--------I--------T--------Y--------;----------------
+----------------
+--------D--------R--------O--------P-------- --------P--------O--------L--------I--------C--------Y-------- --------I--------F-------- --------E--------X--------I--------S--------T--------S-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s--------_--------a--------c--------c--------e--------s--------s-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------P--------O--------L--------I--------C--------Y-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s--------_--------a--------c--------c--------e--------s--------s-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s----------------
+-------- -------- -------- -------- --------F--------O--------R-------- --------A--------L--------L-------- --------U--------S--------I--------N--------G-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d-------- --------I--------N-------- --------(--------S--------E--------L--------E--------C--------T-------- --------i--------d-------- --------F--------R--------O--------M-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------W--------H--------E--------R--------E-------- --------u--------s--------e--------r--------_--------i--------d-------- --------=-------- --------a--------u--------t--------h--------.--------u--------i--------d--------(--------)--------)----------------
+-------- -------- -------- -------- --------)--------;----------------
+----------------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+-------------------------- --------P--------A--------R--------T-------- --------4--------:-------- --------留--------ㅼ--------묶-------- --------?--------뚭--------퀬--------由--------ъ--------쬁-------- --------R--------P--------C-------- --------?--------⑥--------닔----------------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+----------------
+-------------------------- --------4--------.--------1-------- --------?--------ъ--------?--------?--------섏--------뿉-------- --------?----------------?--------?--------?--------꾨--------낫--------?--------?--------留--------ㅼ--------묶-------- --------?--------⑥--------닔----------------
+--------C--------R--------E--------A--------T--------E-------- --------O--------R-------- --------R--------E--------P--------L--------A--------C--------E-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------m--------a--------t--------c--------h--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------t--------o--------_--------p--------o--------s--------i--------t--------i--------o--------n--------(----------------
+-------- -------- -------- -------- --------p--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d-------- --------U--------U--------I--------D--------,----------------
+-------- -------- -------- -------- --------p--------_--------u--------s--------e--------r--------_--------i--------d-------- --------U--------U--------I--------D--------,----------------
+-------- -------- -------- -------- --------p--------_--------l--------i--------m--------i--------t-------- --------I--------N--------T--------E--------G--------E--------R-------- --------D--------E--------F--------A--------U--------L--------T-------- --------5--------0--------,----------------
+-------- -------- -------- -------- --------p--------_--------m--------i--------n--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T-------- --------D--------E--------F--------A--------U--------L--------T-------- --------0--------.--------0----------------
+--------)----------------
+--------R--------E--------T--------U--------R--------N--------S-------- --------T--------A--------B--------L--------E-------- --------(----------------
+-------- -------- -------- -------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d-------- --------U--------U--------I--------D--------,----------------
+-------- -------- -------- -------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------n--------a--------m--------e-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------l--------a--------s--------t--------_--------p--------o--------s--------i--------t--------i--------o--------n-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------e--------x--------p--------_--------y--------e--------a--------r--------s-------- --------I--------N--------T--------E--------G--------E--------R--------,----------------
+-------- -------- -------- -------- --------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]--------,----------------
+-------- -------- -------- -------- --------p--------h--------o--------t--------o--------_--------u--------r--------l-------- --------T--------E--------X--------T--------,----------------
+-------- -------- -------- -------- --------o--------v--------e--------r--------a--------l--------l--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+-------- -------- -------- -------- --------s--------k--------i--------l--------l--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+-------- -------- -------- -------- --------e--------x--------p--------e--------r--------i--------e--------n--------c--------e--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+-------- -------- -------- -------- --------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+-------- -------- -------- -------- --------s--------e--------m--------a--------n--------t--------i--------c--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T--------,----------------
+-------- -------- -------- -------- --------m--------a--------t--------c--------h--------e--------d--------_--------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]--------,----------------
+-------- -------- -------- -------- --------m--------i--------s--------s--------i--------n--------g--------_--------s--------k--------i--------l--------l--------s-------- --------T--------E--------X--------T--------[--------]----------------
+--------)-------- --------A--------S-------- --------$--------$----------------
+--------D--------E--------C--------L--------A--------R--------E----------------
+-------- -------- -------- -------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n-------- --------R--------E--------C--------O--------R--------D--------;----------------
+-------- -------- -------- -------- --------v--------_--------r--------e--------q--------u--------i--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s--------_--------c--------o--------u--------n--------t-------- --------I--------N--------T--------E--------G--------E--------R--------;----------------
+--------B--------E--------G--------I--------N----------------
+-------- -------- -------- -------- -------------------------- --------?--------ъ--------?--------?--------?--------?--------뺣--------낫-------- --------議--------고--------쉶----------------
+-------- -------- -------- -------- --------S--------E--------L--------E--------C--------T-------- --------p--------.--------*-------- --------I--------N--------T--------O-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n----------------
+-------- -------- -------- -------- --------F--------R--------O--------M-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------p----------------
+-------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------p--------.--------i--------d-------- --------=-------- --------p--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d-------- --------A--------N--------D-------- --------p--------.--------u--------s--------e--------r--------_--------i--------d-------- --------=-------- --------p--------_--------u--------s--------e--------r--------_--------i--------d--------;----------------
+----------------
+-------- -------- -------- -------- --------I--------F-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n-------- --------I--------S-------- --------N--------U--------L--------L-------- --------T--------H--------E--------N----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------R--------A--------I--------S--------E-------- --------E--------X--------C--------E--------P--------T--------I--------O--------N-------- --------'--------P--------o--------s--------i--------t--------i--------o--------n-------- --------n--------o--------t-------- --------f--------o--------u--------n--------d-------- --------o--------r-------- --------a--------c--------c--------e--------s--------s-------- --------d--------e--------n--------i--------e--------d--------'--------;----------------
+-------- -------- -------- -------- --------E--------N--------D-------- --------I--------F--------;----------------
+----------------
+-------- -------- -------- -------- --------v--------_--------r--------e--------q--------u--------i--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s--------_--------c--------o--------u--------n--------t-------- --------:--------=-------- --------C--------O--------A--------L--------E--------S--------C--------E--------(--------a--------r--------r--------a--------y--------_--------l--------e--------n--------g--------t--------h--------(--------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------r--------e--------q--------u--------i--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s--------,-------- --------1--------)--------,-------- --------0--------)--------;----------------
+----------------
+-------- -------- -------- -------- --------R--------E--------T--------U--------R--------N-------- --------Q--------U--------E--------R--------Y----------------
+-------- -------- -------- -------- --------W--------I--------T--------H-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------s--------k--------i--------l--------l--------_--------m--------a--------t--------c--------h-------- --------A--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------.--------i--------d-------- --------A--------S-------- --------c--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------.--------n--------a--------m--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------.--------l--------a--------s--------t--------_--------p--------o--------s--------i--------t--------i--------o--------n--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------.--------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------.--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------.--------p--------h--------o--------t--------o--------_--------u--------r--------l--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------.--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------留--------ㅼ--------묶--------?--------?--------?--------ㅽ--------궗----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------R--------R--------A--------Y--------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T-------- --------s-------- --------F--------R--------O--------M-------- --------u--------n--------n--------e--------s--------t--------(--------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------r--------e--------q--------u--------i--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s--------)-------- --------A--------S-------- --------s----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------s-------- --------=-------- --------A--------N--------Y--------(--------c--------.--------s--------k--------i--------l--------l--------s--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------)-------- --------A--------S-------- --------m--------a--------t--------c--------h--------e--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------遺----------------議--------깊--------븳-------- --------?--------ㅽ--------궗----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------R--------R--------A--------Y--------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T-------- --------s-------- --------F--------R--------O--------M-------- --------u--------n--------n--------e--------s--------t--------(--------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------r--------e--------q--------u--------i--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s--------)-------- --------A--------S-------- --------s----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------N--------O--------T-------- --------(--------s-------- --------=-------- --------A--------N--------Y--------(--------c--------.--------s--------k--------i--------l--------l--------s--------)--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------)-------- --------A--------S-------- --------m--------i--------s--------s--------i--------n--------g----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------F--------R--------O--------M-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------c----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------c--------.--------u--------s--------e--------r--------_--------i--------d-------- --------=-------- --------p--------_--------u--------s--------e--------r--------_--------i--------d----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------c--------.--------s--------t--------a--------t--------u--------s-------- --------=-------- --------'--------c--------o--------m--------p--------l--------e--------t--------e--------d--------'----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------c--------.--------i--------s--------_--------l--------a--------t--------e--------s--------t-------- --------=-------- --------t--------r--------u--------e----------------
+-------- -------- -------- -------- --------)--------,----------------
+-------- -------- -------- -------- --------s--------c--------o--------r--------e--------s-------- --------A--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------s--------m--------.--------c--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------s--------m--------.--------n--------a--------m--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------s--------m--------.--------l--------a--------s--------t--------_--------p--------o--------s--------i--------t--------i--------o--------n--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------s--------m--------.--------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------s--------m--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------s--------m--------.--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------s--------m--------.--------p--------h--------o--------t--------o--------_--------u--------r--------l--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------s--------m--------.--------m--------a--------t--------c--------h--------e--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------s--------m--------.--------m--------i--------s--------s--------i--------n--------g--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------S--------k--------i--------l--------l-------- --------S--------c--------o--------r--------e-------- --------(--------0-----------------1--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------C--------A--------S--------E----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------v--------_--------r--------e--------q--------u--------i--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s--------_--------c--------o--------u--------n--------t-------- --------=-------- --------0-------- --------T--------H--------E--------N-------- --------1--------.--------0----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------E--------L--------S--------E-------- --------C--------O--------A--------L--------E--------S--------C--------E--------(--------a--------r--------r--------a--------y--------_--------l--------e--------n--------g--------t--------h--------(--------c--------s--------m--------.--------m--------a--------t--------c--------h--------e--------d--------,-------- --------1--------)--------,-------- --------0--------)--------:--------:--------F--------L--------O--------A--------T-------- --------/-------- --------v--------_--------r--------e--------q--------u--------i--------r--------e--------d--------_--------s--------k--------i--------l--------l--------s--------_--------c--------o--------u--------n--------t----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------E--------N--------D-------- --------A--------S-------- --------s--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------E--------x--------p--------e--------r--------i--------e--------n--------c--------e-------- --------S--------c--------o--------r--------e-------- --------(--------0-----------------1--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------C--------A--------S--------E----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------c--------s--------m--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- --------<-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------m--------i--------n--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- --------T--------H--------E--------N----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------G--------R--------E--------A--------T--------E--------S--------T--------(--------0--------.--------3--------,-------- --------1--------.--------0-------- ----------------- --------(--------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------m--------i--------n--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- ----------------- --------c--------s--------m--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s--------)-------- --------*-------- --------0--------.--------1--------5--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------m--------a--------x--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- --------I--------S-------- --------N--------O--------T-------- --------N--------U--------L--------L-------- --------A--------N--------D-------- --------c--------s--------m--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- -------->-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------m--------a--------x--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- --------T--------H--------E--------N----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------G--------R--------E--------A--------T--------E--------S--------T--------(--------0--------.--------7--------,-------- --------1--------.--------0-------- ----------------- --------(--------c--------s--------m--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s-------- ----------------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------m--------a--------x--------_--------e--------x--------p--------_--------y--------e--------a--------r--------s--------)-------- --------*-------- --------0--------.--------0--------5--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------E--------L--------S--------E-------- --------1--------.--------0----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------E--------N--------D-------- --------A--------S-------- --------e--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------E--------d--------u--------c--------a--------t--------i--------o--------n-------- --------S--------c--------o--------r--------e-------- --------(--------0-----------------1--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------C--------A--------S--------E----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------r--------e--------q--------u--------i--------r--------e--------d--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------I--------S-------- --------N--------U--------L--------L-------- --------T--------H--------E--------N-------- --------1--------.--------0----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------c--------s--------m--------.--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------=-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------r--------e--------q--------u--------i--------r--------e--------d--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------T--------H--------E--------N-------- --------1--------.--------0----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------c--------s--------m--------.--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------I--------N-------- --------(--------'--------m--------a--------s--------t--------e--------r--------'--------,-------- --------'--------d--------o--------c--------t--------o--------r--------a--------t--------e--------'--------)-------- --------A--------N--------D-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------r--------e--------q--------u--------i--------r--------e--------d--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------=-------- --------'--------b--------a--------c--------h--------e--------l--------o--------r--------'-------- --------T--------H--------E--------N-------- --------1--------.--------0----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------c--------s--------m--------.--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------=-------- --------'--------d--------o--------c--------t--------o--------r--------a--------t--------e--------'-------- --------A--------N--------D-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------r--------e--------q--------u--------i--------r--------e--------d--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------=-------- --------'--------m--------a--------s--------t--------e--------r--------'-------- --------T--------H--------E--------N-------- --------1--------.--------0----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------N-------- --------c--------s--------m--------.--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------=-------- --------'--------b--------a--------c--------h--------e--------l--------o--------r--------'-------- --------A--------N--------D-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------r--------e--------q--------u--------i--------r--------e--------d--------_--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------l--------e--------v--------e--------l-------- --------I--------N-------- --------(--------'--------m--------a--------s--------t--------e--------r--------'--------,-------- --------'--------d--------o--------c--------t--------o--------r--------a--------t--------e--------'--------)-------- --------T--------H--------E--------N-------- --------0--------.--------7----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------E--------L--------S--------E-------- --------0--------.--------5----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------E--------N--------D-------- --------A--------S-------- --------e--------d--------u--------_--------s--------c--------o--------r--------e----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------F--------R--------O--------M-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------s--------k--------i--------l--------l--------_--------m--------a--------t--------c--------h-------- --------c--------s--------m----------------
+-------- -------- -------- -------- --------)--------,----------------
+-------- -------- -------- -------- --------s--------e--------m--------a--------n--------t--------i--------c--------_--------s--------c--------o--------r--------e--------s-------- --------A--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------c--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------M--------A--------X--------(--------1-------- ----------------- --------(--------c--------c--------.--------e--------m--------b--------e--------d--------d--------i--------n--------g-------- --------<--------=-------->-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------e--------m--------b--------e--------d--------d--------i--------n--------g--------)--------)-------- --------A--------S-------- --------s--------e--------m--------_--------s--------c--------o--------r--------e----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------F--------R--------O--------M-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------c--------h--------u--------n--------k--------s-------- --------c--------c----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------c--------c--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d-------- --------I--------N-------- --------(--------S--------E--------L--------E--------C--------T-------- --------c--------i--------d-------- --------F--------R--------O--------M-------- --------s--------c--------o--------r--------e--------s--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------c--------c--------.--------c--------h--------u--------n--------k--------_--------t--------y--------p--------e-------- --------=-------- --------'--------s--------u--------m--------m--------a--------r--------y--------'----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------v--------_--------p--------o--------s--------i--------t--------i--------o--------n--------.--------e--------m--------b--------e--------d--------d--------i--------n--------g-------- --------I--------S-------- --------N--------O--------T-------- --------N--------U--------L--------L----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------G--------R--------O--------U--------P-------- --------B--------Y-------- --------c--------c--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d----------------
+-------- -------- -------- -------- --------)--------,----------------
+-------- -------- -------- -------- --------f--------i--------n--------a--------l--------_--------s--------c--------o--------r--------e--------s-------- --------A--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------c--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------n--------a--------m--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------l--------a--------s--------t--------_--------p--------o--------s--------i--------t--------i--------o--------n--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------p--------h--------o--------t--------o--------_--------u--------r--------l--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------m--------a--------t--------c--------h--------e--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------m--------i--------s--------s--------i--------n--------g--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------s--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------e--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------.--------e--------d--------u--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------C--------O--------A--------L--------E--------S--------C--------E--------(--------s--------s--------.--------s--------e--------m--------_--------s--------c--------o--------r--------e--------,-------- --------0--------.--------5--------)-------- --------A--------S-------- --------s--------e--------m--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------O--------v--------e--------r--------a--------l--------l-------- --------S--------c--------o--------r--------e-------- --------=-------- --------S--------k--------i--------l--------l--------(--------4--------0--------%--------)-------- --------+-------- --------E--------x--------p--------e--------r--------i--------e--------n--------c--------e--------(--------2--------5--------%--------)-------- --------+-------- --------E--------d--------u--------c--------a--------t--------i--------o--------n--------(--------1--------5--------%--------)-------- --------+-------- --------S--------e--------m--------a--------n--------t--------i--------c--------(--------2--------0--------%--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------(--------s--------.--------s--------_--------s--------c--------o--------r--------e-------- --------*-------- --------0--------.--------4--------0-------- --------+-------- --------s--------.--------e--------_--------s--------c--------o--------r--------e-------- --------*-------- --------0--------.--------2--------5-------- --------+-------- --------s--------.--------e--------d--------u--------_--------s--------c--------o--------r--------e-------- --------*-------- --------0--------.--------1--------5-------- --------+-------- --------C--------O--------A--------L--------E--------S--------C--------E--------(--------s--------s--------.--------s--------e--------m--------_--------s--------c--------o--------r--------e--------,-------- --------0--------.--------5--------)-------- --------*-------- --------0--------.--------2--------0--------)-------- --------A--------S-------- --------o--------v--------e--------r--------a--------l--------l----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------F--------R--------O--------M-------- --------s--------c--------o--------r--------e--------s-------- --------s----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------L--------E--------F--------T-------- --------J--------O--------I--------N-------- --------s--------e--------m--------a--------n--------t--------i--------c--------_--------s--------c--------o--------r--------e--------s-------- --------s--------s-------- --------O--------N-------- --------s--------.--------c--------i--------d-------- --------=-------- --------s--------s--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d----------------
+-------- -------- -------- -------- --------)----------------
+-------- -------- -------- -------- --------S--------E--------L--------E--------C--------T----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------c--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------n--------a--------m--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------l--------a--------s--------t--------_--------p--------o--------s--------i--------t--------i--------o--------n--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------l--------a--------s--------t--------_--------c--------o--------m--------p--------a--------n--------y--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------e--------x--------p--------_--------y--------e--------a--------r--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------p--------h--------o--------t--------o--------_--------u--------r--------l--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------o--------v--------e--------r--------a--------l--------l--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------s--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------e--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------e--------d--------u--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------s--------e--------m--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------m--------a--------t--------c--------h--------e--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------f--------s--------.--------m--------i--------s--------s--------i--------n--------g----------------
+-------- -------- -------- -------- --------F--------R--------O--------M-------- --------f--------i--------n--------a--------l--------_--------s--------c--------o--------r--------e--------s-------- --------f--------s----------------
+-------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------f--------s--------.--------o--------v--------e--------r--------a--------l--------l-------- -------->--------=-------- --------p--------_--------m--------i--------n--------_--------s--------c--------o--------r--------e----------------
+-------- -------- -------- -------- --------O--------R--------D--------E--------R-------- --------B--------Y-------- --------f--------s--------.--------o--------v--------e--------r--------a--------l--------l-------- --------D--------E--------S--------C----------------
+-------- -------- -------- -------- --------L--------I--------M--------I--------T-------- --------p--------_--------l--------i--------m--------i--------t--------;----------------
+--------E--------N--------D--------;----------------
+--------$--------$-------- --------L--------A--------N--------G--------U--------A--------G--------E-------- --------p--------l--------p--------g--------s--------q--------l-------- --------S--------E--------C--------U--------R--------I--------T--------Y-------- --------D--------E--------F--------I--------N--------E--------R--------;----------------
+----------------
+-------------------------- --------4--------.--------2-------- --------留--------ㅼ--------묶-------- --------寃--------곌--------낵-------- --------?----------------?--------?--------?--------⑥--------닔----------------
+--------C--------R--------E--------A--------T--------E-------- --------O--------R-------- --------R--------E--------P--------L--------A--------C--------E-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------s--------a--------v--------e--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------m--------a--------t--------c--------h--------e--------s--------(----------------
+-------- -------- -------- -------- --------p--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d-------- --------U--------U--------I--------D--------,----------------
+-------- -------- -------- -------- --------p--------_--------u--------s--------e--------r--------_--------i--------d-------- --------U--------U--------I--------D--------,----------------
+-------- -------- -------- -------- --------p--------_--------l--------i--------m--------i--------t-------- --------I--------N--------T--------E--------G--------E--------R-------- --------D--------E--------F--------A--------U--------L--------T-------- --------5--------0--------,----------------
+-------- -------- -------- -------- --------p--------_--------m--------i--------n--------_--------s--------c--------o--------r--------e-------- --------F--------L--------O--------A--------T-------- --------D--------E--------F--------A--------U--------L--------T-------- --------0--------.--------3----------------
+--------)----------------
+--------R--------E--------T--------U--------R--------N--------S-------- --------I--------N--------T--------E--------G--------E--------R-------- --------A--------S-------- --------$--------$----------------
+--------D--------E--------C--------L--------A--------R--------E----------------
+-------- -------- -------- -------- --------v--------_--------c--------o--------u--------n--------t-------- --------I--------N--------T--------E--------G--------E--------R-------- --------:--------=-------- --------0--------;----------------
+-------- -------- -------- -------- --------v--------_--------m--------a--------t--------c--------h-------- --------R--------E--------C--------O--------R--------D--------;----------------
+--------B--------E--------G--------I--------N----------------
+-------- -------- -------- -------- -------------------------- --------湲--------곗--------〈-------- --------'--------m--------a--------t--------c--------h--------e--------d--------'-------- --------?--------곹--------깭--------?--------?--------留--------ㅼ--------묶--------留--------?--------?--------?--------젣-------- --------(--------吏--------꾪--------뻾--------以--------묒--------씤-------- --------寃--------껋--------?-------- --------?--------좎--------?--------)----------------
+-------- -------- -------- -------- --------D--------E--------L--------E--------T--------E-------- --------F--------R--------O--------M-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s----------------
+-------- -------- -------- -------- --------W--------H--------E--------R--------E-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d-------- --------=-------- --------p--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d----------------
+-------- -------- -------- -------- -------- -------- --------A--------N--------D-------- --------s--------t--------a--------g--------e-------- --------=-------- --------'--------m--------a--------t--------c--------h--------e--------d--------'--------;----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------?--------?--------留--------ㅼ--------묶-------- --------?----------------?--------?--------
+-------- -------- -------- -------- --------F--------O--------R-------- --------v--------_--------m--------a--------t--------c--------h-------- --------I--------N----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------S--------E--------L--------E--------C--------T-------- --------*-------- --------F--------R--------O--------M-------- --------m--------a--------t--------c--------h--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------t--------o--------_--------p--------o--------s--------i--------t--------i--------o--------n--------(--------p--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------,-------- --------p--------_--------u--------s--------e--------r--------_--------i--------d--------,-------- --------p--------_--------l--------i--------m--------i--------t--------,-------- --------p--------_--------m--------i--------n--------_--------s--------c--------o--------r--------e--------)----------------
+-------- -------- -------- -------- --------L--------O--------O--------P----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------I--------N--------S--------E--------R--------T-------- --------I--------N--------T--------O-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------o--------v--------e--------r--------a--------l--------l--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------k--------i--------l--------l--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------e--------x--------p--------e--------r--------i--------e--------n--------c--------e--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------e--------m--------a--------n--------t--------i--------c--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------m--------a--------t--------c--------h--------e--------d--------_--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------m--------i--------s--------s--------i--------n--------g--------_--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------t--------a--------g--------e----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------)-------- --------V--------A--------L--------U--------E--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------p--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------m--------a--------t--------c--------h--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------m--------a--------t--------c--------h--------.--------o--------v--------e--------r--------a--------l--------l--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------m--------a--------t--------c--------h--------.--------s--------k--------i--------l--------l--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------m--------a--------t--------c--------h--------.--------e--------x--------p--------e--------r--------i--------e--------n--------c--------e--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------m--------a--------t--------c--------h--------.--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------m--------a--------t--------c--------h--------.--------s--------e--------m--------a--------n--------t--------i--------c--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------m--------a--------t--------c--------h--------.--------m--------a--------t--------c--------h--------e--------d--------_--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------m--------a--------t--------c--------h--------.--------m--------i--------s--------s--------i--------n--------g--------_--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------'--------m--------a--------t--------c--------h--------e--------d--------'----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------O--------N-------- --------C--------O--------N--------F--------L--------I--------C--------T-------- --------(--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------,-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d--------)-------- --------D--------O-------- --------U--------P--------D--------A--------T--------E-------- --------S--------E--------T----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------o--------v--------e--------r--------a--------l--------l--------_--------s--------c--------o--------r--------e-------- --------=-------- --------E--------X--------C--------L--------U--------D--------E--------D--------.--------o--------v--------e--------r--------a--------l--------l--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------k--------i--------l--------l--------_--------s--------c--------o--------r--------e-------- --------=-------- --------E--------X--------C--------L--------U--------D--------E--------D--------.--------s--------k--------i--------l--------l--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------e--------x--------p--------e--------r--------i--------e--------n--------c--------e--------_--------s--------c--------o--------r--------e-------- --------=-------- --------E--------X--------C--------L--------U--------D--------E--------D--------.--------e--------x--------p--------e--------r--------i--------e--------n--------c--------e--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------s--------c--------o--------r--------e-------- --------=-------- --------E--------X--------C--------L--------U--------D--------E--------D--------.--------e--------d--------u--------c--------a--------t--------i--------o--------n--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------s--------e--------m--------a--------n--------t--------i--------c--------_--------s--------c--------o--------r--------e-------- --------=-------- --------E--------X--------C--------L--------U--------D--------E--------D--------.--------s--------e--------m--------a--------n--------t--------i--------c--------_--------s--------c--------o--------r--------e--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------m--------a--------t--------c--------h--------e--------d--------_--------s--------k--------i--------l--------l--------s-------- --------=-------- --------E--------X--------C--------L--------U--------D--------E--------D--------.--------m--------a--------t--------c--------h--------e--------d--------_--------s--------k--------i--------l--------l--------s--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------m--------i--------s--------s--------i--------n--------g--------_--------s--------k--------i--------l--------l--------s-------- --------=-------- --------E--------X--------C--------L--------U--------D--------E--------D--------.--------m--------i--------s--------s--------i--------n--------g--------_--------s--------k--------i--------l--------l--------s--------;----------------
+----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------c--------o--------u--------n--------t-------- --------:--------=-------- --------v--------_--------c--------o--------u--------n--------t-------- --------+-------- --------1--------;----------------
+-------- -------- -------- -------- --------E--------N--------D-------- --------L--------O--------O--------P--------;----------------
+----------------
+-------- -------- -------- -------- -------------------------- --------?--------쒕--------룞-------- --------濡--------쒓--------렇-------- --------湲--------곕--------줉----------------
+-------- -------- -------- -------- --------I--------N--------S--------E--------R--------T-------- --------I--------N--------T--------O-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s-------- --------(--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------,-------- --------a--------c--------t--------i--------v--------i--------t--------y--------_--------t--------y--------p--------e--------,-------- --------d--------e--------s--------c--------r--------i--------p--------t--------i--------o--------n--------,-------- --------m--------e--------t--------a--------d--------a--------t--------a--------,-------- --------c--------r--------e--------a--------t--------e--------d--------_--------b--------y--------)----------------
+-------- -------- -------- -------- --------V--------A--------L--------U--------E--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------p--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------'--------m--------a--------t--------c--------h--------e--------s--------_--------r--------e--------f--------r--------e--------s--------h--------e--------d--------'--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------v--------_--------c--------o--------u--------n--------t-------- --------|--------|-------- --------'--------紐--------낆--------쓽-------- --------?--------꾨--------낫--------?--------먭--------?-------- --------留--------ㅼ--------묶--------?--------섏--------뿀--------?--------듬--------땲--------?--------?--------'--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------j--------s--------o--------n--------b--------_--------b--------u--------i--------l--------d--------_--------o--------b--------j--------e--------c--------t--------(--------'--------m--------a--------t--------c--------h--------_--------c--------o--------u--------n--------t--------'--------,-------- --------v--------_--------c--------o--------u--------n--------t--------,-------- --------'--------m--------i--------n--------_--------s--------c--------o--------r--------e--------'--------,-------- --------p--------_--------m--------i--------n--------_--------s--------c--------o--------r--------e--------)--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------p--------_--------u--------s--------e--------r--------_--------i--------d----------------
+-------- -------- -------- -------- --------)--------;----------------
+----------------
+-------- -------- -------- -------- --------R--------E--------T--------U--------R--------N-------- --------v--------_--------c--------o--------u--------n--------t--------;----------------
+--------E--------N--------D--------;----------------
+--------$--------$-------- --------L--------A--------N--------G--------U--------A--------G--------E-------- --------p--------l--------p--------g--------s--------q--------l-------- --------S--------E--------C--------U--------R--------I--------T--------Y-------- --------D--------E--------F--------I--------N--------E--------R--------;----------------
+----------------
+-------------------------- --------4--------.--------3-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------u--------p--------d--------a--------t--------e--------d--------_--------a--------t-------- --------?--------몃-----------------嫄--------?--------
+--------C--------R--------E--------A--------T--------E-------- --------O--------R-------- --------R--------E--------P--------L--------A--------C--------E-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------u--------p--------d--------a--------t--------e--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t--------(--------)----------------
+--------R--------E--------T--------U--------R--------N--------S-------- --------T--------R--------I--------G--------G--------E--------R-------- --------A--------S-------- --------$--------$----------------
+--------B--------E--------G--------I--------N----------------
+-------- -------- -------- -------- --------N--------E--------W--------.--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t-------- --------=-------- --------N--------O--------W--------(--------)--------;----------------
+-------- -------- -------- -------- --------R--------E--------T--------U--------R--------N-------- --------N--------E--------W--------;----------------
+--------E--------N--------D--------;----------------
+--------$--------$-------- --------L--------A--------N--------G--------U--------A--------G--------E-------- --------p--------l--------p--------g--------s--------q--------l--------;----------------
+----------------
+--------D--------R--------O--------P-------- --------T--------R--------I--------G--------G--------E--------R-------- --------I--------F-------- --------E--------X--------I--------S--------T--------S-------- --------t--------r--------i--------g--------g--------e--------r--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------T--------R--------I--------G--------G--------E--------R-------- --------t--------r--------i--------g--------g--------e--------r--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t----------------
+-------- -------- -------- -------- --------B--------E--------F--------O--------R--------E-------- --------U--------P--------D--------A--------T--------E-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s----------------
+-------- -------- -------- -------- --------F--------O--------R-------- --------E--------A--------C--------H-------- --------R--------O--------W----------------
+-------- -------- -------- -------- --------E--------X--------E--------C--------U--------T--------E-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------u--------p--------d--------a--------t--------e--------_--------p--------o--------s--------i--------t--------i--------o--------n--------s--------_--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t--------(--------)--------;----------------
+----------------
+-------------------------- --------4--------.--------4-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------s--------t--------a--------g--------e-------- --------蹂----------------寃--------?--------?--------몃-----------------嫄--------?--------
+--------C--------R--------E--------A--------T--------E-------- --------O--------R-------- --------R--------E--------P--------L--------A--------C--------E-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------u--------p--------d--------a--------t--------e--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------s--------t--------a--------g--------e--------_--------t--------i--------m--------e--------s--------t--------a--------m--------p--------(--------)----------------
+--------R--------E--------T--------U--------R--------N--------S-------- --------T--------R--------I--------G--------G--------E--------R-------- --------A--------S-------- --------$--------$----------------
+--------B--------E--------G--------I--------N----------------
+-------- -------- -------- -------- --------I--------F-------- --------O--------L--------D--------.--------s--------t--------a--------g--------e-------- --------I--------S-------- --------D--------I--------S--------T--------I--------N--------C--------T-------- --------F--------R--------O--------M-------- --------N--------E--------W--------.--------s--------t--------a--------g--------e-------- --------T--------H--------E--------N----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------N--------E--------W--------.--------s--------t--------a--------g--------e--------_--------u--------p--------d--------a--------t--------e--------d--------_--------a--------t-------- --------=-------- --------N--------O--------W--------(--------)--------;----------------
+----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------------------------- --------?--------쒕--------룞-------- --------濡--------쒓--------렇-------- --------湲--------곕--------줉----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------I--------N--------S--------E--------R--------T-------- --------I--------N--------T--------O-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s-------- --------(--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------,-------- --------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d--------,-------- --------a--------c--------t--------i--------v--------i--------t--------y--------_--------t--------y--------p--------e--------,-------- --------d--------e--------s--------c--------r--------i--------p--------t--------i--------o--------n--------,-------- --------m--------e--------t--------a--------d--------a--------t--------a--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------V--------A--------L--------U--------E--------S-------- --------(----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------N--------E--------W--------.--------p--------o--------s--------i--------t--------i--------o--------n--------_--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------N--------E--------W--------.--------c--------a--------n--------d--------i--------d--------a--------t--------e--------_--------i--------d--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------'--------s--------t--------a--------g--------e--------_--------c--------h--------a--------n--------g--------e--------d--------'--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------'--------?--------곹--------깭--------媛---------------- --------'-------- --------|--------|-------- --------O--------L--------D--------.--------s--------t--------a--------g--------e-------- --------|--------|-------- --------'--------?--------먯--------꽌-------- --------'-------- --------|--------|-------- --------N--------E--------W--------.--------s--------t--------a--------g--------e-------- --------|--------|-------- --------'--------濡--------?--------蹂----------------寃--------쎈--------릺--------?--------덉--------뒿--------?--------덈--------떎--------.--------'--------,----------------
+-------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- -------- --------j--------s--------o--------n--------b--------_--------b--------u--------i--------l--------d--------_--------o--------b--------j--------e--------c--------t--------(--------'--------o--------l--------d--------_--------s--------t--------a--------g--------e--------'--------,-------- --------O--------L--------D--------.--------s--------t--------a--------g--------e--------,-------- --------'--------n--------e--------w--------_--------s--------t--------a--------g--------e--------'--------,-------- --------N--------E--------W--------.--------s--------t--------a--------g--------e--------)----------------
+-------- -------- -------- -------- -------- -------- -------- -------- --------)--------;----------------
+-------- -------- -------- -------- --------E--------N--------D-------- --------I--------F--------;----------------
+-------- -------- -------- -------- --------R--------E--------T--------U--------R--------N-------- --------N--------E--------W--------;----------------
+--------E--------N--------D--------;----------------
+--------$--------$-------- --------L--------A--------N--------G--------U--------A--------G--------E-------- --------p--------l--------p--------g--------s--------q--------l--------;----------------
+----------------
+--------D--------R--------O--------P-------- --------T--------R--------I--------G--------G--------E--------R-------- --------I--------F-------- --------E--------X--------I--------S--------T--------S-------- --------t--------r--------i--------g--------g--------e--------r--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------s--------t--------a--------g--------e-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------;----------------
+--------C--------R--------E--------A--------T--------E-------- --------T--------R--------I--------G--------G--------E--------R-------- --------t--------r--------i--------g--------g--------e--------r--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------s--------t--------a--------g--------e----------------
+-------- -------- -------- -------- --------B--------E--------F--------O--------R--------E-------- --------U--------P--------D--------A--------T--------E-------- --------O--------N-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s----------------
+-------- -------- -------- -------- --------F--------O--------R-------- --------E--------A--------C--------H-------- --------R--------O--------W----------------
+-------- -------- -------- -------- --------E--------X--------E--------C--------U--------T--------E-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------u--------p--------d--------a--------t--------e--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------s--------t--------a--------g--------e--------_--------t--------i--------m--------e--------s--------t--------a--------m--------p--------(--------)--------;----------------
+----------------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+-------------------------- --------P--------A--------R--------T-------- --------5--------:-------- --------肄--------붾--------찘--------?--------?--------
+-------------------------- --------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧--------?--------먥--------븧----------------
+----------------
+--------C--------O--------M--------M--------E--------N--------T-------- --------O--------N-------- --------T--------A--------B--------L--------E-------- --------p--------o--------s--------i--------t--------i--------o--------n--------s-------- --------I--------S-------- --------'--------?--------ㅻ--------뱶--------?--------뚰--------꽣--------媛---------------- --------愿----------------由--------ы--------븯--------?--------?--------梨--------꾩--------슜-------- --------?--------ъ--------?--------?--------?--------(--------J--------D--------)--------'--------;----------------
+--------C--------O--------M--------M--------E--------N--------T-------- --------O--------N-------- --------T--------A--------B--------L--------E-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------I--------S-------- --------'--------?--------ъ--------?--------?--------?--------?--------꾨--------낫--------?--------?--------留--------ㅼ--------묶-------- --------寃--------곌--------낵-------- --------諛--------?--------吏--------꾪--------뻾-------- --------?--------곹--------깭--------'--------;----------------
+--------C--------O--------M--------M--------E--------N--------T-------- --------O--------N-------- --------T--------A--------B--------L--------E-------- --------p--------o--------s--------i--------t--------i--------o--------n--------_--------a--------c--------t--------i--------v--------i--------t--------i--------e--------s-------- --------I--------S-------- --------'--------?--------ъ--------?--------?--------?--------愿----------------?--------?--------?--------쒕--------룞-------- --------濡--------쒓--------렇--------'--------;----------------
+--------C--------O--------M--------M--------E--------N--------T-------- --------O--------N-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------m--------a--------t--------c--------h--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s--------_--------t--------o--------_--------p--------o--------s--------i--------t--------i--------o--------n-------- --------I--------S-------- --------'--------?--------ъ--------?--------?--------섏--------뿉-------- --------?--------곹--------빀--------?--------?--------?--------꾨--------낫--------?--------?--------留--------ㅼ--------묶-------- --------(--------?--------ㅽ--------궗--------4--------0--------%-------- --------+-------- --------寃--------쎈--------젰--------2--------5--------%-------- --------+-------- --------?--------숇--------젰--------1--------5--------%-------- --------+-------- --------?--------쒕--------㎤--------?--------?--------0--------%--------)--------'--------;----------------
+--------C--------O--------M--------M--------E--------N--------T-------- --------O--------N-------- --------F--------U--------N--------C--------T--------I--------O--------N-------- --------s--------a--------v--------e--------_--------p--------o--------s--------i--------t--------i--------o--------n--------_--------m--------a--------t--------c--------h--------e--------s-------- --------I--------S-------- --------'--------留--------ㅼ--------묶-------- --------寃--------곌--------낵--------瑜--------?--------p--------o--------s--------i--------t--------i--------o--------n--------_--------c--------a--------n--------d--------i--------d--------a--------t--------e--------s-------- --------?--------뚯--------씠--------釉--------붿--------뿉-------- --------?----------------?--------?--------;----------------
+--------

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
@@ -415,6 +415,18 @@ export default function ResumeUploadDrawer({ isOpen, onClose }: ResumeUploadDraw
   const hasFiles = files.length > 0;
   const allComplete = stats.pending === 0 && stats.uploading === 0 && stats.total > 0;
   const progressPercent = stats.total > 0 ? Math.round(((stats.success + stats.error) / stats.total) * 100) : 0;
+
+  // 업로드 완료 시 자동으로 드로어 닫기
+  useEffect(() => {
+    if (allComplete && stats.success > 0 && !isUploading) {
+      const timer = setTimeout(() => {
+        setFiles([]);
+        setActiveProcessingFile(null);
+        onClose();
+      }, 1500); // 1.5초 후 자동 닫기
+      return () => clearTimeout(timer);
+    }
+  }, [allComplete, stats.success, isUploading, onClose]);
 
   // 예상 남은 시간 계산
   const getEstimatedTime = (): string | null => {

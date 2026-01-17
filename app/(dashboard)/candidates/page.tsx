@@ -10,7 +10,6 @@ import {
   Loader2,
   Building2,
   Calendar,
-  Star,
   Briefcase,
   Code,
   Upload,
@@ -144,6 +143,8 @@ interface Candidate {
   // Progressive Loading 필드
   status?: CandidateStatus;
   quick_extracted?: QuickExtractedData;
+  // 매칭 여부 (검토 필요 지표용)
+  hasBeenMatched?: boolean;
 }
 
 export default function CandidatesPage() {
@@ -158,8 +159,10 @@ export default function CandidatesPage() {
   const supabase = createClient();
 
   // candidates 조회 함수
-  const fetchCandidates = async (currentUserId: string) => {
+  const fetchCandidates = async (currentUserId: string): Promise<Candidate[]> => {
     console.log("[Candidates] Fetching candidates...");
+
+    // 1. 후보자 목록 조회
     const { data, error } = await supabase
       .from("candidates")
       .select("id, name, last_position, last_company, exp_years, skills, confidence_score, created_at, summary, careers, status")
@@ -175,7 +178,41 @@ export default function CandidatesPage() {
       throw error;
     }
 
-    return data || [];
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Type assertion for Supabase data
+    const candidatesData = data as unknown as Array<{
+      id: string;
+      name: string;
+      last_position: string | null;
+      last_company: string | null;
+      exp_years: number;
+      skills: string[];
+      confidence_score: number;
+      created_at: string;
+      summary: string | null;
+      careers: Career[] | null;
+      status?: CandidateStatus;
+    }>;
+
+    // 2. 매칭된 후보자 ID 목록 조회 (position_candidates 테이블에서)
+    const candidateIds = candidatesData.map((c) => c.id);
+    const { data: matchedData } = await supabase
+      .from("position_candidates")
+      .select("candidate_id")
+      .in("candidate_id", candidateIds);
+
+    const matchedCandidateIds = new Set(
+      (matchedData as { candidate_id: string }[] | null)?.map(m => m.candidate_id) || []
+    );
+
+    // 3. 각 후보자에 매칭 여부 표시
+    return candidatesData.map((candidate) => ({
+      ...candidate,
+      hasBeenMatched: matchedCandidateIds.has(candidate.id),
+    }));
   };
 
   // 페이지 로드 시 사용자 ID 가져오고 candidates 조회
@@ -362,14 +399,14 @@ export default function CandidatesPage() {
         </div>
         <div className="p-4 rounded-xl bg-white border border-gray-100 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-500/10">
-              <Star className="w-5 h-5 text-emerald-600" />
+            <div className="p-2 rounded-lg bg-amber-500/10">
+              <Briefcase className="w-5 h-5 text-amber-600" />
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900">
-                {candidates.filter((c) => (c.confidence_score || 0) >= 0.95).length}
+                {candidates.filter((c) => c.status === "completed" && !c.hasBeenMatched).length}
               </p>
-              <p className="text-sm text-gray-500">높은 신뢰도</p>
+              <p className="text-sm text-gray-500">검토 필요</p>
             </div>
           </div>
         </div>

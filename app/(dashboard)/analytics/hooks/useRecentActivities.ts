@@ -20,7 +20,8 @@ export function useRecentActivities(limit: number = 10) {
     return useQuery<RecentActivity[]>({
         queryKey: ["analytics", "activities", limit],
         queryFn: async () => {
-            const { data, error } = await supabase.rpc("get_recent_activities", {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data, error } = await (supabase.rpc as any)("get_recent_activities", {
                 p_limit: limit,
             });
 

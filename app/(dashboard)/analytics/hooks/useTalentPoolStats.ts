@@ -43,7 +43,8 @@ export function useTalentPoolStats() {
     return useQuery<TalentPoolStats>({
         queryKey: ["analytics", "talent-pool"],
         queryFn: async () => {
-            const { data, error } = await supabase.rpc("get_talent_pool_stats");
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data, error } = await (supabase.rpc as any)("get_talent_pool_stats");
 
             if (error) {
                 throw new Error(error.message);

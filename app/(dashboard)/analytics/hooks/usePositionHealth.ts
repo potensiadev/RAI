@@ -26,7 +26,8 @@ export function usePositionHealth(limit: number = 10) {
     return useQuery<PositionHealth[]>({
         queryKey: ["analytics", "position-health", limit],
         queryFn: async () => {
-            const { data, error } = await supabase.rpc("get_position_health", {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data, error } = await (supabase.rpc as any)("get_position_health", {
                 p_limit: limit,
             });
 

@@ -9,9 +9,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "vector";
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- ENUMS (Create if not exists)
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 DO $$ BEGIN CREATE TYPE plan_type AS ENUM ('starter', 'pro', 'enterprise'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE analysis_mode AS ENUM ('phase_1', 'phase_2'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -54,9 +54,9 @@ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- 1. USERS TABLE
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -72,9 +72,9 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- 2. USER_CONSENTS TABLE
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS user_consents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -96,9 +96,9 @@ CREATE TABLE IF NOT EXISTS user_consents (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- 3. CANDIDATES TABLE (with Progressive Loading fields)
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS candidates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -141,6 +141,12 @@ CREATE TABLE IF NOT EXISTS candidates (
     portfolio_url TEXT,
     github_url TEXT,
     linkedin_url TEXT,
+    
+    -- Added from 002
+    phone_masked TEXT,
+    email_masked TEXT,
+    education_school TEXT,
+    education_major TEXT,
 
     -- Version management
     version INTEGER DEFAULT 1,
@@ -149,7 +155,7 @@ CREATE TABLE IF NOT EXISTS candidates (
 
     -- AI analysis meta
     confidence_score FLOAT DEFAULT 0,
-    field_confidence JSONB,
+    field_confidence JSONB DEFAULT '{}',
     analysis_mode analysis_mode DEFAULT 'phase_1',
     requires_review BOOLEAN DEFAULT false,
     warnings TEXT[] DEFAULT '{}',
@@ -172,9 +178,9 @@ CREATE TABLE IF NOT EXISTS candidates (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- 4. CANDIDATE_CHUNKS TABLE
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS candidate_chunks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -183,12 +189,15 @@ CREATE TABLE IF NOT EXISTS candidate_chunks (
     content TEXT NOT NULL,
     embedding vector(1536),
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    
+    -- Added from 002
+    chunk_index INTEGER DEFAULT 0
 );
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- 5. PROCESSING_JOBS TABLE
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS processing_jobs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -198,6 +207,11 @@ CREATE TABLE IF NOT EXISTS processing_jobs (
     file_name TEXT NOT NULL,
     file_type TEXT NOT NULL,
     file_size INTEGER NOT NULL,
+    
+    -- Added from 002
+    raw_text TEXT,
+    chunk_count INTEGER,
+    pii_count INTEGER,
     file_path TEXT,
     parse_method TEXT,
     page_count INTEGER,
@@ -210,9 +224,9 @@ CREATE TABLE IF NOT EXISTS processing_jobs (
     completed_at TIMESTAMPTZ
 );
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- 6. SEARCH_FEEDBACK TABLE
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS search_feedback (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -225,9 +239,9 @@ CREATE TABLE IF NOT EXISTS search_feedback (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- 7. CREDIT_TRANSACTIONS TABLE
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS credit_transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -241,9 +255,9 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- INDEXES
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 CREATE INDEX IF NOT EXISTS idx_candidates_user_id ON candidates(user_id);
 CREATE INDEX IF NOT EXISTS idx_candidates_skills ON candidates USING GIN(skills);
@@ -276,9 +290,9 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- ROW LEVEL SECURITY
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_consents ENABLE ROW LEVEL SECURITY;
@@ -317,9 +331,9 @@ CREATE POLICY "Users can insert own jobs" ON processing_jobs FOR INSERT WITH CHE
 CREATE POLICY "Users can manage own feedback" ON search_feedback FOR ALL USING (user_id = auth.uid());
 CREATE POLICY "Users can view own transactions" ON credit_transactions FOR SELECT USING (user_id = auth.uid());
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- TRIGGERS
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
@@ -337,9 +351,9 @@ CREATE TRIGGER users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNC
 CREATE TRIGGER user_consents_updated_at BEFORE UPDATE ON user_consents FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER candidates_updated_at BEFORE UPDATE ON candidates FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- FUNCTIONS
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 -- Auto-create user profile on signup
 CREATE OR REPLACE FUNCTION handle_new_user()
@@ -448,9 +462,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 -- REALTIME (for Progressive Loading)
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- --------------------------------------------------------------------
 
 DO $$
 BEGIN

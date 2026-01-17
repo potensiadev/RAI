@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
-import { useToast } from "@/hooks";
+import { useToast } from "@/components/ui/toast";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 interface UseAnalyticsRealtimeOptions {
@@ -17,7 +17,7 @@ interface UseAnalyticsRealtimeOptions {
 export function useAnalyticsRealtime(options: UseAnalyticsRealtimeOptions = {}) {
     const { enabled = true } = options;
     const queryClient = useQueryClient();
-    const { toast } = useToast();
+    const toast = useToast();
     const channelsRef = useRef<RealtimeChannel[]>([]);
     const supabase = createClient();
 
@@ -42,11 +42,7 @@ export function useAnalyticsRealtime(options: UseAnalyticsRealtimeOptions = {}) 
                         payload.old?.stage !== "placed"
                     ) {
                         // Show toast notification - RT-4
-                        toast({
-                            title: "🎉 채용 완료!",
-                            description: "새로운 채용이 기록되었습니다",
-                            variant: "default",
-                        });
+                        toast.success("🎉 채용 완료!", "새로운 채용이 기록되었습니다");
                     }
 
                     // Invalidate pipeline stats - RT-1

@@ -50,7 +50,8 @@ export function usePipelineStats() {
     return useQuery<PipelineStats & { conversionRates: ConversionRate[] }>({
         queryKey: ["analytics", "pipeline"],
         queryFn: async () => {
-            const { data, error } = await supabase.rpc("get_pipeline_stats");
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data, error } = await (supabase.rpc as any)("get_pipeline_stats");
 
             if (error) {
                 throw new Error(error.message);

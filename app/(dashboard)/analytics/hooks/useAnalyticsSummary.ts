@@ -20,7 +20,8 @@ export function useAnalyticsSummary() {
     return useQuery<AnalyticsSummary>({
         queryKey: ["analytics", "summary"],
         queryFn: async () => {
-            const { data, error } = await supabase.rpc("get_analytics_summary");
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data, error } = await (supabase.rpc as any)("get_analytics_summary");
 
             if (error) {
                 throw new Error(error.message);

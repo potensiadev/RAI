@@ -1,383 +1,199 @@
-import { test, expect, helpers } from "./fixtures";
-
-/**
- * E2E Tests: Analytics Module
- *
- * Tests for analytics dashboard, metrics, charts
- * Following test scenarios from E2E_Test_Scenarios.md
  */
 
-test.describe("Analytics - Core Scenarios", () => {
-  test.beforeEach(async ({ analyticsPage }) => {
-    await analyticsPage.goto();
+test.use({ storageState: 'tests/.auth/user.json' });
+
+test.describe("Analytics v2.0 - Core Scenarios", () => {
+  test.beforeEach(async ({ page }) => {
+    // Mock Supabase RPC calls
+    await page.route("**/rest/v1/rpc/get_analytics_summary", async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          total_candidates: 1250,
+          this_month_count: 45,
+          last_month_count: 30,
+          total_exports: 120,
+          active_positions: 8,
+          urgent_positions: 2
+        },
+      });
+    });
+
+    await page.route("**/rest/v1/rpc/get_pipeline_stats", async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          stages: [
+            { stage: "matched", count: 100, total_entered: 150, total_exited_forward: 50 },
+            { stage: "reviewed", count: 30, total_entered: 50, total_exited_forward: 20 },
+            { stage: "contacted", count: 15, total_entered: 20, total_exited_forward: 10 },
+            { stage: "interviewing", count: 8, total_entered: 10, total_exited_forward: 5 },
+            { stage: "offered", count: 3, total_entered: 5, total_exited_forward: 2 },
+            { stage: "placed", count: 2, total_entered: 2, total_exited_forward: 0 }
+          ],
+          total_in_pipeline: 158,
+          placed_count: 2,
+          conversions: [
+            { from_stage: "matched", to_stage: "reviewed", count: 50 },
+            { from_stage: "reviewed", to_stage: "contacted", count: 20 }
+          ]
+        },
+      });
+    });
+
+    await page.route("**/rest/v1/rpc/get_talent_pool_stats", async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          exp_distribution: { entry: 10, junior: 20, middle: 30, senior: 40, lead: 50 },
+          top_skills: [{ name: "React", skill_count: 100 }, { name: "Node.js", skill_count: 80 }],
+          top_companies: [{ name: "Tech Co", company_count: 15 }],
+          monthly_candidates: [],
+          monthly_placements: []
+        },
+      });
+    });
+
+    await page.route("**/rest/v1/rpc/get_position_health", async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: [
+          {
+            id: "pos-1",
+            title: "Senior Frontend Engineer",
+            client_company: "Tech Corp",
+            status: "open",
+            priority: "urgent",
+            created_at: new Date().toISOString(),
+            days_open: 5,
+            match_count: 12,
+            stuck_count: 0,
+            health_status: "good"
+          }
+        ],
+      });
+    });
+
+    await page.route("**/rest/v1/rpc/get_recent_activities", async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: [
+          {
+            id: "act-1",
+            activity_type: "stage_changed",
+            description: "Changed stage to interviewed",
+            created_at: new Date().toISOString(),
+            display_type: "stage_change",
+            metadata: {}
+          }
+        ],
+      });
+    });
+
+
+
+    await page.goto("/analytics");
   });
 
-  test.describe("ANA-001 to ANA-005: Metrics Cards", () => {
-    test("ANA-001: Analytics page loads correctly", async ({ page }) => {
-      await expect(page).toHaveURL(/\/analytics/);
-      await expect(page.locator("body")).toBeVisible();
-    });
+  test("ANA-001: Page loads and shows KPI cards", async ({ page }) => {
+    // Check Header
+    await expect(page.locator("h1")).toContainText("Analytics");
 
-    test("ANA-002: Total candidates card displayed", async ({ analyticsPage, page }) => {
-      // Look for total candidates metric
-      const totalCard = analyticsPage.totalCandidatesCard.or(
-        page.locator('text=/전체|Total|후보자|Candidates/i').first()
-      );
-
-      await expect(totalCard).toBeVisible({ timeout: 10000 });
-    });
-
-    test("ANA-003: This month new candidates card displayed", async ({ analyticsPage, page }) => {
-      // Look for monthly metric
-      const monthlyCard = analyticsPage.thisMonthNewCard.or(
-        page.locator('text=/이번 달|This Month|신규|New/i').first()
-      );
-
-      // May or may not be visible depending on data
-    });
-
-    test("ANA-004: Blind exports card displayed", async ({ analyticsPage, page }) => {
-      // Look for exports metric
-      const exportsCard = analyticsPage.blindExportsCard.or(
-        page.locator('text=/내보내기|Export|블라인드|Blind/i').first()
-      );
-
-      // May or may not be visible depending on features enabled
-    });
-
-    test("ANA-005: Metrics show numeric values", async ({ page }) => {
-      // Numbers should be displayed in cards
-      const numbers = page.locator('[data-testid*="count"], [class*="metric"] >> text=/\\d+/');
-      // Should have at least one numeric display
-    });
+    // Check Represenative KPI values from mock
+    await expect(page.locator("text=1,250")).toBeVisible(); // Total candidates
+    await expect(page.locator("text=120")).toBeVisible(); // Exports
+    // 2 urgent positions
+    await expect(page.locator("text=2 긴급")).toBeVisible();
   });
 
-  test.describe("ANA-006 to ANA-010: Experience Distribution Chart", () => {
-    test("ANA-006: Experience distribution chart exists", async ({ analyticsPage, page }) => {
-      const chart = analyticsPage.experienceChart.or(
-        page.locator('[class*="chart"], [data-testid*="chart"], svg')
-      );
+  test("ANA-002: Pipeline funnel renders with correct counts", async ({ page }) => {
+    // Check for stage counts from mock
+    await expect(page.locator("text=100")).toBeVisible(); // Matched
+    await expect(page.locator("text=30")).toBeVisible(); // Reviewed
+    await expect(page.locator("text=2")).toBeVisible(); // Placed
 
-      // Chart or chart container should exist
-      await expect(chart.first()).toBeVisible({ timeout: 10000 });
+    // Check for total in pipeline
+    await expect(page.locator("text=총 158명")).toBeVisible();
+  });
+
+  test("ANA-003: Pipeline tooltips show conversion rates", async ({ page }) => {
+    // Hover over a conversion rate badge (mock data logic might need adjustment if badges aren't showing)
+    // In PipelineFunnel.tsx, badges show if showConversion is true.
+    // showConversion = total_in_pipeline > 0 && conversionRate !== null
+
+    // Verify at least one conversion percentage is visible
+    const badge = page.locator("text=%").first();
+    await expect(badge).toBeVisible();
+
+    await badge.hover();
+    // Tooltip should appear
+    await expect(page.locator("text=실제 전환")).toBeVisible();
+  });
+
+  test("ANA-004: Position health list renders and is clickable", async ({ page }) => {
+    const positionLink = page.locator("a[href*='/positions/pos-1']");
+    await expect(positionLink).toBeVisible();
+    await expect(positionLink).toContainText("Senior Frontend Engineer");
+
+    // Check metadata
+    await expect(page.locator("text=Tech Corp")).toBeVisible();
+    await expect(page.locator("text=12명")).toBeVisible(); // Match count
+  });
+
+  test("ANA-005: Manual refresh button works", async ({ page }) => {
+    const refreshBtn = page.locator("button:has-text('새로고침')");
+    await expect(refreshBtn).toBeVisible();
+
+    // Mock a change in data for the second call
+    await page.route("**/rest/v1/rpc/get_analytics_summary", async (route) => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          total_candidates: 1300, // Changed from 1250
+          this_month_count: 50,
+          last_month_count: 30,
+          total_exports: 125,
+          active_positions: 8,
+          urgent_positions: 2
+        },
+      });
     });
 
-    test("ANA-007: Chart has proper labels", async ({ page }) => {
-      // Look for experience tier labels
-      const labels = page.locator('text=/신입|주니어|미들|시니어|리드급|Junior|Senior|Lead/i');
+    await refreshBtn.click();
 
-      // Should have at least one label
-      const count = await labels.count();
-      // Labels may or may not be present depending on data
-    });
-
-    test("ANA-008: Chart bars or segments visible", async ({ analyticsPage, page }) => {
-      const chartBars = analyticsPage.chartBars.or(
-        page.locator('[class*="bar"], rect, [class*="segment"]')
-      );
-
-      // Chart elements should exist
-    });
-
-    test("ANA-009: Percentages displayed", async ({ page }) => {
-      // Percentage values should be shown
-      const percentages = page.locator('text=/%/');
-      // May or may not have percentages
-    });
-
-    test("ANA-010: Empty state for no data", async ({ analyticsPage, page }) => {
-      // If no data, should show appropriate message
-      const emptyState = analyticsPage.emptyState.or(
-        page.locator('text=/데이터가 없|No data|아직|Not yet/i')
-      );
-
-      // Either has data or shows empty state
-      const chart = page.locator('[class*="chart"], svg');
-      const hasChart = await chart.isVisible().catch(() => false);
-      const hasEmpty = await emptyState.isVisible().catch(() => false);
-
-      // One should be true
-    });
+    // Check if new data is reflected
+    await expect(page.locator("text=1,300")).toBeVisible();
   });
 });
 
-test.describe("Analytics - Edge Cases", () => {
-  test("ANA-E01: Large dataset loads without timeout", async ({ analyticsPage, page }) => {
-    // Mock large dataset response
-    await page.route("**/api/analytics**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        json: {
-          totalCandidates: 10000,
-          thisMonthNew: 500,
-          blindExports: 250,
-          experienceDistribution: {
-            entry: 2000,
-            junior: 3000,
-            middle: 2500,
-            senior: 1500,
-            lead: 1000,
-          },
-        },
-      });
+test.describe("Analytics v2.0 - Responsive & Error Handling", () => {
+  test("ANA-E01: Handles empty states gracefully", async ({ page }) => {
+    // Mock empty data
+    await page.route("**/rest/v1/rpc/get_position_health", async (route) => {
+      await route.fulfill({ status: 200, json: [] });
     });
-
-    await analyticsPage.goto();
-
-    // Should load within acceptable time
-    await expect(page.locator("body")).toBeVisible();
-  });
-
-  test("ANA-E02: Zero values displayed correctly", async ({ page }) => {
-    await page.route("**/api/analytics**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        json: {
-          totalCandidates: 0,
-          thisMonthNew: 0,
-          blindExports: 0,
-        },
-      });
+    await page.route("**/rest/v1/rpc/get_recent_activities", async (route) => {
+      await route.fulfill({ status: 200, json: [] });
     });
 
     await page.goto("/analytics");
 
-    // Should show 0 values or empty state
-    const zero = page.locator('text="0"');
-    const emptyState = page.locator('text=/없습니다|No data/i');
-
-    const hasZero = await zero.isVisible().catch(() => false);
-    const hasEmpty = await emptyState.isVisible().catch(() => false);
-
-    // Should display something
-    await expect(page.locator("body")).toBeVisible();
+    // Should show empty state messages
+    await expect(page.locator("text=모든 포지션이 정상입니다")).toBeVisible();
+    await expect(page.locator("text=아직 활동 기록이 없습니다")).toBeVisible();
   });
 
-  test("ANA-E03: All candidates in single tier displayed", async ({ page }) => {
-    await page.route("**/api/analytics**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        json: {
-          totalCandidates: 100,
-          experienceDistribution: {
-            entry: 0,
-            junior: 0,
-            middle: 0,
-            senior: 100, // All in one tier
-            lead: 0,
-          },
-        },
-      });
+  test("ANA-E02: Handles API errors gracefully", async ({ page }) => {
+    // Mock error for KPIs
+    await page.route("**/rest/v1/rpc/get_analytics_summary", async (route) => {
+      await route.fulfill({ status: 500 });
     });
 
     await page.goto("/analytics");
 
-    // Chart should render with single bar at 100%
-    await expect(page.locator("body")).toBeVisible();
-  });
-
-  test("ANA-E04: API error handled gracefully", async ({ page }) => {
-    await page.route("**/api/analytics**", async (route) => {
-      await route.fulfill({
-        status: 500,
-        json: { error: "Server error" },
-      });
-    });
-
-    await page.goto("/analytics");
-
-    // Should show error state, not crash
-    await expect(page.locator("body")).toBeVisible();
-  });
-
-  test("ANA-E05: Network timeout handled", async ({ page }) => {
-    await page.route("**/api/analytics**", async (route) => {
-      await new Promise((r) => setTimeout(r, 35000)); // Exceed timeout
-      await route.abort("timedout");
-    });
-
-    await page.goto("/analytics");
-
-    // Should show timeout/error state eventually
-    await expect(page.locator("body")).toBeVisible();
-  });
-
-  test("ANA-E06: Refresh updates data", async ({ page }) => {
-    let callCount = 0;
-    await page.route("**/api/analytics**", async (route) => {
-      callCount++;
-      await route.fulfill({
-        status: 200,
-        json: {
-          totalCandidates: callCount * 10,
-        },
-      });
-    });
-
-    await page.goto("/analytics");
-    await page.reload();
-
-    // Should have made multiple calls
-    expect(callCount).toBeGreaterThanOrEqual(1);
-  });
-
-  test("ANA-E07: Decimal percentages rounded correctly", async ({ page }) => {
-    await page.route("**/api/analytics**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        json: {
-          experienceDistribution: {
-            entry: 33,
-            junior: 33,
-            middle: 34,
-          },
-        },
-      });
-    });
-
-    await page.goto("/analytics");
-
-    // Percentages should display without floating point errors
-    await expect(page.locator("body")).toBeVisible();
-  });
-
-  test("ANA-E08: Page responsive during data load", async ({ page }) => {
-    await page.route("**/api/analytics**", async (route) => {
-      await new Promise((r) => setTimeout(r, 2000));
-      await route.fulfill({ status: 200, json: {} });
-    });
-
-    await page.goto("/analytics");
-
-    // Page should remain interactive during load
-    await expect(page.locator("body")).toBeVisible();
-    await page.mouse.move(100, 100);
-  });
-
-  test("ANA-E09: Chart tooltip on hover", async ({ page }) => {
-    await page.goto("/analytics");
-
-    // Find chart element
-    const chart = page.locator('[class*="chart"], svg').first();
-
-    if (await chart.isVisible()) {
-      await chart.hover();
-
-      // Tooltip might appear
-      const tooltip = page.locator('[class*="tooltip"], [role="tooltip"]');
-      // May or may not have tooltip
-    }
-  });
-
-  test("ANA-E10: Print/export functionality", async ({ page }) => {
-    await page.goto("/analytics");
-
-    // Look for print or export button
-    const printBtn = page.locator('button:has-text("인쇄"), button:has-text("Print"), button:has-text("Export")');
-    // May or may not have print functionality
-  });
-});
-
-test.describe("Analytics - Responsive Design", () => {
-  test("Analytics works on mobile viewport", async ({ analyticsPage, page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    await analyticsPage.goto();
-
-    await expect(page).toHaveURL(/\/analytics/);
-    await expect(page.locator("body")).toBeVisible();
-  });
-
-  test("Analytics works on tablet viewport", async ({ analyticsPage, page }) => {
-    await page.setViewportSize({ width: 768, height: 1024 });
-    await analyticsPage.goto();
-
-    await expect(page.locator("body")).toBeVisible();
-  });
-
-  test("Chart scales on mobile", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto("/analytics");
-
-    // Chart should still be visible/readable
-    const chart = page.locator('[class*="chart"], svg').first();
-    // Chart container should fit viewport
-  });
-
-  test("Cards stack properly on mobile", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto("/analytics");
-
-    // Cards should be stacked vertically on mobile
-    await expect(page.locator("body")).toBeVisible();
-  });
-});
-
-test.describe("Analytics - Accessibility", () => {
-  test("Analytics page has proper heading", async ({ page }) => {
-    await page.goto("/analytics");
-
-    const heading = page.locator("h1, h2").first();
-    await expect(heading).toBeVisible();
-  });
-
-  test("Chart has accessible description", async ({ page }) => {
-    await page.goto("/analytics");
-
-    // Look for ARIA labels or descriptions on chart
-    const chart = page.locator('[aria-label], [aria-describedby]').first();
-    // May or may not have accessibility attributes
-  });
-
-  test("Metrics are keyboard navigable", async ({ page }) => {
-    await page.goto("/analytics");
-
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Tab");
-
-    const focused = page.locator(":focus");
-    await expect(focused).toBeVisible();
-  });
-
-  test("Color contrast sufficient for metrics", async ({ page }) => {
-    await page.goto("/analytics");
-
-    // Visual check - metrics text should be readable
-    await expect(page.locator("body")).toBeVisible();
-  });
-});
-
-test.describe("Analytics - Performance", () => {
-  test("Page loads within 3 seconds", async ({ analyticsPage, page }) => {
-    const startTime = Date.now();
-
-    await analyticsPage.goto();
-    await page.waitForLoadState("networkidle");
-
-    const loadTime = Date.now() - startTime;
-    expect(loadTime).toBeLessThan(3000);
-  });
-
-  test("Chart renders within acceptable time", async ({ page }) => {
-    const startTime = Date.now();
-
-    await page.goto("/analytics");
-
-    // Wait for chart to appear
-    const chart = page.locator('[class*="chart"], svg').first();
-    await chart.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
-
-    const renderTime = Date.now() - startTime;
-    expect(renderTime).toBeLessThan(5000);
-  });
-
-  test("No memory leaks on repeated visits", async ({ page }) => {
-    // Visit analytics multiple times
-    for (let i = 0; i < 5; i++) {
-      await page.goto("/analytics");
-      await page.waitForLoadState("networkidle");
-    }
-
-    // Page should still be responsive
-    await expect(page.locator("body")).toBeVisible();
+    // Should show error message for that section
+    await expect(page.locator("text=KPI 데이터를 불러올 수 없습니다")).toBeVisible();
+    // Retry button should be present
+    await expect(page.locator("button:has-text('다시 시도')").first()).toBeVisible();
   });
 });

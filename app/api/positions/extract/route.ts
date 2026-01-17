@@ -162,7 +162,7 @@ Important:
 - qualifications: "자격요건", "필수요건", "지원자격", "Requirements", "필수 사항", "필요 역량", "자격 조건" 등의 섹션을 찾아 원문 그대로 추출. 각 JD마다 형식이 다를 수 있으므로 유연하게 인식
 - preferredQualifications: "우대사항", "우대요건", "Preferred", "우대 사항", "우대 조건", "Plus", "Nice to have" 등의 섹션을 찾아 원문 그대로 추출
 - benefits: "복리후생", "혜택", "Benefits", "처우", "근무환경", "지원사항" 등의 섹션이 있으면 원문 그대로 추출, 없으면 null (요약하지 말고 있는 그대로)
-- Extract skills as specific technologies/tools (e.g., "Python", "React", "AWS" not "프로그래밍 능력")
+- Extract skills EXACTLY as written in the JD - preserve the original language (Korean or English). Do NOT translate Korean skills to English.
 - If information is not found, use empty string for strings, empty array for arrays, null for optional numbers
 - Education level: 대졸/학사=bachelor, 석사=master, 박사=doctorate, 초대졸/전문학사=associate, 고졸=high_school
 - Job type must be one of: full-time, contract, freelance, internship, or empty string if not specified
@@ -346,7 +346,7 @@ Important:
 - qualifications: "자격요건", "필수요건", "지원자격", "Requirements", "필수 사항", "필요 역량", "자격 조건" 등의 섹션을 찾아 원문 그대로 추출. 각 JD마다 형식이 다를 수 있으므로 유연하게 인식
 - preferredQualifications: "우대사항", "우대요건", "Preferred", "우대 사항", "우대 조건", "Plus", "Nice to have" 등의 섹션을 찾아 원문 그대로 추출
 - benefits: "복리후생", "혜택", "Benefits", "처우", "근무환경", "지원사항" 등의 섹션이 있으면 원문 그대로 추출, 없으면 null (요약하지 말고 있는 그대로)
-- Extract skills as specific technologies/tools (e.g., "Python", "React", "AWS")
+- Extract skills EXACTLY as written in the JD - preserve the original language (Korean or English). Do NOT translate Korean skills to English.
 - If information is not found, use empty string for strings, empty array for arrays, null for optional numbers
 - Education level: 대졸/학사=bachelor, 석사=master, 박사=doctorate, 초대졸/전문학사=associate, 고졸=high_school
 - Job type must be one of: full-time, contract, freelance, internship, or empty string if not specified

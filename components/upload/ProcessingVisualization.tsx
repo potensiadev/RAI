@@ -1,8 +1,8 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, Cpu, Sparkles, CheckCircle, Image, Database } from "lucide-react";
-import { useState, useEffect } from "react";
+import { FileText, Sparkles, CheckCircle, Image, Search } from "lucide-react";
+import { useEffect } from "react";
 
 export type ProcessingPhase =
     | "idle"
@@ -20,11 +20,11 @@ interface ProcessingVisualizationProps {
 }
 
 const PHASES = [
-    { id: "routing", label: "분류", description: "파일 형식 분석", icon: FileText },
-    { id: "analyzing", label: "AI 분석", description: "Cross-Check", icon: Sparkles },
-    { id: "extracting", label: "추출", description: "사진/개인정보", icon: Image },
-    { id: "embedding", label: "임베딩", description: "벡터 생성", icon: Database },
-    { id: "complete", label: "완료", description: "검색 가능", icon: CheckCircle },
+    { id: "routing", label: "문서 확인", icon: FileText },
+    { id: "analyzing", label: "AI 분석", icon: Sparkles },
+    { id: "extracting", label: "정보 추출", icon: Image },
+    { id: "embedding", label: "검색 최적화", icon: Search },
+    { id: "complete", label: "완료", icon: CheckCircle },
 ];
 
 export default function ProcessingVisualization({
@@ -32,17 +32,6 @@ export default function ProcessingVisualization({
     fileName,
     onComplete,
 }: ProcessingVisualizationProps) {
-    const [beamActive, setBeamActive] = useState(false);
-
-    // Cross-Check 빔 애니메이션
-    useEffect(() => {
-        if (phase === "analyzing") {
-            setBeamActive(true);
-        } else {
-            setBeamActive(false);
-        }
-    }, [phase]);
-
     // 완료 콜백
     useEffect(() => {
         if (phase === "complete") {
@@ -54,6 +43,21 @@ export default function ProcessingVisualization({
     if (phase === "idle") return null;
 
     const currentPhaseIndex = PHASES.findIndex(p => p.id === phase);
+    const progressPercent = currentPhaseIndex >= 0
+        ? Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100)
+        : 0;
+
+    // 현재 단계별 설명 메시지
+    const getStatusMessage = () => {
+        switch (phase) {
+            case "routing": return "이력서 형식을 확인하고 있어요...";
+            case "analyzing": return "AI가 이력서를 분석하고 있어요...";
+            case "extracting": return "핵심 정보를 추출하고 있어요...";
+            case "embedding": return "검색을 위해 최적화하고 있어요...";
+            case "complete": return "분석이 완료되었습니다!";
+            default: return "처리 중...";
+        }
+    };
 
     return (
         <motion.div
@@ -62,62 +66,50 @@ export default function ProcessingVisualization({
             exit={{ opacity: 0, y: -20 }}
             className="p-6 rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden"
         >
-            {/* Header */}
-            <div className="flex items-center gap-3 mb-6">
+            {/* Header with Status Message */}
+            <div className="text-center mb-6">
                 <motion.div
-                    animate={{ rotate: phase !== "complete" ? 360 : 0 }}
-                    transition={{ duration: 2, repeat: phase !== "complete" ? Infinity : 0, ease: "linear" }}
-                    className="p-2 rounded-lg bg-primary/10 text-primary"
+                    animate={{ scale: phase !== "complete" ? [1, 1.05, 1] : 1 }}
+                    transition={{ duration: 1.5, repeat: phase !== "complete" ? Infinity : 0 }}
+                    className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 text-primary mb-3"
                 >
-                    <Cpu size={20} />
-                </motion.div>
-                <div>
-                    <h3 className="text-gray-900 font-semibold">AI 처리 중</h3>
-                    {fileName && (
-                        <p className="text-sm text-gray-500 truncate max-w-[200px]">{fileName}</p>
+                    {phase === "complete" ? (
+                        <CheckCircle size={24} />
+                    ) : (
+                        <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                        >
+                            <Sparkles size={24} />
+                        </motion.div>
                     )}
+                </motion.div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                    {phase === "complete" ? "분석 완료!" : "이력서를 분석하고 있어요"}
+                </h3>
+                <p className="text-sm text-gray-500">{getStatusMessage()}</p>
+                {fileName && (
+                    <p className="text-xs text-gray-400 mt-1 truncate max-w-[280px] mx-auto">{fileName}</p>
+                )}
+            </div>
+
+            {/* Unified Progress Bar */}
+            <div className="mb-6">
+                <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-medium text-gray-600">진행률</span>
+                    <span className="text-xs text-gray-500">{progressPercent}%</span>
+                </div>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progressPercent}%` }}
+                        transition={{ duration: 0.5, ease: "easeOut" }}
+                        className="h-full bg-primary rounded-full"
+                    />
                 </div>
             </div>
 
-            {/* Cross-Check Beam Animation (Phase 2) */}
-            <AnimatePresence>
-                {beamActive && (
-                    <div className="relative h-16 mb-6 rounded-xl bg-gray-50 border border-gray-100 overflow-hidden">
-                        {/* GPT-4o Beam (Blue) */}
-                        <motion.div
-                            initial={{ x: "-100%", opacity: 0 }}
-                            animate={{ x: "100%", opacity: [0, 1, 1, 0] }}
-                            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                            className="absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-blue-500/20 to-transparent"
-                        />
-                        {/* Gemini Beam (Orange) */}
-                        <motion.div
-                            initial={{ x: "200%", opacity: 0 }}
-                            animate={{ x: "-100%", opacity: [0, 1, 1, 0] }}
-                            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-                            className="absolute inset-y-0 right-0 w-1/3 bg-gradient-to-r from-transparent via-orange-500/20 to-transparent"
-                        />
-                        {/* Center Merge Effect */}
-                        <motion.div
-                            animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
-                            transition={{ duration: 1, repeat: Infinity }}
-                            className="absolute inset-0 flex items-center justify-center"
-                        >
-                            <div className="flex items-center gap-3">
-                                <span className="text-xs text-blue-600 font-mono font-medium">GPT-4o</span>
-                                <motion.div
-                                    animate={{ scale: [0.8, 1.2, 0.8] }}
-                                    transition={{ duration: 0.5, repeat: Infinity }}
-                                    className="w-2 h-2 rounded-full bg-emerald-500"
-                                />
-                                <span className="text-xs text-orange-600 font-mono font-medium">Gemini</span>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
-
-            {/* Phase Progress */}
+            {/* Phase Steps */}
             <div className="flex items-center justify-between">
                 {PHASES.map((p, index) => {
                     const isComplete = index < currentPhaseIndex;
@@ -125,13 +117,14 @@ export default function ProcessingVisualization({
                     const Icon = p.icon;
 
                     return (
-                        <div key={p.id} className="flex flex-col items-center flex-1">
+                        <div key={p.id} className="flex flex-col items-center flex-1 relative">
                             {/* Connection Line */}
                             {index > 0 && (
-                                <div className="absolute h-0.5 w-full -translate-y-4">
+                                <div className="absolute top-4 -left-1/2 w-full h-0.5 bg-gray-100">
                                     <motion.div
                                         initial={{ scaleX: 0 }}
-                                        animate={{ scaleX: isComplete || isCurrent ? 1 : 0 }}
+                                        animate={{ scaleX: isComplete ? 1 : 0 }}
+                                        transition={{ duration: 0.3 }}
                                         className="h-full bg-primary origin-left"
                                     />
                                 </div>
@@ -141,20 +134,19 @@ export default function ProcessingVisualization({
                             <motion.div
                                 animate={{
                                     scale: isCurrent ? [1, 1.1, 1] : 1,
-                                    borderColor: isComplete || isCurrent ? "rgb(139, 92, 246)" : "rgb(226, 232, 240)",
                                 }}
                                 transition={{ duration: 0.5, repeat: isCurrent ? Infinity : 0 }}
                                 className={`
-                                    w-10 h-10 rounded-full border-2 flex items-center justify-center mb-2 shadow-sm
-                                    ${isComplete ? "bg-primary/10 text-primary" : ""}
-                                    ${isCurrent ? "bg-primary/20 text-primary" : ""}
-                                    ${!isComplete && !isCurrent ? "bg-white text-gray-300" : ""}
+                                    relative z-10 w-8 h-8 rounded-full border-2 flex items-center justify-center mb-2
+                                    ${isComplete ? "bg-primary border-primary text-white" : ""}
+                                    ${isCurrent ? "bg-primary/10 border-primary text-primary" : ""}
+                                    ${!isComplete && !isCurrent ? "bg-white border-gray-200 text-gray-300" : ""}
                                 `}
                             >
                                 {isComplete ? (
-                                    <CheckCircle size={18} />
+                                    <CheckCircle size={14} />
                                 ) : (
-                                    <Icon size={18} />
+                                    <Icon size={14} />
                                 )}
                             </motion.div>
 
@@ -162,25 +154,15 @@ export default function ProcessingVisualization({
                             <span className={`text-xs font-medium ${isCurrent ? "text-primary" : isComplete ? "text-gray-700" : "text-gray-400"}`}>
                                 {p.label}
                             </span>
-                            <span className="text-[10px] text-gray-400">{p.description}</span>
                         </div>
                     );
                 })}
             </div>
 
-            {/* Status Text */}
-            <motion.p
-                key={phase}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-center text-sm text-gray-500 mt-4"
-            >
-                {phase === "routing" && "파일 형식을 분석하고 있습니다..."}
-                {phase === "analyzing" && "GPT-4o와 Gemini가 교차 검증 중입니다..."}
-                {phase === "extracting" && "사진과 개인정보를 추출하고 있습니다..."}
-                {phase === "embedding" && "검색용 벡터를 생성하고 있습니다..."}
-                {phase === "complete" && "처리가 완료되었습니다!"}
-            </motion.p>
+            {/* Helper Message */}
+            <p className="text-center text-xs text-gray-400 mt-6">
+                분석이 완료되면 자동으로 후보자에 추가됩니다
+            </p>
         </motion.div>
     );
 }

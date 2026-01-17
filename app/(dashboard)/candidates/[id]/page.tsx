@@ -12,6 +12,8 @@ import {
   FileDown,
   PanelLeftClose,
   PanelLeft,
+  Trash2,
+  X,
 } from "lucide-react";
 import { CandidateReviewPanel } from "@/components/review";
 import SplitViewer from "@/components/detail/SplitViewer";
@@ -146,6 +148,9 @@ export default function CandidateDetailPage() {
   }>>([]);
   // New state for highlighting
   const [highlightKeyword, setHighlightKeyword] = useState<string | null>(null);
+  // Delete state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // ─────────────────────────────────────────────────
   // Refs for concurrency control
@@ -467,6 +472,32 @@ export default function CandidateDetailPage() {
     }
   };
 
+  // Delete handler
+  const handleDelete = async () => {
+    if (isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/candidates/${candidateId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error?.message || "삭제에 실패했습니다");
+      }
+
+      toast.success("삭제 완료", "후보자와 이력서가 삭제되었습니다.");
+      router.push("/candidates");
+    } catch (err) {
+      console.error("Delete error:", err);
+      toast.error("삭제 실패", err instanceof Error ? err.message : "삭제 중 오류가 발생했습니다");
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteModal(false);
+    }
+  };
+
   if (isLoading) {
     return <DetailPageSkeleton />;
   }
@@ -598,6 +629,18 @@ export default function CandidateDetailPage() {
             {showSplitView ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
             <span className="text-sm font-medium">Split View</span>
           </button>
+
+          {/* Delete Button */}
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg
+                     bg-white border border-red-200 hover:bg-red-50
+                     text-red-500 hover:text-red-600 transition-colors shadow-sm"
+            title="삭제"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span className="text-sm font-medium">삭제</span>
+          </button>
         </div>
       </div>
 
@@ -646,6 +689,80 @@ export default function CandidateDetailPage() {
           isLoading={isSaving}
           onKeywordSelect={handleKeywordSelect}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => !isDeleting && setShowDeleteModal(false)}
+          />
+
+          {/* Modal */}
+          <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+            {/* Close button */}
+            <button
+              onClick={() => !isDeleting && setShowDeleteModal(false)}
+              disabled={isDeleting}
+              className="absolute top-4 right-4 p-1 rounded-lg hover:bg-gray-100
+                       text-gray-400 hover:text-gray-600 transition-colors
+                       disabled:opacity-50"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Icon */}
+            <div className="flex justify-center mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-500" />
+              </div>
+            </div>
+
+            {/* Title */}
+            <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
+              후보자를 삭제하시겠습니까?
+            </h3>
+
+            {/* Warning message */}
+            <p className="text-sm text-gray-500 text-center mb-6">
+              <span className="font-medium text-gray-700">{candidate.name}</span>의 정보와
+              <span className="text-red-500 font-medium"> 업로드된 이력서 파일</span>이
+              함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
+            </p>
+
+            {/* Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200
+                         bg-white hover:bg-gray-50 text-gray-700 font-medium
+                         transition-colors disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2.5 rounded-lg
+                         bg-red-500 hover:bg-red-600 text-white font-medium
+                         transition-colors disabled:opacity-50
+                         flex items-center justify-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    삭제 중...
+                  </>
+                ) : (
+                  "삭제"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

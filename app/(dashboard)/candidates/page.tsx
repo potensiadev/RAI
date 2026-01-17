@@ -13,12 +13,14 @@ import {
   Star,
   Briefcase,
   Code,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState, CardSkeleton } from "@/components/ui/empty-state";
 
 // Progressive Loading: ProcessingCard
 import ProcessingCard from "@/components/dashboard/ProcessingCard";
+import ResumeUploadDrawer from "@/components/upload/ResumeUploadDrawer";
 import type { CandidateStatus } from "@/types";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
@@ -151,6 +153,7 @@ export default function CandidatesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"recent" | "confidence" | "exp">("recent");
   const [userId, setUserId] = useState<string | undefined>();
+  const [isUploadDrawerOpen, setIsUploadDrawerOpen] = useState(false);
 
   const supabase = createClient();
 
@@ -287,12 +290,31 @@ export default function CandidatesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Candidates</h1>
-        <p className="text-gray-500 mt-1">
-          등록된 모든 후보자를 확인하고 관리하세요
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Candidates</h1>
+          <p className="text-gray-500 mt-1">
+            등록된 모든 후보자를 확인하고 관리하세요
+          </p>
+        </div>
+        {/* 후보자가 1명 이상일 때만 업로드 버튼 표시 */}
+        {candidates.length > 0 && (
+          <button
+            onClick={() => setIsUploadDrawerOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90
+                     text-white font-medium transition-colors shadow-sm"
+          >
+            <Upload className="w-4 h-4" />
+            이력서 업로드
+          </button>
+        )}
       </div>
+
+      {/* Upload Drawer */}
+      <ResumeUploadDrawer
+        isOpen={isUploadDrawerOpen}
+        onClose={() => setIsUploadDrawerOpen(false)}
+      />
 
       {/* Search & Filter Bar */}
       <div className="flex items-center gap-4">
@@ -395,7 +417,7 @@ export default function CandidatesPage() {
             description={searchQuery ? "다른 조건으로 검색해보세요." : undefined}
             cta={!searchQuery ? {
               label: "이력서 업로드",
-              href: "/upload",
+              onClick: () => setIsUploadDrawerOpen(true),
             } : undefined}
           />
         </div>

@@ -531,13 +531,16 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Funnel Visualization */}
-        <div className="relative">
-          <div className="flex items-end justify-between gap-2">
+        <div className="space-y-3">
+          {/* Bars Row */}
+          <div className="flex items-end gap-1">
             {data.pipelineStages.map((stage, index) => {
               const heightPercent = data.totalInPipeline > 0
-                ? Math.max(20, (stage.count / data.totalInPipeline) * 100)
-                : 20;
+                ? Math.max(30, (stage.count / data.totalInPipeline) * 100)
+                : 30;
               const config = STAGE_CONFIG[stage.stage];
+              const conversionRate = index < conversionRates.length ? conversionRates[index].rate : null;
+              const showConversion = data.totalInPipeline > 0 && conversionRate !== null && index < data.pipelineStages.length - 1;
 
               return (
                 <div key={stage.stage} className="flex-1 flex flex-col items-center">
@@ -546,29 +549,31 @@ export default function AnalyticsPage() {
                     {stage.count}
                   </span>
 
-                  {/* Bar */}
-                  <div
-                    className={cn(
-                      "w-full rounded-t-lg transition-all duration-500",
-                      config.bgColor
+                  {/* Bar with optional conversion indicator */}
+                  <div className="w-full flex items-end">
+                    <div
+                      className={cn(
+                        "flex-1 rounded-t-lg transition-all duration-500",
+                        config.bgColor
+                      )}
+                      style={{ height: `${heightPercent}px`, minHeight: "40px" }}
+                    />
+                    {/* Conversion Rate - shown as connecting arrow between bars */}
+                    {showConversion && (
+                      <div className="flex items-center justify-center w-6 -mx-3 z-10">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[10px] font-semibold text-gray-500 bg-white px-1 rounded">
+                            {conversionRate.toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
                     )}
-                    style={{ height: `${heightPercent}px`, minHeight: "40px" }}
-                  />
+                  </div>
 
                   {/* Label */}
-                  <span className={cn("text-xs font-medium mt-2", config.color)}>
+                  <span className={cn("text-xs font-medium mt-2 text-center", config.color)}>
                     {stage.label}
                   </span>
-
-                  {/* Conversion Rate Arrow */}
-                  {index < conversionRates.length && (
-                    <div className="absolute top-1/2 -translate-y-1/2" style={{ left: `calc(${((index + 1) / data.pipelineStages.length) * 100}% - 20px)` }}>
-                      <div className="flex items-center text-xs text-gray-400">
-                        <ChevronRight className="w-4 h-4" />
-                        <span className="font-medium">{conversionRates[index].rate.toFixed(0)}%</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               );
             })}

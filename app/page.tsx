@@ -305,15 +305,8 @@ function LandingPageContent() {
   const router = useRouter();
 
   // Demo Section Refs
-  const demo1Ref = useRef<HTMLDivElement>(null);
   const demo2Ref = useRef<HTMLDivElement>(null);
   const demo3Ref = useRef<HTMLDivElement>(null);
-
-  // Demo 1 State
-  const [demo1Step, setDemo1Step] = useState<"idle" | "uploading" | "analyzing" | "complete">("idle");
-  const [demo1Progress, setDemo1Progress] = useState(0);
-  const demo1TimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const demo1IntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Demo 2 State
   const [demo2Step, setDemo2Step] = useState<"idle" | "input" | "analyzing" | "matching" | "complete">("idle");
@@ -413,14 +406,6 @@ function LandingPageContent() {
   // Demo 3 typing animation text
   const demo3TypingText = "경력 10년 이상의 컨설팅펌 출신 전략기획 후보자 찾아줘";
 
-  // Reset Demo 1
-  const resetDemo1 = useCallback(() => {
-    if (demo1TimeoutRef.current) clearTimeout(demo1TimeoutRef.current);
-    if (demo1IntervalRef.current) clearInterval(demo1IntervalRef.current);
-    setDemo1Step("idle");
-    setDemo1Progress(0);
-  }, []);
-
   // Reset Demo 2
   const resetDemo2 = useCallback(() => {
     demo2TimeoutRefs.current.forEach(t => clearTimeout(t));
@@ -457,26 +442,6 @@ function LandingPageContent() {
     setDemo3Searching(false);
     setDemo3Results(null);
     setDemo3IsTyping(false);
-  }, []);
-
-  // Demo 1 Animation
-  const runDemo1 = useCallback(() => {
-    setDemo1Step("uploading");
-    setDemo1Progress(0);
-
-    demo1TimeoutRef.current = setTimeout(() => {
-      setDemo1Step("analyzing");
-      demo1IntervalRef.current = setInterval(() => {
-        setDemo1Progress((prev) => {
-          if (prev >= 100) {
-            if (demo1IntervalRef.current) clearInterval(demo1IntervalRef.current);
-            setDemo1Step("complete");
-            return 100;
-          }
-          return prev + 4;
-        });
-      }, 100);
-    }, 800);
   }, []);
 
   // Demo 2 Animation (30% faster)
@@ -548,18 +513,6 @@ function LandingPageContent() {
         entries.forEach((entry) => {
           const target = entry.target;
 
-          // Demo 1
-          if (target === demo1Ref.current) {
-            if (entry.isIntersecting) {
-              resetDemo1();
-              demo1TimeoutRef.current = setTimeout(() => {
-                runDemo1();
-              }, 500);
-            } else {
-              resetDemo1();
-            }
-          }
-
           // Demo 2
           if (target === demo2Ref.current) {
             if (entry.isIntersecting) {
@@ -587,17 +540,15 @@ function LandingPageContent() {
     );
 
     // Observe all demo refs
-    if (demo1Ref.current) observer.observe(demo1Ref.current);
     if (demo2Ref.current) observer.observe(demo2Ref.current);
     if (demo3Ref.current) observer.observe(demo3Ref.current);
 
     return () => {
       observer.disconnect();
-      resetDemo1();
       resetDemo2();
       resetDemo3();
     };
-  }, [mounted, resetDemo1, runDemo1, resetDemo2, runDemo2, runDemo3WithTyping, resetDemo3]);
+  }, [mounted, resetDemo2, runDemo2, runDemo3WithTyping, resetDemo3]);
 
   // Demo 3 Search
   const runDemo3Search = (query: string) => {
@@ -748,42 +699,28 @@ function LandingPageContent() {
         <section className="relative px-6 md:px-8 py-16 md:py-24 max-w-7xl mx-auto">
           <div className="text-center max-w-4xl mx-auto">
 
-            {/* Main Headline - 고통을 정확히 찌르는 */}
+            {/* Main Headline */}
             <motion.h1
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
               className="text-4xl md:text-6xl lg:text-7xl font-bold text-gray-900 mb-6 leading-[1.1] tracking-tight"
             >
-              이력서 3,000개가
+              폴더에 흩어진 이력서
               <br />
-              <span className="text-primary">돈이 되고 있나요?</span>
+              <span className="text-primary">3초 만에 찾으세요</span>
             </motion.h1>
 
-            {/* Pain Point - 구체적인 상황 묘사 */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto mb-4 leading-relaxed"
-            >
-              <p className="text-gray-500 mb-2">
-                분명 작년에 딱 맞는 후보 봤는데... 어느 폴더였지?
-                <br className="hidden md:block" />
-                결국 못 찾아서 처음부터 소싱. <span className="text-red-500 font-medium">그 시간에 경쟁사는 벌써 제안 완료.</span>
-              </p>
-            </motion.div>
-
-            {/* Solution - 결과 중심 */}
+            {/* Sub-copy */}
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.3 }}
-              className="text-lg md:text-xl text-gray-900 max-w-2xl mx-auto mb-10"
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto mb-10"
             >
-              <strong>쌓아둔 이력서가 검색되는 순간,</strong>
+              더이상 폴더 뒤지지 마세요.
               <br className="hidden md:block" />
-              헤드헌터의 하루가 완전히 달라집니다.
+              JD에 맞는 후보자를 자동 추천해드립니다.
             </motion.p>
 
             {/* CTA Buttons */}
@@ -981,24 +918,6 @@ function LandingPageContent() {
               <p className="text-lg text-gray-600">30페이지 이력서도 30초면 핵심만 정리</p>
             </motion.div>
           </div>
-
-          {/* Full-width seamless demo */}
-          <motion.div
-            ref={demo1Ref}
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            role="region"
-            aria-label="이력서 분석 데모"
-          >
-            <img
-              src="/demo-resume-analysis.gif"
-              alt="서치드 이력서 분석 데모"
-              className="w-full h-auto"
-              loading="lazy"
-            />
-          </motion.div>
 
           <div className="max-w-7xl mx-auto px-6 md:px-8">
             {/* Feature highlights */}
@@ -2110,7 +2029,7 @@ function LandingPageContent() {
                   소싱 시간, 절반으로 줄여보세요
                 </h2>
                 <p className="text-gray-600 mb-6">
-                  이미 500+ 리크루터가 서치드로
+                  이미 500명의 리크루터가 서치드로
                   <br />
                   <strong className="text-primary">더 빠르게 인재를 찾고 있습니다.</strong>
                 </p>

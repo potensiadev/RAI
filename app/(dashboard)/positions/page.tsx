@@ -74,12 +74,11 @@ export default function PositionsPage() {
   const supabase = createClient();
   const toast = useToast();
 
-  // positions 조회 함수
-  const fetchPositions = async (userId: string) => {
+  // positions 조회 함수 (RLS가 user_id 필터 자동 적용)
+  const fetchPositions = async (_userId: string) => {
     const { data, error } = await supabase
       .from("positions")
       .select("id, title, client_company, department, required_skills, min_exp_years, max_exp_years, status, priority, deadline, created_at, position_candidates(count)")
-      .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -94,7 +93,7 @@ export default function PositionsPage() {
     })) as Position[];
   };
 
-  // 페이지 로드 시 사용자 ID 가져오고 positions 조회
+  // 페이지 로드 시 positions 조회 (RLS가 자동으로 현재 사용자 필터 적용)
   useEffect(() => {
     const loadData = async () => {
       try {

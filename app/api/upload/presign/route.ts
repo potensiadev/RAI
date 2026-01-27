@@ -4,12 +4,19 @@
  *
  * Vercel의 4.5MB 제한을 우회하기 위해 클라이언트가 직접 Storage에 업로드
  *
- * 주의: presign은 메타데이터만 검증 (확장자, 크기)
- * 매직 바이트 검증은 /api/upload/confirm에서 수행
+ * 보안 개선사항 (v2):
+ * - Atomic 크레딧 예약 추가 (Race Condition 방지)
+ * - 실패 시 롤백 로직
+ * - 매직 바이트 검증은 /api/upload/confirm에서 수행
  */
 
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  getAdminClient,
+  reserveCredit,
+  releaseCreditReservation,
+} from "@/lib/supabase/admin";
 import {
   validateFile,
   calculateRemainingCredits,
@@ -27,16 +34,25 @@ import {
 } from "@/lib/api-response";
 
 export async function POST(request: NextRequest) {
+    // 롤백에 필요한 상태 추적
+    let creditReserved = false;
+    let publicUserId = "";
+    let jobId = "";
+    let candidateId: string | undefined = undefined;
+
     try {
         // 레이트 제한 체크
         const rateLimitResponse = await withRateLimit(request, "upload");
         if (rateLimitResponse) return rateLimitResponse;
 
         const supabase = await createClient();
+        const adminClient = getAdminClient();
 
         // 인증 확인
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        console.log("[Presign] Auth check - user:", user?.email, "error:", authError?.message);
         if (!user) {
+            console.log("[Presign] No user found, returning 401");
             return apiUnauthorized();
         }
 
@@ -89,20 +105,44 @@ export async function POST(request: NextRequest) {
             return apiNotFound("사용자를 찾을 수 없습니다.");
         }
 
-        const publicUserId = (userData as { id: string }).id;
+        publicUserId = (userData as { id: string }).id;
         const userInfo = userData as UserCreditsInfo;
 
-        // 크레딧 계산 (공통 유틸리티 사용)
+        // 크레딧 계산 (공통 유틸리티 사용) - 빠른 실패
         const remaining = calculateRemainingCredits(userInfo);
 
         if (remaining <= 0) {
             return apiInsufficientCredits();
         }
 
-        // processing_jobs 레코드 생성
+        // ─────────────────────────────────────────────────
+        // 보안: Atomic 크레딧 예약 (Race Condition 방지)
+        // 크레딧을 먼저 예약하고, 이후 작업이 실패하면 롤백
+        // ─────────────────────────────────────────────────
+        console.log(`[Presign] User data:`, JSON.stringify(userData));
+        console.log(`[Presign] Attempting credit reservation for user: ${publicUserId}, remaining: ${remaining}`);
+
+        const reserveResult = await reserveCredit(
+            publicUserId,
+            undefined,  // jobId는 아직 없음
+            `이력서 업로드 예약: ${fileName}`
+        );
+
+        console.log(`[Presign] Credit reservation result:`, reserveResult);
+
+        if (!reserveResult.success) {
+            console.warn(`[Presign] Credit reservation failed: ${reserveResult.error}`);
+            // 에러 메시지가 있으면 상세 정보 반환
+            if (reserveResult.error) {
+                return apiInternalError(`크레딧 예약 실패: ${reserveResult.error}`);
+            }
+            return apiInsufficientCredits();
+        }
+        creditReserved = true;
+
+        // processing_jobs 레코드 생성 (Admin Client 사용)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const supabaseAny = supabase as any;
-        const { data: job, error: jobError } = await supabaseAny
+        const { data: job, error: jobError } = await (adminClient as any)
             .from("processing_jobs")
             .insert({
                 user_id: publicUserId,
@@ -115,18 +155,19 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (jobError || !job) {
-            console.error("Failed to create job:", jobError);
-            return apiInternalError("작업 생성에 실패했습니다.");
+            console.error("[Presign] Failed to create job:", jobError);
+            throw new Error("작업 생성에 실패했습니다.");
         }
 
-        const jobData = job as { id: string };
+        jobId = (job as { id: string }).id;
 
         // Storage 경로 생성
-        const safeFileName = `${jobData.id}${ext}`;
+        const safeFileName = `${jobId}${ext}`;
         const storagePath = `uploads/${user.id}/${safeFileName}`;
 
-        // candidates 테이블에 초기 레코드 생성
-        const { data: candidate, error: candidateError } = await supabaseAny
+        // candidates 테이블에 초기 레코드 생성 (Admin Client 사용)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: candidate, error: candidateError } = await (adminClient as any)
             .from("candidates")
             .insert({
                 user_id: publicUserId,
@@ -141,31 +182,61 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (candidateError) {
-            console.error("Failed to create candidate:", candidateError);
+            console.error("[Presign] Failed to create candidate:", candidateError);
+            // candidate 생성 실패는 치명적이지 않음 - 계속 진행
         }
 
-        const candidateId = candidate?.id;
+        candidateId = candidate?.id;
 
         // processing_jobs에 candidate_id 업데이트
         if (candidateId) {
-            await supabaseAny
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (adminClient as any)
                 .from("processing_jobs")
                 .update({ candidate_id: candidateId })
-                .eq("id", jobData.id);
+                .eq("id", jobId);
         }
 
         // 클라이언트가 직접 업로드할 정보 반환
         // 클라이언트에서 supabase.storage.from('resumes').upload() 사용
         return apiSuccess({
             storagePath,
-            jobId: jobData.id,
+            jobId,
             candidateId,
             userId: publicUserId,
             plan: userInfo.plan,
             message: "스토리지에 직접 업로드할 준비가 완료되었습니다.",
         });
     } catch (error) {
-        console.error("Presign error:", error);
-        return apiInternalError();
+        console.error("[Presign] Error:", error);
+        console.error("[Presign] Error stack:", error instanceof Error ? error.stack : "no stack");
+
+        // ─────────────────────────────────────────────────
+        // 롤백: 크레딧 예약 해제
+        // ─────────────────────────────────────────────────
+        if (creditReserved && publicUserId) {
+            try {
+                await releaseCreditReservation(publicUserId, jobId || undefined);
+                console.log(`[Presign] Credit reservation released for user: ${publicUserId}`);
+            } catch (rollbackError) {
+                console.error("[Presign] Failed to release credit reservation:", rollbackError);
+            }
+        }
+
+        // 생성된 job/candidate 정리 (best effort)
+        if (jobId) {
+            try {
+                const adminClient = getAdminClient();
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await (adminClient as any)
+                    .from("processing_jobs")
+                    .update({ status: "failed", error_message: "Presign failed" })
+                    .eq("id", jobId);
+            } catch (cleanupError) {
+                console.error("[Presign] Failed to cleanup job:", cleanupError);
+            }
+        }
+
+        return apiInternalError("업로드 준비 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     }
 }

@@ -159,14 +159,14 @@ export default function CandidatesPage() {
   const supabase = createClient();
 
   // candidates 조회 함수
-  const fetchCandidates = async (currentUserId: string): Promise<Candidate[]> => {
+  // RLS가 user_id 필터를 자동으로 적용하므로 user_id 파라미터는 Realtime 구독용
+  const fetchCandidates = async (_currentUserId: string): Promise<Candidate[]> => {
     console.log("[Candidates] Fetching candidates...");
 
-    // 1. 후보자 목록 조회
+    // 1. 후보자 목록 조회 (RLS가 자동으로 현재 사용자의 데이터만 반환)
     const { data, error } = await supabase
       .from("candidates")
       .select("id, name, last_position, last_company, exp_years, skills, confidence_score, created_at, summary, careers, status")
-      .eq("user_id", currentUserId)
       .in("status", ["processing", "parsed", "analyzed", "completed"])
       .eq("is_latest", true)
       .order("created_at", { ascending: false });
@@ -222,14 +222,26 @@ export default function CandidatesPage() {
         const { data: { user } } = await supabase.auth.getUser();
         console.log("[Candidates] Auth user:", user?.id, user?.email);
 
-        if (!user) {
+        if (!user || !user.email) {
           console.log("[Candidates] No user found");
           setIsLoading(false);
           return;
         }
 
-        const currentUserId = user.id;
-        console.log("[Candidates] Using userId:", currentUserId);
+        // public.users 테이블에서 실제 user_id 조회 (Realtime 구독용)
+        const { data: userData, error: userError } = await supabase
+          .from("users")
+          .select("id")
+          .eq("email", user.email)
+          .single();
+
+        if (userError || !userData) {
+          console.error("[Candidates] Failed to get public user:", userError);
+          // public.users에 레코드가 없어도 RLS를 통해 조회 시도
+        }
+
+        const currentUserId = userData?.id || user.id;
+        console.log("[Candidates] Using userId for realtime:", currentUserId);
         setUserId(currentUserId);
 
         const data = await fetchCandidates(currentUserId);

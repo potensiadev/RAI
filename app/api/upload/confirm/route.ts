@@ -7,9 +7,10 @@
 
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { validateMagicBytes } from "@/lib/file-validation";
+import { validateMagicBytes, validateZipStructure } from "@/lib/file-validation";
 import { withRateLimit } from "@/lib/rate-limit";
 import { callWorkerPipelineAsync } from "@/lib/fetch-retry";
+import { releaseCreditReservation } from "@/lib/supabase/admin";
 import {
     apiSuccess,
     apiUnauthorized,
@@ -36,10 +37,52 @@ export async function POST(request: NextRequest) {
         }
 
         // 요청 바디 파싱
-        const { jobId, candidateId, storagePath, fileName, userId, plan } = await request.json();
+        const { jobId, candidateId, storagePath, fileName, plan } = await request.json();
 
         if (!jobId || !storagePath || !fileName) {
             return apiBadRequest("업로드 정보가 올바르지 않습니다. 페이지를 새로고침하고 다시 시도해주세요.");
+        }
+
+        // ─────────────────────────────────────────────────
+        // 보안: IDOR 방지 - jobId 소유권 검증
+        // 클라이언트가 전달한 userId를 신뢰하지 않고, DB에서 직접 확인
+        // ─────────────────────────────────────────────────
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: jobData, error: jobError } = await (supabase as any)
+            .from("processing_jobs")
+            .select("user_id, status")
+            .eq("id", jobId)
+            .single();
+
+        if (jobError || !jobData) {
+            console.warn(`[Upload Confirm] Job not found: jobId=${jobId}, user=${user.id}`);
+            return apiBadRequest("업로드 작업을 찾을 수 없습니다. 페이지를 새로고침하고 다시 시도해주세요.");
+        }
+
+        // public.users에서 현재 사용자의 ID 조회
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: userData, error: userError } = await (supabase as any)
+            .from("users")
+            .select("id")
+            .eq("email", user.email)
+            .single();
+
+        if (userError || !userData) {
+            return apiBadRequest("사용자 정보를 찾을 수 없습니다. 다시 로그인해주세요.");
+        }
+
+        const publicUserId = userData.id;
+
+        // 소유권 검증: job의 user_id와 현재 사용자의 public.users.id 비교
+        if (jobData.user_id !== publicUserId) {
+            console.error(`[Upload Confirm] IDOR attempt detected: jobUserId=${jobData.user_id}, currentUser=${publicUserId}, jobId=${jobId}`);
+            return apiUnauthorized();
+        }
+
+        // 이미 처리된 job인지 확인
+        if (jobData.status !== "queued") {
+            console.warn(`[Upload Confirm] Job already processed: jobId=${jobId}, status=${jobData.status}`);
+            return apiBadRequest("이미 처리된 업로드입니다.");
         }
 
         // 파일 확장자 안전하게 추출
@@ -90,18 +133,60 @@ export async function POST(request: NextRequest) {
                         .eq("id", candidateId);
                 }
 
+                // 파일 검증 실패 시 크레딧 복구
+                await releaseCreditReservation(publicUserId, jobId);
+
                 return apiFileValidationError(magicValidation.error || "파일 형식이 올바르지 않습니다. 파일이 손상되었거나 확장자가 변경되었을 수 있습니다. 원본 파일을 확인해주세요.");
+            }
+
+            // ─────────────────────────────────────────────────
+            // Issue #10: ZIP 기반 파일 내부 구조 검증 (DOCX, HWPX)
+            // 매직 바이트만으로는 위조된 ZIP 파일을 탐지할 수 없으므로
+            // 실제 파일 내부 구조를 검증
+            // ─────────────────────────────────────────────────
+            if ([".docx", ".hwpx"].includes(ext)) {
+                const zipValidation = await validateZipStructure(fileBuffer, ext);
+                if (!zipValidation.valid) {
+                    console.error("[Upload Confirm] ZIP structure validation failed:", zipValidation.error);
+
+                    // 위조된 파일 삭제
+                    await supabase.storage.from("resumes").remove([storagePath]);
+
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    await (supabase as any)
+                        .from("processing_jobs")
+                        .update({ status: "failed", error_message: zipValidation.error })
+                        .eq("id", jobId);
+
+                    if (candidateId) {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        await (supabase as any)
+                            .from("candidates")
+                            .delete()
+                            .eq("id", candidateId);
+                    }
+
+                    // ZIP 구조 검증 실패 시 크레딧 복구
+                    await releaseCreditReservation(publicUserId, jobId);
+
+                    return apiFileValidationError(zipValidation.error || "파일 구조가 올바르지 않습니다.");
+                }
             }
         } catch (validationError) {
             console.error("[Upload Confirm] File validation error:", validationError);
+
+            // 파일 검증 예외 발생 시 크레딧 복구
+            await releaseCreditReservation(publicUserId, jobId);
+
             return apiInternalError("파일 검증 중 오류가 발생했습니다. 파일이 손상되었을 수 있습니다. 다른 파일로 다시 시도해주세요.");
         }
 
         // Worker 파이프라인 호출 (비동기, 재시도 로직 포함)
+        // 보안: 클라이언트가 전달한 userId 대신 DB에서 검증된 publicUserId 사용
         const workerPayload = {
             file_url: storagePath,
             file_name: fileName,
-            user_id: userId,
+            user_id: publicUserId,  // DB에서 검증된 사용자 ID
             job_id: jobId,
             candidate_id: candidateId,
             mode: plan === "pro" ? "phase_2" : "phase_1", // Pro: 3-Way Cross-Check
@@ -112,7 +197,7 @@ export async function POST(request: NextRequest) {
             jobId,
         });
 
-        // 비동기 호출: 재시도 로직 포함, 실패 시 상태 업데이트
+        // 비동기 호출: 재시도 로직 포함, 실패 시 상태 업데이트 + 크레딧 복구
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const supabaseAny = supabase as any;
         callWorkerPipelineAsync(WORKER_URL, workerPayload, async (error, attempts) => {
@@ -133,6 +218,19 @@ export async function POST(request: NextRequest) {
                     .from("candidates")
                     .update({ status: "failed" })
                     .eq("id", candidateId);
+            }
+
+            // Worker 연결 실패 시 크레딧 복구
+            // presign에서 예약된 크레딧을 돌려줌
+            try {
+                const releaseResult = await releaseCreditReservation(publicUserId, jobId);
+                if (releaseResult.success) {
+                    console.log(`[Upload Confirm] Credit released for user ${publicUserId}`);
+                } else {
+                    console.warn(`[Upload Confirm] Failed to release credit: ${releaseResult.error}`);
+                }
+            } catch (releaseError) {
+                console.error(`[Upload Confirm] Error releasing credit:`, releaseError);
             }
         });
 

@@ -73,6 +73,7 @@ from services.llm_manager import get_llm_manager
 from services.embedding_service import EmbeddingService, get_embedding_service, EmbeddingResult
 from services.database_service import DatabaseService, get_database_service, SaveResult
 from services.queue_service import get_queue_service, QueuedJob, DLQEntry
+from services.pdf_converter import get_pdf_converter, PDFConversionResult
 
 # 로깅 설정
 logging.basicConfig(
@@ -835,8 +836,9 @@ async def process_resume(request: ProcessRequest, _: bool = Depends(verify_api_k
                     pii_count=pii_count,
                 )
 
-                # 크레딧 차감 (candidate_id 포함)
-                db_service.deduct_credit(request.user_id, candidate_id)
+                # 크레딧 차감 - REMOVED
+                # 크레딧은 presign 단계에서 reserve_credit()으로 이미 차감됨
+                # db_service.deduct_credit(request.user_id, candidate_id)
 
             else:
                 logger.error(f"Failed to save candidate: {save_result.error}")
@@ -1091,6 +1093,29 @@ async def run_pipeline(
 
         logger.info(f"[Pipeline] Parsed successfully: {len(text)} chars, {page_count} pages")
 
+        # Step 2.5: PDF 변환 (원본이 PDF가 아닌 경우)
+        # PDF Viewer에서 볼 수 있도록 DOC/DOCX/HWP → PDF 변환
+        pdf_storage_path: Optional[str] = None
+        if router_result.file_type != FileType.PDF:
+            logger.info(f"[Pipeline] Converting {router_result.file_type.value} to PDF...")
+            pdf_converter = get_pdf_converter()
+            conversion_result = pdf_converter.convert_to_pdf(file_bytes, file_name)
+
+            if conversion_result.success and conversion_result.pdf_bytes:
+                # Storage에 변환된 PDF 업로드
+                pdf_storage_path = db_service.upload_converted_pdf(
+                    pdf_bytes=conversion_result.pdf_bytes,
+                    user_id=user_id,
+                    job_id=job_id,
+                )
+                if pdf_storage_path:
+                    logger.info(f"[Pipeline] PDF converted and uploaded: {pdf_storage_path}")
+                else:
+                    logger.warning(f"[Pipeline] Failed to upload converted PDF")
+            else:
+                # 변환 실패해도 파이프라인은 계속 진행 (텍스트 추출은 성공했으므로)
+                logger.warning(f"[Pipeline] PDF conversion failed: {conversion_result.error_message}")
+
         # 텍스트 길이 체크
         if len(text.strip()) < settings.MIN_TEXT_LENGTH:
             raise Exception(f"Extracted text too short ({len(text.strip())} chars)")
@@ -1223,10 +1248,23 @@ async def run_pipeline(
         candidate_id = save_result.candidate_id
         logger.info(f"[Pipeline] Saved candidate: {candidate_id}")
 
+        # Step 6.5: PDF URL 업데이트 (변환된 PDF가 있는 경우)
+        if pdf_storage_path and candidate_id:
+            db_service.update_candidate_pdf_url(
+                candidate_id=candidate_id,
+                pdf_url=pdf_storage_path
+            )
+            logger.info(f"[Pipeline] Updated pdf_url for candidate: {pdf_storage_path}")
+
         # 청크 저장 (임베딩 성공 시에만)
         chunks_saved = 0
         if embedding_result and embedding_result.success and embedding_result.chunks:
             try:
+                # 중복 업데이트의 경우 기존 청크 삭제 후 새로 저장
+                if save_result.is_update:
+                    db_service.delete_candidate_chunks(candidate_id)
+                    logger.info(f"[Pipeline] Deleted existing chunks for duplicate update")
+
                 chunks_saved = db_service.save_chunks_with_embeddings(
                     candidate_id=candidate_id,
                     chunks=embedding_result.chunks
@@ -1247,8 +1285,39 @@ async def run_pipeline(
             pii_count=pii_count,
         )
 
-        # Step 8: 크레딧 차감
-        db_service.deduct_credit(user_id, candidate_id)
+        # Step 7.5: 중복 업데이트인 경우 크레딧 복구
+        # 이미 등록된 후보자를 업데이트하는 것이므로 추가 크레딧 차감 불필요
+        if save_result.is_update:
+            logger.info(f"[Pipeline] Duplicate update detected, releasing credit...")
+            credit_released = db_service.release_credit(
+                user_id=user_id,
+                job_id=job_id,
+            )
+            if credit_released:
+                logger.info(f"[Pipeline] Credit released for duplicate update")
+            else:
+                logger.warning(f"[Pipeline] Failed to release credit for duplicate update")
+
+        # Step 8: 기존 JD와 자동 매칭 (임베딩이 생성된 경우에만)
+        if chunks_saved > 0:
+            logger.info(f"[Pipeline] Running auto-match with existing positions...")
+            match_result = db_service.match_candidate_to_existing_positions(
+                candidate_id=candidate_id,
+                user_id=user_id,
+                min_score=0.3
+            )
+            if match_result["success"]:
+                logger.info(
+                    f"[Pipeline] Auto-match complete: "
+                    f"{match_result['matched_positions']}/{match_result['total_positions']} positions"
+                )
+            else:
+                logger.warning(f"[Pipeline] Auto-match failed: {match_result.get('error')}")
+
+        # Step 9: 크레딧 차감 - REMOVED
+        # 크레딧은 presign 단계에서 reserve_credit()으로 이미 차감됨
+        # Worker에서 다시 차감하면 중복 차감 발생
+        # db_service.deduct_credit(user_id, candidate_id)
 
         processing_time = int((time.time() - start_time) * 1000)
         logger.info(
@@ -1273,6 +1342,18 @@ async def run_pipeline(
                 candidate_id=candidate_id,
                 status="failed",
             )
+
+        # 실패 시 크레딧 복구
+        # presign 단계에서 예약된 크레딧을 돌려줌
+        logger.info(f"[Pipeline] Releasing credit for user {user_id}, job {job_id}")
+        credit_released = db_service.release_credit(
+            user_id=user_id,
+            job_id=job_id,
+        )
+        if credit_released:
+            logger.info(f"[Pipeline] Credit released successfully")
+        else:
+            logger.warning(f"[Pipeline] Failed to release credit")
 
 
 @app.post("/pipeline", response_model=PipelineResponse)

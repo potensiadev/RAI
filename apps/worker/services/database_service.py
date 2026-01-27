@@ -459,8 +459,8 @@ class DatabaseService:
             # ─────────────────────────────────────────────────
             # Step 0: 중복 체크 (Waterfall)
             # ─────────────────────────────────────────────────
-            parent_id: Optional[str] = None
             is_update = False
+            existing_candidate_id: Optional[str] = None
 
             # 중복 체크에 필요한 데이터 추출
             orig = original_data or analyzed_data
@@ -482,36 +482,11 @@ class DatabaseService:
                 )
 
             if dup_result.is_duplicate and dup_result.existing_candidate_id:
-                # 버전 스태킹 전 기존 데이터 백업 (롤백용)
-                existing_data = self.client.table("candidates").select(
-                    "is_latest, updated_at"
-                ).eq("id", dup_result.existing_candidate_id).single().execute()
-
-                if existing_data.data:
-                    ctx.track_update(
-                        "candidates",
-                        dup_result.existing_candidate_id,
-                        existing_data.data
-                    )
-
-                # 버전 스태킹: 기존 레코드를 이전 버전으로 설정
-                stacking_success, stacking_error = self._update_version_stacking(
-                    dup_result.existing_candidate_id,
-                    dup_result.match_type
-                )
-
-                if not stacking_success:
-                    # Race Condition 감지 시 저장 중단
-                    logger.error(f"Version stacking failed: {stacking_error}")
-                    return SaveResult(
-                        success=False,
-                        error=f"Version stacking failed: {stacking_error}"
-                    )
-
-                parent_id = dup_result.existing_candidate_id
+                # 중복 발견: 기존 레코드를 직접 업데이트 (버전 스태킹 대신 덮어쓰기)
                 is_update = True
+                existing_candidate_id = dup_result.existing_candidate_id
                 logger.info(
-                    f"Duplicate detected: updating {dup_result.existing_candidate_name} "
+                    f"Duplicate detected: will overwrite {dup_result.existing_candidate_name} "
                     f"(match: {dup_result.match_type.value}, confidence: {dup_result.confidence})"
                 )
 
@@ -568,9 +543,8 @@ class DatabaseService:
                 # 상태 (candidate_status enum: processing, completed, failed, rejected)
                 "status": "completed",
                 "analysis_mode": analysis_mode,
-                # 버전 스태킹 (중복 체크 결과)
-                "is_latest": True,  # 새 레코드는 항상 최신
-                "parent_id": parent_id,  # 이전 버전 ID (없으면 None)
+                # 항상 최신 버전으로 표시
+                "is_latest": True,
             }
 
             # None 값 제거 (Supabase에서 에러 방지)
@@ -579,13 +553,39 @@ class DatabaseService:
                 if v is not None
             }
 
-            # candidate_id가 미리 제공된 경우 (업로드 시 생성됨) UPDATE, 아니면 INSERT
-            if candidate_id:
-                # 기존 레코드 업데이트
+            # ─────────────────────────────────────────────────
+            # Step 2: 저장 (중복 여부에 따라 다르게 처리)
+            # ─────────────────────────────────────────────────
+            if is_update and existing_candidate_id:
+                # 중복 발견: 기존 레코드를 직접 업데이트
+                result = self.client.table("candidates").update(
+                    candidate_record
+                ).eq("id", existing_candidate_id).execute()
+                final_candidate_id = existing_candidate_id
+
+                # presign에서 생성된 임시 레코드 삭제 (candidate_id가 다른 경우)
+                if candidate_id and candidate_id != existing_candidate_id:
+                    try:
+                        # 기존 청크도 삭제
+                        self.client.table("candidate_chunks").delete().eq(
+                            "candidate_id", candidate_id
+                        ).execute()
+                        # 임시 candidate 레코드 삭제
+                        self.client.table("candidates").delete().eq(
+                            "id", candidate_id
+                        ).execute()
+                        logger.info(f"Deleted temporary candidate record: {candidate_id}")
+                    except Exception as del_error:
+                        logger.warning(f"Failed to delete temporary candidate: {del_error}")
+
+                logger.info(f"Updated existing candidate: {final_candidate_id}")
+            elif candidate_id:
+                # candidate_id가 미리 제공된 경우 (업로드 시 생성됨) UPDATE
                 result = self.client.table("candidates").update(
                     candidate_record
                 ).eq("id", candidate_id).execute()
                 final_candidate_id = candidate_id
+                logger.info(f"Updated candidate: {final_candidate_id}")
             else:
                 # 새 레코드 삽입
                 result = self.client.table("candidates").insert(candidate_record).execute()
@@ -593,17 +593,13 @@ class DatabaseService:
                     final_candidate_id = result.data[0].get("id")
                     # 새로 생성된 레코드 추적 (롤백 시 삭제)
                     ctx.track_insert("candidates", final_candidate_id)
+                    logger.info(f"Inserted new candidate: {final_candidate_id}")
                 else:
                     ctx.rollback()
                     return SaveResult(
                         success=False,
                         error="No data returned from insert"
                     )
-
-            log_msg = f"Saved candidate: {final_candidate_id}"
-            if is_update:
-                log_msg += f" (updated from {parent_id})"
-            logger.info(log_msg)
 
             # 트랜잭션 성공
             ctx.commit()
@@ -612,7 +608,7 @@ class DatabaseService:
                 success=True,
                 candidate_id=final_candidate_id,
                 is_update=is_update,
-                parent_id=parent_id
+                parent_id=existing_candidate_id if is_update else None
             )
 
         except Exception as e:
@@ -623,6 +619,34 @@ class DatabaseService:
                 success=False,
                 error=str(e)
             )
+
+    def delete_candidate_chunks(self, candidate_id: str) -> bool:
+        """
+        후보자의 기존 청크 삭제
+
+        중복 후보자 업데이트 시 기존 청크를 삭제하고 새로운 청크로 교체
+
+        Args:
+            candidate_id: 후보자 ID
+
+        Returns:
+            성공 여부
+        """
+        if not self.client:
+            logger.error("Supabase client not initialized")
+            return False
+
+        try:
+            result = self.client.table("candidate_chunks").delete().eq(
+                "candidate_id", candidate_id
+            ).execute()
+
+            deleted_count = len(result.data) if result.data else 0
+            logger.info(f"[DB] Deleted {deleted_count} chunks for candidate {candidate_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete candidate chunks: {e}")
+            return False
 
     def save_chunks_with_embeddings(
         self,
@@ -921,6 +945,75 @@ class DatabaseService:
             logger.error(f"Failed to check credit: {e}")
             return False
 
+    def upload_converted_pdf(
+        self,
+        pdf_bytes: bytes,
+        user_id: str,
+        job_id: str,
+    ) -> Optional[str]:
+        """
+        변환된 PDF를 Supabase Storage에 업로드
+
+        Args:
+            pdf_bytes: PDF 파일 바이트
+            user_id: 사용자 ID
+            job_id: 작업 ID (파일명으로 사용)
+
+        Returns:
+            업로드된 PDF의 Storage 경로 (다운로드용) 또는 None
+        """
+        if not self.client or not pdf_bytes:
+            logger.error("Supabase client not initialized or empty pdf_bytes")
+            return None
+
+        try:
+            # 파일 경로 생성: uploads/{user_id}/{job_id}_converted.pdf
+            file_path = f"uploads/{user_id}/{job_id}_converted.pdf"
+
+            # Storage 업로드
+            result = self.client.storage.from_("resumes").upload(
+                file_path,
+                pdf_bytes,
+                file_options={"content-type": "application/pdf", "upsert": "true"}
+            )
+
+            logger.info(f"[PDFUpload] Uploaded converted PDF: {file_path} ({len(pdf_bytes)} bytes)")
+            return file_path
+
+        except Exception as e:
+            logger.error(f"Failed to upload converted PDF: {e}")
+            return None
+
+    def update_candidate_pdf_url(
+        self,
+        candidate_id: str,
+        pdf_url: str,
+    ) -> bool:
+        """
+        후보자의 PDF URL 업데이트
+
+        Args:
+            candidate_id: 후보자 ID
+            pdf_url: 변환된 PDF의 Storage 경로
+
+        Returns:
+            성공 여부
+        """
+        if not self.client:
+            return False
+
+        try:
+            self.client.table("candidates").update({
+                "pdf_url": pdf_url
+            }).eq("id", candidate_id).execute()
+
+            logger.info(f"[DB] Updated pdf_url for candidate {candidate_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to update candidate pdf_url: {e}")
+            return False
+
     def upload_image_to_storage(
         self,
         image_bytes: bytes,
@@ -1009,6 +1102,158 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Failed to update candidate images: {e}")
             return False
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Credit Management: 크레딧 복구
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    def release_credit(
+        self,
+        user_id: str,
+        job_id: Optional[str] = None,
+    ) -> bool:
+        """
+        파이프라인 실패 시 크레딧 복구
+
+        presign 단계에서 예약(차감)된 크레딧을 복구합니다.
+        AI 분석 실패, 파싱 실패 등으로 파이프라인이 완료되지 않은 경우 호출.
+
+        Args:
+            user_id: 사용자 ID
+            job_id: 작업 ID (옵션, 로깅용)
+
+        Returns:
+            성공 여부
+        """
+        if not self.client:
+            logger.error("[CreditRelease] Supabase client not initialized")
+            return False
+
+        try:
+            # release_credit_reservation RPC 호출
+            result = self.client.rpc(
+                "release_credit_reservation",
+                {
+                    "p_user_id": user_id,
+                    "p_job_id": job_id
+                }
+            ).execute()
+
+            if result.data is True:
+                logger.info(f"[CreditRelease] Credit restored for user {user_id}, job {job_id}")
+                return True
+            else:
+                logger.warning(f"[CreditRelease] Failed to restore credit: {result.data}")
+                return False
+
+        except Exception as e:
+            logger.error(f"[CreditRelease] Exception: {e}", exc_info=True)
+            return False
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Auto-Match: 후보자 등록 시 기존 JD와 자동 매칭
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    def match_candidate_to_existing_positions(
+        self,
+        candidate_id: str,
+        user_id: str,
+        min_score: float = 0.3,
+    ) -> Dict[str, Any]:
+        """
+        새로 등록된 후보자를 기존의 모든 활성 Position과 매칭
+
+        후보자 이력서 분석 완료 후 호출되어, 기존에 등록된 JD들과
+        자동으로 매칭 점수를 계산하고 저장합니다.
+
+        Args:
+            candidate_id: 새로 등록된 후보자 ID
+            user_id: 사용자 ID
+            min_score: 최소 매칭 점수 (기본값: 0.3)
+
+        Returns:
+            {
+                "success": bool,
+                "matched_positions": int,  # 매칭된 Position 수
+                "total_positions": int,    # 전체 활성 Position 수
+                "error": Optional[str]
+            }
+        """
+        if not self.client:
+            return {
+                "success": False,
+                "matched_positions": 0,
+                "total_positions": 0,
+                "error": "Supabase client not initialized"
+            }
+
+        try:
+            # Step 1: 해당 사용자의 활성 Position 목록 조회
+            positions_result = self.client.table("positions").select(
+                "id"
+            ).eq("user_id", user_id).eq("status", "open").execute()
+
+            if not positions_result.data:
+                logger.info(f"[AutoMatch] No active positions found for user {user_id}")
+                return {
+                    "success": True,
+                    "matched_positions": 0,
+                    "total_positions": 0,
+                    "error": None
+                }
+
+            total_positions = len(positions_result.data)
+            matched_positions = 0
+
+            # Step 2: 각 Position에 대해 매칭 실행
+            for position in positions_result.data:
+                position_id = position["id"]
+                try:
+                    # save_position_matches RPC 호출
+                    # 이 함수는 해당 Position과 모든 후보자를 매칭하고 저장
+                    result = self.client.rpc(
+                        "save_position_matches",
+                        {
+                            "p_position_id": position_id,
+                            "p_user_id": user_id,
+                            "p_limit": 100,  # 상위 100명까지
+                            "p_min_score": min_score
+                        }
+                    ).execute()
+
+                    if result.data is not None:
+                        matched_positions += 1
+                        logger.info(
+                            f"[AutoMatch] Position {position_id} re-matched: "
+                            f"{result.data} candidates"
+                        )
+                except Exception as pos_error:
+                    logger.warning(
+                        f"[AutoMatch] Failed to match position {position_id}: {pos_error}"
+                    )
+                    # 개별 Position 실패는 전체 실패로 처리하지 않음
+                    continue
+
+            logger.info(
+                f"[AutoMatch] Completed for candidate {candidate_id}: "
+                f"{matched_positions}/{total_positions} positions matched"
+            )
+
+            return {
+                "success": True,
+                "matched_positions": matched_positions,
+                "total_positions": total_positions,
+                "error": None
+            }
+
+        except Exception as e:
+            logger.error(f"[AutoMatch] Failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "matched_positions": 0,
+                "total_positions": 0,
+                "error": str(e)
+            }
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # Progressive Data Loading Methods

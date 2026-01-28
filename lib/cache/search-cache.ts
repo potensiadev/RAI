@@ -463,47 +463,6 @@ function revalidateInBackground(
     });
 }
 
-// ─────────────────────────────────────────────────
-// Prefetch for Popular Queries
-// ─────────────────────────────────────────────────
-
-/**
- * 인기 검색어 프리페치 (선택적)
- * 서버 시작 시 또는 주기적으로 호출
- */
-export function getPopularQueries(): string[] {
-  return Array.from(POPULAR_QUERIES).slice(0, 20);
-}
-
-/**
- * 캐시 통계 조회 (모니터링용)
- */
-export async function getCacheStats(userId: string): Promise<{
-  totalKeys: number;
-  oldestCache?: number;
-}> {
-  try {
-    const client = getRedisClient();
-    if (!client) return { totalKeys: 0 };
-
-    const pattern = `search:${userId.slice(0, 8)}:*`;
-
-    let cursor = "0";
-    let totalKeys = 0;
-
-    do {
-      const result = await client.scan(cursor, { match: pattern, count: 100 });
-      cursor = String(result[0]);
-      totalKeys += result[1].length;
-    } while (cursor !== "0");
-
-    return { totalKeys };
-  } catch (error) {
-    console.error('[SearchCache] Stats error:', error);
-    return { totalKeys: 0 };
-  }
-}
-
 /**
  * Redis 연결 상태 확인
  */

@@ -71,12 +71,3 @@ export const RESUME_ERROR_MESSAGES = {
   INVALID_EXTENSION: `지원하지 않는 파일 형식입니다. ${RESUME_UPLOAD_CONFIG.ALLOWED_EXTENSIONS.map(e => e.toUpperCase().replace('.', '')).join(', ')} 파일만 업로드할 수 있습니다.`,
   MAX_FILES_EXCEEDED: `한 번에 ${RESUME_UPLOAD_CONFIG.MAX_FILES_PER_BATCH}개까지만 업로드할 수 있습니다.`,
 } as const;
-
-/**
- * JD 업로드 에러 메시지
- */
-export const JD_ERROR_MESSAGES = {
-  FILE_TOO_LARGE: `파일 크기가 ${formatFileSize(JD_UPLOAD_CONFIG.MAX_FILE_SIZE)}를 초과합니다.`,
-  FILE_TOO_SMALL: `파일 크기가 너무 작습니다 (최소 ${formatFileSize(JD_UPLOAD_CONFIG.MIN_FILE_SIZE)}).`,
-  INVALID_EXTENSION: `지원하지 않는 파일 형식입니다. ${JD_UPLOAD_CONFIG.ALLOWED_EXTENSIONS.map(e => e.toUpperCase().replace('.', '')).join(', ')} 파일만 업로드할 수 있습니다.`,
-} as const;

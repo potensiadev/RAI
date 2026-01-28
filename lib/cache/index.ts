@@ -10,7 +10,5 @@ export {
   setSearchCache,
   getSearchWithSWR,
   invalidateUserSearchCache,
-  getPopularQueries,
-  getCacheStats,
   isCacheEnabled,
 } from './search-cache';

@@ -31,13 +31,5 @@ export {
   NetworkError,
 } from "@/lib/hooks/useNetworkStatus";
 
-// Refund Notifications (PRD Refund Policy v0.4)
-export {
-  useRefundNotification,
-  getRefundNotificationMessage,
-  getRefundReasonDetail,
-} from "./useRefundNotification";
-export type { RefundNotification, RefundEventType } from "./useRefundNotification";
-
 // UI Components
 export { useToast } from "@/components/ui/toast";

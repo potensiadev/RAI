@@ -1,6 +1,6 @@
 /**
  * URL Security Validator
- * 
+ *
  * XSS 방지를 위한 URL 스킴 검증
  * - javascript:, vbscript:, data: 등 위험한 스킴 차단
  * - 허용된 프로토콜만 통과
@@ -17,10 +17,10 @@ const BLOCKED_PATTERNS = [
 
 /**
  * URL 안전성 검증 및 살균
- * 
+ *
  * @param url - 검증할 URL 문자열
  * @returns 안전한 URL 또는 undefined (차단된 경우)
- * 
+ *
  * @example
  * sanitizeUrl("https://github.com/user")  // ✅ "https://github.com/user"
  * sanitizeUrl("javascript:alert(1)")      // ❌ undefined
@@ -65,7 +65,7 @@ export function sanitizeUrl(url: string | undefined | null): string | undefined 
 
 /**
  * 외부 링크 검증 (https만 허용)
- * 
+ *
  * 포트폴리오, GitHub, LinkedIn 등 외부 사이트 링크용
  */
 export function sanitizeExternalUrl(url: string | undefined | null): string | undefined {

@@ -240,7 +240,7 @@ export default function CandidatesPage() {
           // public.users에 레코드가 없어도 RLS를 통해 조회 시도
         }
 
-        const currentUserId = userData?.id || user.id;
+        const currentUserId = (userData as { id: string } | null)?.id || user.id;
         console.log("[Candidates] Using userId for realtime:", currentUserId);
         setUserId(currentUserId);
 

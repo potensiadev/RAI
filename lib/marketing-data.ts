@@ -11,6 +11,7 @@ import {
     Sparkles
 } from "lucide-react";
 
+// Navigation links (Korean)
 export const NAV_LINKS = [
     { href: "/products", label: "기능" },
     { href: "/pricing", label: "요금" },

@@ -7,10 +7,16 @@ import { useRouter } from "next/navigation";
 import GravityDropZone from "@/components/upload/GravityDropZone";
 import ProcessingVisualization, { ProcessingPhase } from "@/components/upload/ProcessingVisualization";
 import { cn } from "@/lib/utils";
+import {
+  RESUME_UPLOAD_CONFIG,
+  RESUME_ERROR_MESSAGES,
+  formatFileSize,
+} from "@/lib/config/upload";
 
-const ALLOWED_EXTENSIONS = [".hwp", ".hwpx", ".doc", ".docx", ".pdf"];
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
-const MAX_FILES = 30;
+// 공통 config에서 상수 사용 (클라이언트/서버 동기화)
+const ALLOWED_EXTENSIONS = [...RESUME_UPLOAD_CONFIG.ALLOWED_EXTENSIONS];
+const MAX_FILE_SIZE = RESUME_UPLOAD_CONFIG.MAX_FILE_SIZE;
+const MAX_FILES = RESUME_UPLOAD_CONFIG.MAX_FILES_PER_BATCH;
 
 type FileStatus = "pending" | "uploading" | "processing" | "success" | "error";
 
@@ -28,14 +34,17 @@ export default function UploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [activeProcessingFile, setActiveProcessingFile] = useState<UploadFile | null>(null);
 
-  // 파일 유효성 검사
+  // 파일 유효성 검사 (공통 config 사용)
   const validateFile = (file: File): string | null => {
     const ext = "." + file.name.split(".").pop()?.toLowerCase();
-    if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      return `지원하지 않는 파일 형식입니다. HWP, HWPX, DOC, DOCX, PDF 파일만 업로드할 수 있습니다.`;
+    if (!ALLOWED_EXTENSIONS.includes(ext as typeof ALLOWED_EXTENSIONS[number])) {
+      return RESUME_ERROR_MESSAGES.INVALID_EXTENSION;
     }
     if (file.size > MAX_FILE_SIZE) {
-      return "파일 크기가 50MB를 초과합니다. 더 작은 파일을 선택해주세요.";
+      return RESUME_ERROR_MESSAGES.FILE_TOO_LARGE;
+    }
+    if (file.size < RESUME_UPLOAD_CONFIG.MIN_FILE_SIZE) {
+      return RESUME_ERROR_MESSAGES.FILE_TOO_SMALL;
     }
     return null;
   };
@@ -277,6 +286,72 @@ export default function UploadPage() {
           ([key]) => serverError.includes(key)
         )?.[1];
         throw new Error(friendlyMessage || serverError || "파일 처리 중 오류가 발생했습니다. 다시 시도해주세요.");
+      }
+
+      // ─────────────────────────────────────────────────
+      // Phase 4: Polling - Worker 처리 결과 확인 (Issue #9 해결)
+      // 비동기 Worker 실패 시 Silent Failure 방지
+      // ─────────────────────────────────────────────────
+      const POLL_INTERVAL = 3000; // 3초
+      const POLL_TIMEOUT = 5 * 60 * 1000; // 5분
+      const startTime = Date.now();
+
+      // DB candidate status → 프론트엔드 phase 매핑
+      const statusToPhase = (candidateStatus: string | undefined): ProcessingPhase => {
+        switch (candidateStatus) {
+          case "processing": return "routing";
+          case "parsed": return "analyzing";
+          case "analyzed": return "embedding";
+          case "completed": return "complete";
+          default: return "analyzing";
+        }
+      };
+
+      const pollJobStatus = async (): Promise<{ jobStatus: "completed" | "failed" | "processing", candidateStatus?: string }> => {
+        const res = await fetch(`/api/upload?jobId=${presign!.jobId}`);
+        if (!res.ok) return { jobStatus: "processing" };
+
+        const data = await res.json();
+        const jobStatus = data.data?.status;
+        const candidateStatus = data.data?.candidate_status;
+
+        if (jobStatus === "completed") return { jobStatus: "completed", candidateStatus };
+        if (jobStatus === "failed") return { jobStatus: "failed", candidateStatus };
+        return { jobStatus: "processing", candidateStatus };
+      };
+
+      // 폴링 루프 (백그라운드 처리 완료 대기)
+      let finalStatus: "completed" | "failed" | "processing" = "processing";
+
+      while (Date.now() - startTime < POLL_TIMEOUT) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+
+        const { jobStatus, candidateStatus } = await pollJobStatus();
+        finalStatus = jobStatus;
+
+        if (finalStatus === "completed" || finalStatus === "failed") {
+          break;
+        }
+
+        // DB candidate status에 따라 phase 업데이트 (진행률 동기화)
+        const currentPhase = statusToPhase(candidateStatus);
+        setActiveProcessingFile((prev) => prev ? { ...prev, phase: currentPhase } : null);
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === uploadFile.id ? { ...f, phase: currentPhase } : f
+          )
+        );
+      }
+
+      // 타임아웃 또는 최종 상태에 따른 처리
+      if (finalStatus === "failed") {
+        throw new Error("파일 분석에 실패했습니다. 파일이 손상되었거나 지원하지 않는 형식일 수 있습니다.");
+      }
+
+      if (finalStatus === "processing") {
+        // 타임아웃 - 백그라운드에서 계속 처리 중
+        console.warn(`[Upload] Job ${presign.jobId} still processing after timeout`);
+        // 타임아웃이어도 성공으로 처리 (백그라운드에서 완료됨)
       }
 
       // 완료

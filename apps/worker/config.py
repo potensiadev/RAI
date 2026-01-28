@@ -143,11 +143,19 @@ class Settings(BaseSettings):
         default=True,
         description="HWP를 slow_queue로 분리 처리"
     )
-    
+
     # LLM 조건부 호출 (Confidence 기반)
     USE_CONDITIONAL_LLM: bool = Field(
         default=True,
         description="고신뢰도 결과 시 추가 LLM 호출 스킵"
+    )
+
+    # LLM 병렬 호출 모드 (대량 업로드 시 속도 최적화)
+    # True: GPT-4o + Gemini 동시 호출 (빠름, 비용 ↑)
+    # False: 순차 호출 (느림, 비용 최적화)
+    USE_PARALLEL_LLM: bool = Field(
+        default=True,
+        description="GPT-4o + Gemini 병렬 호출로 분석 속도 향상"
     )
 
     # ─────────────────────────────────────────────────

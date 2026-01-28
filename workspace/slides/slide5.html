@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #FFFFFF;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header-bar {
+  width: 100%;
+  height: 50pt;
+  background: #1C2833;
+  display: flex;
+  align-items: center;
+  padding: 0 40pt;
+  box-sizing: border-box;
+}
+.header-title {
+  color: #FFFFFF;
+  font-size: 18pt;
+  font-weight: bold;
+  margin: 0;
+}
+.content {
+  padding: 20pt 40pt 30pt 40pt;
+  flex: 1;
+  display: flex;
+  gap: 30pt;
+}
+.left-col {
+  flex: 1;
+}
+.right-col {
+  flex: 1.2;
+}
+h2 {
+  color: #1C2833;
+  font-size: 22pt;
+  font-weight: bold;
+  margin: 0 0 6pt 0;
+}
+.subtitle {
+  color: #5D6D7E;
+  font-size: 12pt;
+  margin: 0 0 16pt 0;
+}
+.benefit-item {
+  display: flex;
+  gap: 10pt;
+  margin: 0 0 12pt 0;
+  align-items: flex-start;
+}
+.check-icon {
+  width: 18pt;
+  height: 18pt;
+  background: #4A90D9;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.check-text {
+  color: #FFFFFF;
+  font-size: 10pt;
+  margin: 0;
+  line-height: 18pt;
+  text-align: center;
+}
+.benefit-text {
+  color: #1C2833;
+  font-size: 12pt;
+  margin: 0;
+  line-height: 1.3;
+}
+.demo-box {
+  background: #F8F9FA;
+  border-radius: 10pt;
+  padding: 16pt;
+}
+.demo-jd {
+  background: #FFFFFF;
+  border: 1pt solid #E5E7EB;
+  border-radius: 6pt;
+  padding: 10pt;
+  margin: 0 0 10pt 0;
+}
+.demo-jd-title {
+  color: #7F8C8D;
+  font-size: 9pt;
+  margin: 0 0 6pt 0;
+}
+.demo-jd-text {
+  color: #1C2833;
+  font-size: 9pt;
+  margin: 0;
+  line-height: 1.3;
+}
+.demo-match {
+  background: #4A90D9;
+  border-radius: 6pt;
+  padding: 10pt;
+}
+.demo-match-title {
+  color: #FFFFFF;
+  font-size: 10pt;
+  font-weight: bold;
+  margin: 0 0 8pt 0;
+}
+.candidate-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.15);
+  border-radius: 4pt;
+  padding: 6pt 8pt;
+  margin: 0 0 4pt 0;
+}
+.candidate-name {
+  color: #FFFFFF;
+  font-size: 10pt;
+  font-weight: bold;
+  margin: 0;
+}
+.candidate-info {
+  color: rgba(255,255,255,0.8);
+  font-size: 8pt;
+  margin: 0;
+}
+.match-score-box {
+  background: #2ECC71;
+  border-radius: 3pt;
+  padding: 3pt 6pt;
+}
+.match-score {
+  color: #FFFFFF;
+  font-size: 9pt;
+  font-weight: bold;
+  margin: 0;
+}
+</style>
+</head>
+<body>
+<div class="header-bar">
+  <p class="header-title">핵심 기능 2</p>
+</div>
+<div class="content">
+  <div class="left-col">
+    <h2>JD 스마트 매칭</h2>
+    <p class="subtitle">JD만 붙여넣으면 AI가 최적 후보자 추천</p>
+    <div class="benefit-item">
+      <div class="check-icon"><p class="check-text">✓</p></div>
+      <p class="benefit-text">JD 자동 분석으로 핵심 요구사항 추출</p>
+    </div>
+    <div class="benefit-item">
+      <div class="check-icon"><p class="check-text">✓</p></div>
+      <p class="benefit-text">보유 DB에서 매칭되는 후보자 자동 추천</p>
+    </div>
+    <div class="benefit-item">
+      <div class="check-icon"><p class="check-text">✓</p></div>
+      <p class="benefit-text">매칭 점수와 이유까지 상세하게 제공</p>
+    </div>
+    <div class="benefit-item">
+      <div class="check-icon"><p class="check-text">✓</p></div>
+      <p class="benefit-text">JD 받고 1시간 내 제안 가능</p>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="demo-box">
+      <div class="demo-jd">
+        <p class="demo-jd-title">JD 입력</p>
+        <p class="demo-jd-text">[MLOps Engineer] Kubernetes 3년+, Python, ML Pipeline 경험...</p>
+      </div>
+      <div class="demo-match">
+        <p class="demo-match-title">AI 추천 후보자</p>
+        <div class="candidate-row">
+          <div>
+            <p class="candidate-name">김현우</p>
+            <p class="candidate-info">MLOps Engineer @ 카카오 | 7년</p>
+          </div>
+          <div class="match-score-box"><p class="match-score">97%</p></div>
+        </div>
+        <div class="candidate-row">
+          <div>
+            <p class="candidate-name">이서준</p>
+            <p class="candidate-info">ML Engineer @ 네이버 | 6년</p>
+          </div>
+          <div class="match-score-box"><p class="match-score">94%</p></div>
+        </div>
+        <div class="candidate-row">
+          <div>
+            <p class="candidate-name">박민지</p>
+            <p class="candidate-info">DevOps Engineer @ 라인 | 5년</p>
+          </div>
+          <div class="match-score-box"><p class="match-score">89%</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

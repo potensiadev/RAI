@@ -622,6 +622,29 @@ export async function POST(request: NextRequest) {
     // Facet 계산 (필터 적용 후 결과 기준)
     const facets = calculateFacets(results);
 
+    // ─────────────────────────────────────────────────
+    // Step 4: [Aha Moment] Generate Matching Reasoning
+    // 상위 5개 결과에 대해 매칭 근거 생성 (Mock-up for now)
+    // ─────────────────────────────────────────────────
+    const topResults = results.slice(0, 5).map(res => {
+      // 쿼리 키워드와 스킬/강점을 대조하여 근거 생성
+      const matchedSkills = res.skills.filter(s =>
+        parsedKeywords.some(k => s.toLowerCase().includes(k.toLowerCase()))
+      );
+
+      let reason = "";
+      if (matchedSkills.length > 0) {
+        reason = `✓ 검색된 기술(${matchedSkills.join(', ')}) 보유`;
+      } else if (res.matchScore >= 90) {
+        reason = "✓ 선호 경력 및 역량 기준에 매우 부합함";
+      } else {
+        reason = "✓ 이력서 내 관련 키워드 및 패턴 감지";
+      }
+
+      res.matchReason = reason;
+      return res;
+    });
+
     const response: SearchResponse = {
       results,
       total,

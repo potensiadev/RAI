@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Users, BarChart3, Settings, Briefcase, LogOut } from "lucide-react";
+import { Users, BarChart3, Settings, Briefcase, LogOut, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -13,6 +13,7 @@ import { PLAN_CONFIG, type PlanId } from "@/lib/paddle/config";
 
 const NAV_ITEMS = [
     { icon: Users, label: "Candidates", href: "/candidates" },
+    { icon: ShieldAlert, label: "Review Queue", href: "/review" },
     { icon: Briefcase, label: "Positions", href: "/positions" },
     { icon: BarChart3, label: "Analytics", href: "/analytics" },
     { icon: Settings, label: "Settings", href: "/settings" },

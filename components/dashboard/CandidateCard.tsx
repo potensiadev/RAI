@@ -127,11 +127,19 @@ export default function CandidateCard({ candidate }: CandidateCardProps) {
 
                 <div className="mb-4 space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">Match Score</span>
+                        <span className="text-gray-500 font-medium">Match Score</span>
                         <span className={cn("px-2 py-0.5 rounded-full text-xs font-bold border", statusStyle)}>
                             {candidate.matchScore}%
                         </span>
                     </div>
+
+                    {/* AHA Moment: Matching Reasoning - Point 2.1 */}
+                    {candidate.matchReason && (
+                        <div className="px-3 py-2 rounded-lg bg-emerald-50/50 border border-emerald-100/50 text-[11px] text-emerald-700 leading-relaxed italic">
+                            {candidate.matchReason}
+                        </div>
+                    )}
+
                     <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                         <div
                             className="h-full bg-primary rounded-full"
@@ -152,6 +160,13 @@ export default function CandidateCard({ candidate }: CandidateCardProps) {
                     {candidate.skills.length > 3 && (
                         <span className="px-2 py-1 rounded-md bg-gray-50 text-gray-400 text-xs font-medium border border-gray-100">
                             +{candidate.skills.length - 3}
+                        </span>
+                    )}
+
+                    {/* Skill Truncation Warning - Point 1.2 */}
+                    {candidate.totalSkillsCount && candidate.totalSkillsCount > candidate.skills.length && (
+                        <span className="px-2 py-1 rounded-md bg-amber-50 text-amber-600 text-[10px] font-bold border border-amber-100 animate-pulse ml-auto" title="전체 스킬 중 일부만 표시 중">
+                            {candidate.totalSkillsCount - candidate.skills.length} MORE OMITTED
                         </span>
                     )}
                 </div>

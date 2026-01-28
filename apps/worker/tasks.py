@@ -739,8 +739,9 @@ def process_resume(
             pii_count=pii_count,
         )
 
-        # 크레딧 차감
-        db_service.deduct_credit(user_id, candidate_id)
+        # 크레딧 차감 - REMOVED
+        # 크레딧은 presign 단계에서 reserve_credit()으로 이미 차감됨
+        # db_service.deduct_credit(user_id, candidate_id)
 
         processing_time = int((time.time() - start_time) * 1000)
 

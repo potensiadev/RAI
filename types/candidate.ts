@@ -47,6 +47,7 @@ export interface CandidateListItem {
   company: string;        // last_company
   expYears: number;
   skills: string[];
+  totalSkillsCount?: number; // Total skills found before truncation
   photoUrl?: string;
   summary?: string;
 
@@ -140,6 +141,8 @@ export interface CandidateDetail extends CandidateListItem {
   // 파일 정보
   sourceFile?: string;
   fileType?: string;
+  /** 변환된 PDF URL (원본이 PDF가 아닌 경우) */
+  pdfUrl?: string;
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // P0: Lifecycle Fields (헤드헌터 인터뷰 기반)
@@ -226,6 +229,7 @@ export interface CandidateLifecycleStats {
 
 export interface CandidateSearchResult extends CandidateListItem {
   matchScore: number;       // 0-100, 검색 관련도
+  matchReason?: string;      // AI-generated matching reason
   matchedChunks: {
     type: ChunkType;
     content: string;

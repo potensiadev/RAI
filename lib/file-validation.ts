@@ -8,15 +8,16 @@
  */
 
 import { PLANS, type PlanType } from "@/types/auth";
+import { RESUME_UPLOAD_CONFIG } from "@/lib/config/upload";
 
 // ─────────────────────────────────────────────────
-// 설정 상수
+// 설정 상수 (공통 config에서 가져옴)
 // ─────────────────────────────────────────────────
 
 export const FILE_CONFIG = {
-  ALLOWED_EXTENSIONS: [".hwp", ".hwpx", ".doc", ".docx", ".pdf"] as const,
-  MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB (이력서에 충분한 크기)
-  MIN_FILE_SIZE: 1024, // 1KB (빈 파일 방지)
+  ALLOWED_EXTENSIONS: RESUME_UPLOAD_CONFIG.ALLOWED_EXTENSIONS,
+  MAX_FILE_SIZE: RESUME_UPLOAD_CONFIG.MAX_FILE_SIZE,
+  MIN_FILE_SIZE: RESUME_UPLOAD_CONFIG.MIN_FILE_SIZE,
 } as const;
 
 // PLANS에서 파생된 플랜 설정 (단일 소스)
@@ -153,9 +154,12 @@ export function validateMagicBytes(
   const signatures = MAGIC_BYTES[ext];
 
   if (!signatures) {
-    // 시그니처가 정의되지 않은 확장자는 통과 (하지만 로그 남김)
-    console.warn(`No magic bytes defined for extension: ${ext}`);
-    return { valid: true, extension: ext };
+    // 보안: 시그니처가 정의되지 않은 확장자는 차단 (허용 목록 기반 검증)
+    console.error(`[Security] Magic bytes not defined for extension: ${ext} - blocking file`);
+    return {
+      valid: false,
+      error: `지원하지 않는 파일 형식입니다 (${ext}). HWP, HWPX, DOC, DOCX, PDF 파일만 업로드할 수 있습니다.`
+    };
   }
 
   const bytes = new Uint8Array(buffer);
@@ -186,6 +190,98 @@ export function validateMagicBytes(
     valid: false,
     error: `파일 내용이 ${ext.toUpperCase().replace(".", "")} 형식과 일치하지 않습니다. 파일이 손상되었거나 확장자가 변경되었을 수 있습니다.`,
   };
+}
+
+// ─────────────────────────────────────────────────
+// ZIP 기반 파일 내부 구조 검증 (DOCX, HWPX)
+// Issue #10 Phase 2: 고급 파일 검증
+// ─────────────────────────────────────────────────
+
+/**
+ * ZIP 기반 파일의 내부 구조 검증
+ * DOCX, HWPX 파일이 실제로 유효한 구조를 가지고 있는지 확인
+ *
+ * @param buffer 파일 버퍼
+ * @param extension 파일 확장자 (.docx, .hwpx)
+ * @returns 검증 결과
+ *
+ * 주의: 이 함수는 서버 사이드에서만 사용 (JSZip 필요)
+ */
+export async function validateZipStructure(
+  buffer: ArrayBuffer,
+  extension: string
+): Promise<FileValidationResult> {
+  const ext = extension.toLowerCase();
+
+  // ZIP 기반이 아닌 확장자는 통과
+  if (![".docx", ".hwpx"].includes(ext)) {
+    return { valid: true, extension: ext };
+  }
+
+  try {
+    // 동적 import (서버 사이드에서만 사용)
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(buffer);
+
+    // DOCX 검증: word/document.xml 필수
+    if (ext === ".docx") {
+      const hasDocumentXml = zip.file("word/document.xml") !== null;
+      const hasContentTypes = zip.file("[Content_Types].xml") !== null;
+
+      if (!hasDocumentXml || !hasContentTypes) {
+        console.error("[Security] Invalid DOCX structure: missing required files");
+        return {
+          valid: false,
+          error: "유효하지 않은 DOCX 파일입니다. 파일이 손상되었거나 위조되었을 수 있습니다.",
+        };
+      }
+
+      // 추가 검증: document.xml 내용 확인
+      const documentXml = await zip.file("word/document.xml")?.async("string");
+      if (!documentXml || !documentXml.includes("w:document")) {
+        console.error("[Security] Invalid DOCX document.xml content");
+        return {
+          valid: false,
+          error: "유효하지 않은 DOCX 파일입니다. 문서 구조가 올바르지 않습니다.",
+        };
+      }
+    }
+
+    // HWPX 검증: Contents/content.hpf 또는 mimetype 필수
+    if (ext === ".hwpx") {
+      const hasContentHpf = zip.file("Contents/content.hpf") !== null;
+      const hasMimetype = zip.file("mimetype") !== null;
+
+      // HWPX는 Content/content.hpf 또는 mimetype 중 하나가 있어야 함
+      if (!hasContentHpf && !hasMimetype) {
+        console.error("[Security] Invalid HWPX structure: missing required files");
+        return {
+          valid: false,
+          error: "유효하지 않은 HWPX 파일입니다. 파일이 손상되었거나 위조되었을 수 있습니다.",
+        };
+      }
+
+      // mimetype 검증 (있는 경우)
+      if (hasMimetype) {
+        const mimetype = await zip.file("mimetype")?.async("string");
+        if (mimetype && !mimetype.includes("hwp")) {
+          console.error("[Security] Invalid HWPX mimetype:", mimetype);
+          return {
+            valid: false,
+            error: "유효하지 않은 HWPX 파일입니다. MIME 타입이 올바르지 않습니다.",
+          };
+        }
+      }
+    }
+
+    return { valid: true, extension: ext };
+  } catch (error) {
+    console.error("[Security] ZIP structure validation failed:", error);
+    return {
+      valid: false,
+      error: "파일 구조를 검증할 수 없습니다. 파일이 손상되었을 수 있습니다.",
+    };
+  }
 }
 
 // ─────────────────────────────────────────────────

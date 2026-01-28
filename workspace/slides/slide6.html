@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #FFFFFF;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header-bar {
+  width: 100%;
+  height: 50pt;
+  background: #1C2833;
+  display: flex;
+  align-items: center;
+  padding: 0 40pt;
+  box-sizing: border-box;
+}
+.header-title {
+  color: #FFFFFF;
+  font-size: 18pt;
+  font-weight: bold;
+  margin: 0;
+}
+.content {
+  padding: 20pt 40pt 30pt 40pt;
+  flex: 1;
+  display: flex;
+  gap: 30pt;
+}
+.left-col {
+  flex: 1;
+}
+.right-col {
+  flex: 1.2;
+}
+h2 {
+  color: #1C2833;
+  font-size: 22pt;
+  font-weight: bold;
+  margin: 0 0 6pt 0;
+}
+.subtitle {
+  color: #5D6D7E;
+  font-size: 12pt;
+  margin: 0 0 14pt 0;
+}
+.example-item {
+  background: #F0F7FF;
+  border-radius: 6pt;
+  padding: 8pt 12pt;
+  margin: 0 0 6pt 0;
+}
+.example-text {
+  color: #1C2833;
+  font-size: 10pt;
+  margin: 0;
+}
+.demo-box {
+  background: #F8F9FA;
+  border-radius: 10pt;
+  padding: 16pt;
+}
+.search-bar {
+  background: #FFFFFF;
+  border: 2pt solid #4A90D9;
+  border-radius: 6pt;
+  padding: 10pt 12pt;
+  margin: 0 0 12pt 0;
+}
+.search-text {
+  color: #1C2833;
+  font-size: 11pt;
+  margin: 0;
+}
+.interpretation {
+  background: #FFF8E1;
+  border-radius: 6pt;
+  padding: 10pt;
+  margin: 0 0 10pt 0;
+}
+.interpretation-title {
+  color: #F39C12;
+  font-size: 9pt;
+  font-weight: bold;
+  margin: 0 0 4pt 0;
+}
+.interpretation-text {
+  color: #1C2833;
+  font-size: 9pt;
+  margin: 0;
+  line-height: 1.3;
+}
+.results {
+  background: #FFFFFF;
+  border-radius: 6pt;
+  padding: 10pt;
+}
+.results-title {
+  color: #7F8C8D;
+  font-size: 9pt;
+  margin: 0 0 6pt 0;
+}
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 5pt 0;
+  border-bottom: 1pt solid #F0F0F0;
+}
+.result-name {
+  color: #1C2833;
+  font-size: 10pt;
+  font-weight: bold;
+  margin: 0;
+}
+.result-info {
+  color: #5D6D7E;
+  font-size: 8pt;
+  margin: 0;
+}
+.result-score {
+  color: #4A90D9;
+  font-size: 10pt;
+  font-weight: bold;
+  margin: 0;
+}
+</style>
+</head>
+<body>
+<div class="header-bar">
+  <p class="header-title">핵심 기능 3</p>
+</div>
+<div class="content">
+  <div class="left-col">
+    <h2>자연어 검색</h2>
+    <p class="subtitle">복잡한 필터 대신, 말하듯이 검색하세요</p>
+    <div class="example-item">
+      <p class="example-text">"컨설팅펌 출신 전략기획 10년 이상"</p>
+    </div>
+    <div class="example-item">
+      <p class="example-text">"네카라쿠배 출신 프론트엔드 개발자"</p>
+    </div>
+    <div class="example-item">
+      <p class="example-text">"스타트업 CFO 경험 있는 회계사"</p>
+    </div>
+    <div class="example-item">
+      <p class="example-text">"영어 능통 해외영업 경력 7년"</p>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="demo-box">
+      <div class="search-bar">
+        <p class="search-text">🔍 경력 10년 이상의 컨설팅펌 출신 전략기획 후보자</p>
+      </div>
+      <div class="interpretation">
+        <p class="interpretation-title">AI 해석</p>
+        <p class="interpretation-text">경력: 10년 이상 | 회사유형: 맥킨지, BCG, 베인 등 | 직무: 전략기획</p>
+      </div>
+      <div class="results">
+        <p class="results-title">검색 결과 4명</p>
+        <div class="result-item">
+          <div>
+            <p class="result-name">정승현</p>
+            <p class="result-info">전략기획 이사 @ 삼성전자 | 맥킨지 5년</p>
+          </div>
+          <p class="result-score">98%</p>
+        </div>
+        <div class="result-item">
+          <div>
+            <p class="result-name">한지원</p>
+            <p class="result-info">CSO @ 토스 | BCG 4년</p>
+          </div>
+          <p class="result-score">95%</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

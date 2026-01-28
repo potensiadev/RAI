@@ -99,6 +99,7 @@ function toCandidateDetail(row: Record<string, unknown>): CandidateDetail {
     // 파일 정보
     sourceFile: row.source_file as string | undefined,
     fileType: row.file_type as string | undefined,
+    pdfUrl: row.pdf_url as string | undefined,
 
     // P0: Lifecycle Fields (헤드헌터 인터뷰 기반)
     lastContactAt: row.last_contact_at as string | undefined,
@@ -122,7 +123,7 @@ const CANDIDATE_DETAIL_COLUMNS = `
   careers, projects, education, strengths,
   portfolio_thumbnail_url, portfolio_url, github_url, linkedin_url,
   version, parent_id, is_latest, analysis_mode, warnings, field_confidence,
-  source_file, file_type,
+  source_file, file_type, pdf_url,
   last_contact_at, interest_level, salary_expectation_min, salary_expectation_max,
   location_preferences, earliest_start_date, availability_notes, contact_count
 `;

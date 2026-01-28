@@ -20,6 +20,9 @@ interface MetricsStore {
     search_duration: MetricEntry[];
     search_mode: MetricEntry[];
     fallback_triggered: MetricEntry[];
+    // Review Queue Metrics
+    review_fixes: MetricEntry[];
+    confidence_trend: MetricEntry[];
 }
 
 const metricsStore: MetricsStore = {
@@ -28,6 +31,8 @@ const metricsStore: MetricsStore = {
     search_duration: [],
     search_mode: [],
     fallback_triggered: [],
+    review_fixes: [],
+    confidence_trend: [],
 };
 
 // 메트릭 보존 기간 (1시간)
@@ -93,6 +98,20 @@ export function recordSearchMetrics(
     if (mode === 'fallback_text') {
         recordMetric('fallback_triggered', 1, {});
     }
+}
+
+/**
+ * 리뷰 메트릭 기록 (사람의 수정 발생 시)
+ */
+export function recordReviewMetric(
+    field: string,
+    confidenceBefore: number,
+    wasChanged: boolean
+): void {
+    if (wasChanged) {
+        recordMetric('review_fixes', 1, { field });
+    }
+    recordMetric('confidence_trend', confidenceBefore, { field, wasChanged: String(wasChanged) });
 }
 
 /**

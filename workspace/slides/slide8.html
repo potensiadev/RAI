@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #FFFFFF;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header-bar {
+  width: 100%;
+  height: 50pt;
+  background: #1C2833;
+  display: flex;
+  align-items: center;
+  padding: 0 40pt;
+  box-sizing: border-box;
+}
+.header-title {
+  color: #FFFFFF;
+  font-size: 18pt;
+  font-weight: bold;
+  margin: 0;
+}
+.content {
+  padding: 12pt 40pt 50pt 40pt;
+  flex: 1;
+}
+h2 {
+  color: #1C2833;
+  font-size: 20pt;
+  font-weight: bold;
+  margin: 0 0 12pt 0;
+  text-align: center;
+}
+.pricing-grid {
+  display: flex;
+  gap: 20pt;
+  justify-content: center;
+}
+.pricing-card {
+  width: 220pt;
+  background: #F8F9FA;
+  border-radius: 10pt;
+  padding: 16pt;
+  text-align: center;
+  border: 2pt solid transparent;
+}
+.pricing-card.popular {
+  background: #FFFFFF;
+  border-color: #4A90D9;
+}
+.popular-badge {
+  background: #4A90D9;
+  border-radius: 8pt;
+  padding: 2pt 8pt;
+  display: inline-block;
+  margin: 0 0 6pt 0;
+}
+.popular-badge-text {
+  color: #FFFFFF;
+  font-size: 8pt;
+  font-weight: bold;
+  margin: 0;
+}
+.plan-name {
+  color: #1C2833;
+  font-size: 16pt;
+  font-weight: bold;
+  margin: 0 0 4pt 0;
+}
+.plan-price {
+  color: #4A90D9;
+  font-size: 22pt;
+  font-weight: bold;
+  margin: 0;
+}
+.plan-period {
+  color: #7F8C8D;
+  font-size: 10pt;
+  margin: 0 0 8pt 0;
+}
+.plan-desc {
+  color: #5D6D7E;
+  font-size: 9pt;
+  margin: 0 0 10pt 0;
+}
+.feature-item {
+  color: #1C2833;
+  font-size: 9pt;
+  margin: 0 0 4pt 0;
+  text-align: left;
+}
+.cta-box {
+  background: #E5E7EB;
+  border-radius: 5pt;
+  padding: 8pt 0;
+  margin: 10pt 0 0 0;
+}
+.pricing-card.popular .cta-box {
+  background: #4A90D9;
+}
+.cta-text {
+  color: #1C2833;
+  font-size: 11pt;
+  font-weight: bold;
+  margin: 0;
+  text-align: center;
+}
+.pricing-card.popular .cta-text {
+  color: #FFFFFF;
+}
+</style>
+</head>
+<body>
+<div class="header-bar">
+  <p class="header-title">요금 안내</p>
+</div>
+<div class="content">
+  <h2>합리적인 요금제</h2>
+  <div class="pricing-grid">
+    <div class="pricing-card">
+      <p class="plan-name">Starter</p>
+      <p class="plan-price">99,000원</p>
+      <p class="plan-period">/월</p>
+      <p class="plan-desc">서치드를 시작하세요</p>
+      <p class="feature-item">✓ 이력서 업로드 월 50건</p>
+      <p class="feature-item">✓ 서치드 AI Engine</p>
+      <p class="feature-item">✓ 기본 검색</p>
+      <p class="feature-item">✓ 블라인드 내보내기 월 30회</p>
+      <p class="feature-item">✓ 이메일 지원</p>
+      <div class="cta-box">
+        <p class="cta-text">시작하기</p>
+      </div>
+    </div>
+    <div class="pricing-card popular">
+      <div class="popular-badge"><p class="popular-badge-text">POPULAR</p></div>
+      <p class="plan-name">Pro</p>
+      <p class="plan-price">149,000원</p>
+      <p class="plan-period">/월</p>
+      <p class="plan-desc">바쁜 헤드헌터를 위한 플랜</p>
+      <p class="feature-item">✓ 이력서 업로드 월 150건</p>
+      <p class="feature-item">✓ 3-Way AI Cross-Check</p>
+      <p class="feature-item">✓ 동의어 검색</p>
+      <p class="feature-item">✓ 버전 관리</p>
+      <p class="feature-item">✓ 무제한 블라인드 내보내기</p>
+      <div class="cta-box">
+        <p class="cta-text">14일 무료 체험</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

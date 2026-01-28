@@ -11,7 +11,9 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types";
 
+// 싱글톤 캐시 무효화 - 설정 변경 후 재생성 필요
 let adminClient: SupabaseClient<Database> | null = null;
+let adminClientVersion = 2; // 버전 변경 시 재생성
 
 /**
  * Admin Supabase Client 가져오기 (싱글톤)
@@ -19,9 +21,10 @@ let adminClient: SupabaseClient<Database> | null = null;
  * @returns Supabase Admin Client
  */
 export function getAdminClient(): SupabaseClient<Database> {
-  if (adminClient) {
-    return adminClient;
-  }
+  // 항상 새로 생성 (캐싱 이슈 디버깅용)
+  // if (adminClient) {
+  //   return adminClient;
+  // }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -32,7 +35,7 @@ export function getAdminClient(): SupabaseClient<Database> {
     );
   }
 
-  adminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
+  const client = createClient<Database>(supabaseUrl, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -48,7 +51,10 @@ export function getAdminClient(): SupabaseClient<Database> {
     },
   });
 
-  return adminClient;
+  console.log("[AdminClient] Created with service role key (first 20 chars):", serviceRoleKey.substring(0, 20));
+
+  adminClient = client;
+  return client;
 }
 
 /**
@@ -65,11 +71,14 @@ export async function callRpc<T>(
     const { data, error } = await (client.rpc as any)(functionName, params);
 
     if (error) {
-      return { data: null, error: new Error(error.message) };
+      console.error(`[RPC] ${functionName} error:`, error);
+      return { data: null, error: new Error(error.message || JSON.stringify(error)) };
     }
 
+    console.log(`[RPC] ${functionName} result:`, data);
     return { data: data as T, error: null };
   } catch (err) {
+    console.error(`[RPC] ${functionName} exception:`, err);
     return {
       data: null,
       error: err instanceof Error ? err : new Error(String(err)),
@@ -164,4 +173,58 @@ export async function withRollback<T>(
       error: err instanceof Error ? err : new Error(String(err)),
     };
   }
+}
+
+/**
+ * 크레딧 예약 + 업로드 작업 생성 (Atomic)
+ * PostgreSQL Function을 사용하여 모든 작업을 단일 트랜잭션으로 처리
+ */
+export interface CreateUploadJobResult {
+  success: boolean;
+  jobId?: string;
+  candidateId?: string;
+  error?: string;
+}
+
+export async function reserveAndCreateUploadJob(
+  userId: string,
+  fileName: string,
+  fileSize: number,
+  fileType: string,
+  storagePath: string,
+  description?: string
+): Promise<CreateUploadJobResult> {
+  const { data, error } = await callRpc<{
+    success: boolean;
+    job_id: string | null;
+    candidate_id: string | null;
+    error_message: string | null;
+  }[]>("reserve_and_create_upload_job", {
+    p_user_id: userId,
+    p_file_name: fileName,
+    p_file_size: fileSize,
+    p_file_type: fileType,
+    p_storage_path: storagePath,
+    p_description: description || `이력서 업로드: ${fileName}`,
+  });
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  // RPC returns array with single row
+  const result = Array.isArray(data) ? data[0] : data;
+
+  if (!result || !result.success) {
+    return {
+      success: false,
+      error: result?.error_message || "업로드 작업 생성에 실패했습니다.",
+    };
+  }
+
+  return {
+    success: true,
+    jobId: result.job_id || undefined,
+    candidateId: result.candidate_id || undefined,
+  };
 }

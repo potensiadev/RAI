@@ -34,6 +34,23 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const supabaseAny = supabase as any;
 
+    // ─────────────────────────────────────────────────
+    // 보안: public.users에서 현재 사용자의 ID 조회
+    // auth.users.id와 public.users.id가 다를 수 있으므로 email로 조회
+    // ─────────────────────────────────────────────────
+    const { data: userData, error: userError } = await supabaseAny
+      .from("users")
+      .select("id")
+      .eq("email", user.email)
+      .single();
+
+    if (userError || !userData) {
+      console.warn(`[Cleanup] User not found: email=${user.email}`);
+      return apiBadRequest("사용자 정보를 찾을 수 없습니다.");
+    }
+
+    const publicUserId = userData.id;
+
     // 1. Job 상태를 failed로 업데이트 (user_id로 소유권 검증)
     const { data: jobData, error: jobError } = await supabaseAny
       .from("processing_jobs")
@@ -42,13 +59,13 @@ export async function POST(request: NextRequest) {
         error_message: "Upload cancelled or failed",
       })
       .eq("id", jobId)
-      .eq("user_id", user.id)  // IDOR 방지: 본인 소유 작업만 수정 가능
+      .eq("user_id", publicUserId)  // IDOR 방지: public.users.id로 검증
       .select()
       .single();
 
     // 소유권 검증 실패 시 (다른 사용자의 데이터 접근 시도)
     if (jobError || !jobData) {
-      console.warn(`Unauthorized cleanup attempt: user=${user.id}, jobId=${jobId}`);
+      console.warn(`[Cleanup] Unauthorized attempt: publicUserId=${publicUserId}, jobId=${jobId}`);
       return apiBadRequest("작업을 찾을 수 없거나 권한이 없습니다.");
     }
 
@@ -58,7 +75,7 @@ export async function POST(request: NextRequest) {
         .from("candidates")
         .delete()
         .eq("id", candidateId)
-        .eq("user_id", user.id);  // IDOR 방지: 본인 소유 데이터만 삭제 가능
+        .eq("user_id", publicUserId);  // IDOR 방지: public.users.id로 검증
     }
 
     // 3. Storage 파일 삭제 (존재하는 경우)

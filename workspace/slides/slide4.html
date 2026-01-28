@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #FFFFFF;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.header-bar {
+  width: 100%;
+  height: 50pt;
+  background: #1C2833;
+  display: flex;
+  align-items: center;
+  padding: 0 40pt;
+  box-sizing: border-box;
+}
+.header-title {
+  color: #FFFFFF;
+  font-size: 18pt;
+  font-weight: bold;
+  margin: 0;
+}
+.content {
+  padding: 20pt 40pt 30pt 40pt;
+  flex: 1;
+  display: flex;
+  gap: 30pt;
+}
+.left-col {
+  flex: 1;
+}
+.right-col {
+  flex: 1;
+}
+h2 {
+  color: #1C2833;
+  font-size: 22pt;
+  font-weight: bold;
+  margin: 0 0 6pt 0;
+}
+.subtitle {
+  color: #5D6D7E;
+  font-size: 12pt;
+  margin: 0 0 16pt 0;
+}
+.step {
+  display: flex;
+  gap: 10pt;
+  margin: 0 0 12pt 0;
+}
+.step-num {
+  width: 24pt;
+  height: 24pt;
+  background: #4A90D9;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.step-num-text {
+  color: #FFFFFF;
+  font-size: 12pt;
+  font-weight: bold;
+  margin: 0;
+  line-height: 24pt;
+  text-align: center;
+}
+.step-content {
+  flex: 1;
+}
+.step-title {
+  color: #1C2833;
+  font-size: 12pt;
+  font-weight: bold;
+  margin: 0 0 2pt 0;
+}
+.step-desc {
+  color: #5D6D7E;
+  font-size: 10pt;
+  margin: 0;
+}
+.demo-box {
+  background: #F8F9FA;
+  border-radius: 10pt;
+  padding: 16pt;
+  height: 100%;
+  box-sizing: border-box;
+}
+.demo-title {
+  color: #7F8C8D;
+  font-size: 10pt;
+  margin: 0 0 10pt 0;
+  text-transform: uppercase;
+}
+.demo-result {
+  background: #E8F5E9;
+  border-radius: 8pt;
+  padding: 12pt;
+}
+.demo-result-title {
+  color: #2E7D32;
+  font-size: 11pt;
+  font-weight: bold;
+  margin: 0 0 8pt 0;
+}
+.demo-result-item {
+  color: #1C2833;
+  font-size: 10pt;
+  margin: 0 0 4pt 0;
+}
+</style>
+</head>
+<body>
+<div class="header-bar">
+  <p class="header-title">핵심 기능 1</p>
+</div>
+<div class="content">
+  <div class="left-col">
+    <h2>AI 이력서 분석</h2>
+    <p class="subtitle">PDF, Word 업로드만 하면 AI가 자동 분석</p>
+    <div class="step">
+      <div class="step-num"><p class="step-num-text">1</p></div>
+      <div class="step-content">
+        <p class="step-title">이력서 업로드</p>
+        <p class="step-desc">PDF, Word, HWP 모든 형식 지원</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num"><p class="step-num-text">2</p></div>
+      <div class="step-content">
+        <p class="step-title">AI 자동 분석</p>
+        <p class="step-desc">30페이지도 30초 내 핵심 정보 추출</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num"><p class="step-num-text">3</p></div>
+      <div class="step-content">
+        <p class="step-title">검색 가능한 DB화</p>
+        <p class="step-desc">모든 이력서가 검색 가능한 자산으로</p>
+      </div>
+    </div>
+  </div>
+  <div class="right-col">
+    <div class="demo-box">
+      <p class="demo-title">분석 결과 예시</p>
+      <div class="demo-result">
+        <p class="demo-result-title">박지현 | Product Manager</p>
+        <p class="demo-result-item">현재: 쿠팡 Senior PM (3년)</p>
+        <p class="demo-result-item">경력: 8년 2개월</p>
+        <p class="demo-result-item">학력: 서울대학교 경영학과</p>
+        <p class="demo-result-item">스킬: Product Strategy, Data Analysis, SQL</p>
+        <p class="demo-result-item">하이라이트: MAU 200만 서비스, 전환율 40% 개선</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

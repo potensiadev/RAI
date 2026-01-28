@@ -109,6 +109,7 @@ export function toSearchResult(
         company: (row.last_company as string) ?? "",
         expYears: (row.exp_years as number) ?? 0,
         skills: sanitizeSkillsArray(row.skills),
+        totalSkillsCount: Array.isArray(row.skills) ? row.skills.length : 0,
         photoUrl: row.photo_url as string | undefined,
         summary: row.summary as string | undefined,
         aiConfidence: confidencePercent,

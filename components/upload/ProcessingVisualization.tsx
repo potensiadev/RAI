@@ -27,6 +27,18 @@ const PHASES = [
     { id: "complete", label: "완료", icon: CheckCircle },
 ];
 
+// ProcessingCard와 동일한 진행률 매핑 (DB status 기준)
+// DB status: processing(15%) → parsed(45%) → analyzed(85%) → completed(100%)
+const PHASE_TO_PROGRESS: Record<ProcessingPhase, number> = {
+    idle: 0,
+    uploading: 10,
+    routing: 15,      // = DB "processing"
+    analyzing: 45,    // = DB "parsed" (파싱 완료 후 AI 분석 중)
+    extracting: 70,   // 중간 단계
+    embedding: 85,    // = DB "analyzed" (분석 완료 후 임베딩 중)
+    complete: 100,    // = DB "completed"
+};
+
 export default function ProcessingVisualization({
     phase,
     fileName,
@@ -43,9 +55,8 @@ export default function ProcessingVisualization({
     if (phase === "idle") return null;
 
     const currentPhaseIndex = PHASES.findIndex(p => p.id === phase);
-    const progressPercent = currentPhaseIndex >= 0
-        ? Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100)
-        : 0;
+    // DB status와 일치하는 진행률 사용 (페이지 이동 후에도 일관성 유지)
+    const progressPercent = PHASE_TO_PROGRESS[phase] ?? 0;
 
     // 현재 단계별 설명 메시지
     const getStatusMessage = () => {

@@ -133,9 +133,10 @@ SUMMARY_SCHEMA: Dict[str, Any] = {
         "type": "object",
         "properties": {
             "summary": {"type": "string", "description": "후보자 요약 (300자 이내)"},
-            "strengths": {"type": "array", "description": "주요 강점 3~5가지", "items": {"type": "string"}}
+            "strengths": {"type": "array", "description": "주요 강점 3~5가지", "items": {"type": "string"}},
+            "match_reason": {"type": "string", "description": "이 후보자가 채용 시장에서 매력적인 이유 (Aha Moment용 핵심 소구점)"}
         },
-        "required": ["summary", "strengths"],
+        "required": ["summary", "strengths", "match_reason"],
         "additionalProperties": True
     }
 }
@@ -231,6 +232,10 @@ RESUME_JSON_SCHEMA: Dict[str, Any] = {
                 "description": "주요 강점 3~5가지 (예: '10년 이상의 PM 경력', 'B2B SaaS 도메인 전문가')",
                 "items": {"type": "string"}
             },
+            "match_reason": {
+                "type": "string",
+                "description": "이 후보자가 왜 매력적인지 한 문장으로 설명 (예: '대규모 트래픽 처리 경험이 풍부한 시니어 백엔드 엔지니어입니다.')"
+            },
             
             # URL
             "portfolio_url": {"type": "string", "description": "포트폴리오 URL"},
@@ -260,6 +265,7 @@ RESUME_SCHEMA_PROMPT = """
 3. **careers**: 경력 목록 - 각 경력에 company, position, department, start_date, end_date, is_current, description 포함
 4. **summary**: 후보자 요약문 - 300자 내외로 핵심 경력과 강점을 요약하여 생성
 5. **strengths**: 강점 목록 - 3~5개의 핵심 강점
+6. **match_reason**: 핵심 소구점 - 후보자가 왜 채용 시장에서 매력적인지 1문장으로 요약
 
 ### 경력 데이터 형식 (Issue #11 해결)
 각 경력 항목은 다음 형식을 따라야 합니다:

@@ -511,10 +511,10 @@ export async function GET(request: NextRequest) {
   const getPublicUserId = (userData as { id: string } | null)?.id || user.id;
 
   if (jobId) {
-    // 특정 job 조회
+    // 특정 job 조회 (candidate status도 함께)
     const { data, error } = await supabase
       .from("processing_jobs")
-      .select("*")
+      .select("*, candidates!processing_jobs_candidate_id_fkey(status)")
       .eq("id", jobId)
       .eq("user_id", getPublicUserId)
       .single();
@@ -526,7 +526,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ data });
+    // candidate status를 최상위 레벨로 추출
+    const candidateStatus = (data as { candidates?: { status: string } })?.candidates?.status;
+    return NextResponse.json({
+      data: {
+        ...data,
+        candidate_status: candidateStatus,
+      }
+    });
   }
 
   // 최근 job 목록 조회

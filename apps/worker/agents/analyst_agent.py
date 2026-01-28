@@ -86,15 +86,18 @@ class AnalystAgent:
         self.mode = settings.ANALYSIS_MODE
         # Feature flag for conditional calling
         self.use_conditional_llm = settings.USE_CONDITIONAL_LLM if hasattr(settings, 'USE_CONDITIONAL_LLM') else True
+        # Feature flag for parallel LLM calling (speed optimization for bulk uploads)
+        self.use_parallel_llm = settings.USE_PARALLEL_LLM if hasattr(settings, 'USE_PARALLEL_LLM') else True
         # Configurable confidence threshold
         self.confidence_threshold = (
-            settings.LLM_CONFIDENCE_THRESHOLD 
-            if hasattr(settings, 'LLM_CONFIDENCE_THRESHOLD') 
+            settings.LLM_CONFIDENCE_THRESHOLD
+            if hasattr(settings, 'LLM_CONFIDENCE_THRESHOLD')
             else self.DEFAULT_CONFIDENCE_THRESHOLD
         )
         # Monitoring counters (for logging)
         self._single_model_count = 0
         self._multi_model_count = 0
+        self._parallel_call_count = 0
     
     @property
     def CONFIDENCE_THRESHOLD(self):
@@ -132,9 +135,14 @@ class AnalystAgent:
             messages = self._create_messages(resume_text, filename)
 
             # ─────────────────────────────────────────────────────────────────
-            # Progressive LLM Calling (Cost Optimization)
+            # LLM Calling Strategy Selection
             # ─────────────────────────────────────────────────────────────────
-            if self.use_conditional_llm:
+            if self.use_parallel_llm:
+                # Parallel mode: GPT-4o + Gemini 동시 호출 (대량 업로드 최적화)
+                logger.info("[AnalystAgent] Using PARALLEL LLM mode (speed optimized)")
+                result = await self._parallel_llm_call(messages, analysis_mode)
+            elif self.use_conditional_llm:
+                # Progressive mode: 조건부 순차 호출 (비용 최적화)
                 result = await self._progressive_llm_call(messages, analysis_mode)
             else:
                 # Fallback to original parallel calling
@@ -272,12 +280,22 @@ class AnalystAgent:
         analysis_mode: AnalysisMode
     ) -> tuple[Dict[str, Any], float, List[Warning]]:
         """
-        Original parallel LLM calling (for fallback/comparison).
+        Parallel LLM calling for speed optimization.
+        GPT-4o + Gemini (+ Claude for Phase 2) 동시 호출
         """
         providers = self._get_providers(analysis_mode)
-        logger.info(f"[AnalystAgent] Parallel calling {len(providers)} providers")
-        
+        logger.info(f"[AnalystAgent] Parallel calling {len(providers)} providers: {[p.value for p in providers]}")
+
         responses = await self._call_llms_parallel(providers, messages)
+
+        # 통계 로깅
+        self._parallel_call_count += 1
+        if self._parallel_call_count % 10 == 0:
+            logger.info(
+                f"[AnalystAgent] Parallel LLM Stats: "
+                f"total_parallel_calls={self._parallel_call_count}"
+            )
+
         return self._merge_responses(responses)
 
     async def _call_single_llm(
@@ -353,6 +371,8 @@ class AnalystAgent:
             confidence += 0.05
         if data.get("education") and len(data.get("education", [])) > 0:
             confidence += 0.05
+        if data.get("match_reason") and len(str(data.get("match_reason"))) > 10:
+            confidence += 0.05
         
         return min(confidence, 1.0), missing
 
@@ -419,6 +439,7 @@ class AnalystAgent:
 {RESUME_SCHEMA_PROMPT}
 
 Return a single JSON object with all extracted fields. If a field is not found, omit it.
+IMPORTANT: Generate a high-quality 'match_reason' (Aha Moment) that explains why this candidate is a strong hire for their target roles.
 """
         user_prompt = f"""Extract all information from this resume:
 

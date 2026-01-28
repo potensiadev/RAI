@@ -8,15 +8,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { withRateLimit } from "@/lib/rate-limit";
+import { JD_UPLOAD_CONFIG } from "@/lib/config/upload";
 import OpenAI from "openai";
 import { pdfToPng } from "pdf-to-png-converter";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { randomUUID } from "crypto";
 
-const execPromise = promisify(exec);
+const execFilePromise = promisify(execFile);
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,9 +38,9 @@ function getOpenAIClient(): OpenAI {
   return openaiClient;
 }
 
-// 지원 파일 형식
-const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc"];
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+// 지원 파일 형식 (공통 config 사용)
+const ALLOWED_EXTENSIONS = [...JD_UPLOAD_CONFIG.ALLOWED_EXTENSIONS];
+const MAX_FILE_SIZE = JD_UPLOAD_CONFIG.MAX_FILE_SIZE;
 
 interface ExtractedPosition {
   title: string;
@@ -246,11 +248,13 @@ async function convertPdfToImages(buffer: Buffer): Promise<string[]> {
 
 /**
  * DOCX를 이미지로 변환 (LibreOffice 사용)
+ * 보안: execFile을 사용하여 shell injection 방지
  */
 async function convertDocxToImages(buffer: Buffer): Promise<string[]> {
   const tempDir = os.tmpdir();
-  const timestamp = Date.now();
-  const inputPath = path.join(tempDir, `docx_${timestamp}.docx`);
+  // 보안: timestamp 대신 UUID 사용하여 파일명 충돌 방지
+  const uniqueId = randomUUID();
+  const inputPath = path.join(tempDir, `docx_${uniqueId}.docx`);
   let pdfPath: string | null = null;
 
   try {
@@ -258,27 +262,36 @@ async function convertDocxToImages(buffer: Buffer): Promise<string[]> {
     fs.writeFileSync(inputPath, buffer);
     console.log(`DOCX saved to: ${inputPath}`);
 
-    // LibreOffice로 PDF 변환 시도 (Windows/Mac: soffice, Linux: libreoffice)
-    const commands = [
-      `soffice --headless --convert-to pdf --outdir "${tempDir}" "${inputPath}"`,
-      `libreoffice --headless --convert-to pdf --outdir "${tempDir}" "${inputPath}"`,
-      `"C:\\Program Files\\LibreOffice\\program\\soffice.exe" --headless --convert-to pdf --outdir "${tempDir}" "${inputPath}"`,
+    // LibreOffice 실행 파일 경로들 (Windows/Mac/Linux)
+    // 보안: execFile을 사용하여 인자를 배열로 전달 (shell injection 방지)
+    const libreOfficeExecutables = [
+      "soffice",
+      "libreoffice",
+      "C:\\Program Files\\LibreOffice\\program\\soffice.exe",
+      "/Applications/LibreOffice.app/Contents/MacOS/soffice",
     ];
 
-    for (const cmd of commands) {
+    const args = [
+      "--headless",
+      "--convert-to", "pdf",
+      "--outdir", tempDir,
+      inputPath
+    ];
+
+    for (const executable of libreOfficeExecutables) {
       try {
-        console.log(`Trying command: ${cmd}`);
-        await execPromise(cmd, { timeout: 60000 });
+        console.log(`Trying executable: ${executable}`);
+        await execFilePromise(executable, args, { timeout: 60000 });
 
         // PDF 파일 경로 확인
-        const expectedPdfPath = path.join(tempDir, `docx_${timestamp}.pdf`);
+        const expectedPdfPath = path.join(tempDir, `docx_${uniqueId}.pdf`);
         if (fs.existsSync(expectedPdfPath)) {
           pdfPath = expectedPdfPath;
           console.log(`PDF created at: ${pdfPath}`);
           break;
         }
       } catch (cmdError) {
-        console.log(`Command failed: ${cmd}`, cmdError);
+        console.log(`Executable failed: ${executable}`, cmdError);
         continue;
       }
     }
@@ -457,7 +470,7 @@ export async function POST(request: NextRequest) {
     // 확장자 검증
     const fileName = file.name.toLowerCase();
     const extension = "." + fileName.split(".").pop();
-    if (!ALLOWED_EXTENSIONS.includes(extension)) {
+    if (!ALLOWED_EXTENSIONS.includes(extension as typeof ALLOWED_EXTENSIONS[number])) {
       return NextResponse.json(
         { success: false, error: "PDF, DOCX, DOC 파일만 지원됩니다." },
         { status: 400 }

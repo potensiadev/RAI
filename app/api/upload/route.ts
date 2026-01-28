@@ -527,10 +527,11 @@ export async function GET(request: NextRequest) {
     }
 
     // candidate status를 최상위 레벨로 추출
-    const candidateStatus = (data as { candidates?: { status: string } })?.candidates?.status;
+    const jobData = data as Record<string, unknown>;
+    const candidateStatus = (jobData?.candidates as { status: string } | undefined)?.status;
     return NextResponse.json({
       data: {
-        ...data,
+        ...jobData,
         candidate_status: candidateStatus,
       }
     });

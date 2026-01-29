@@ -145,6 +145,8 @@ interface Candidate {
   quick_extracted?: QuickExtractedData;
   // 매칭 여부 (검토 필요 지표용)
   hasBeenMatched?: boolean;
+  // 실패 시 에러 메시지
+  errorMessage?: string;
 }
 
 export default function CandidatesPage() {
@@ -167,7 +169,7 @@ export default function CandidatesPage() {
     const { data, error } = await supabase
       .from("candidates")
       .select("id, name, last_position, last_company, exp_years, skills, confidence_score, created_at, summary, careers, status")
-      .in("status", ["processing", "parsed", "analyzed", "completed"])
+      .in("status", ["processing", "parsed", "analyzed", "completed", "failed"])
       .eq("is_latest", true)
       .order("created_at", { ascending: false });
 
@@ -208,10 +210,39 @@ export default function CandidatesPage() {
       (matchedData as { candidate_id: string }[] | null)?.map(m => m.candidate_id) || []
     );
 
-    // 3. 각 후보자에 매칭 여부 표시
+    // 3. 실패한 후보자들의 에러 메시지 조회 (processing_jobs에서 최신 에러)
+    const failedCandidateIds = candidatesData
+      .filter((c) => c.status === "failed")
+      .map((c) => c.id);
+
+    let errorMessageMap: Record<string, string> = {};
+    if (failedCandidateIds.length > 0) {
+      const { data: jobsData } = await supabase
+        .from("processing_jobs")
+        .select("candidate_id, error_message")
+        .in("candidate_id", failedCandidateIds)
+        .eq("status", "failed")
+        .order("created_at", { ascending: false });
+
+      // 각 candidate_id별 가장 최신 에러 메시지만 사용
+      if (jobsData) {
+        const seenIds = new Set<string>();
+        for (const job of jobsData as { candidate_id: string; error_message: string | null }[]) {
+          if (job.candidate_id && !seenIds.has(job.candidate_id)) {
+            seenIds.add(job.candidate_id);
+            if (job.error_message) {
+              errorMessageMap[job.candidate_id] = job.error_message;
+            }
+          }
+        }
+      }
+    }
+
+    // 4. 각 후보자에 매칭 여부 + 에러 메시지 표시
     return candidatesData.map((candidate) => ({
       ...candidate,
       hasBeenMatched: matchedCandidateIds.has(candidate.id),
+      errorMessage: errorMessageMap[candidate.id],
     }));
   };
 
@@ -336,6 +367,27 @@ export default function CandidatesPage() {
     return "text-red-400 bg-red-500/20 border-red-500/30";
   };
 
+  // 재시도 핸들러
+  const handleRetry = async (candidateId: string): Promise<void> => {
+    try {
+      const response = await fetch(`/api/candidates/${candidateId}/retry`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("[Retry] Failed:", errorData);
+        // TODO: 에러 토스트 표시 (선택적)
+        return;
+      }
+
+      // 성공 시 Realtime이 자동으로 상태 업데이트함
+      console.log("[Retry] Success, waiting for Realtime update...");
+    } catch (error) {
+      console.error("[Retry] Network error:", error);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -443,11 +495,11 @@ export default function CandidatesPage() {
 
       {/* Candidate Cards - Issue #9: 카드 UI로 변환 */}
       {/* Progressive Loading: 처리 중 후보자 수 표시 */}
-      {candidates.filter(c => c.status && c.status !== "completed").length > 0 && (
+      {candidates.filter(c => c.status && c.status !== "completed" && c.status !== "failed").length > 0 && (
         <div className="flex items-center gap-2 text-sm text-blue-400">
           <Loader2 className="w-4 h-4 animate-spin" />
           <span>
-            {candidates.filter(c => c.status && c.status !== "completed").length}개의 이력서 분석 중...
+            {candidates.filter(c => c.status && c.status !== "completed" && c.status !== "failed").length}개의 이력서 분석 중...
           </span>
         </div>
       )}
@@ -473,7 +525,7 @@ export default function CandidatesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="candidate-list">
           {filteredCandidates.map((candidate) => {
-            // Progressive Loading: 처리 중인 후보자는 ProcessingCard로 표시
+            // Progressive Loading: 처리 중/실패 후보자는 ProcessingCard로 표시
             if (candidate.status && candidate.status !== "completed") {
               return (
                 <ProcessingCard
@@ -487,6 +539,8 @@ export default function CandidatesPage() {
                     quick_extracted: candidate.quick_extracted,
                     created_at: candidate.created_at,
                   }}
+                  errorMessage={candidate.errorMessage}
+                  onRetry={handleRetry}
                 />
               );
             }

@@ -465,6 +465,8 @@ export interface CandidatePartial {
   quick_extracted?: QuickExtractedData;
   created_at: string;
   updated_at?: string;
+  /** 분석 실패 시 에러 메시지 (processing_jobs.error_message) */
+  errorMessage?: string;
 }
 
 /**
@@ -480,5 +482,6 @@ export function toCandidatePartial(row: Record<string, unknown>): CandidateParti
     quick_extracted: row.quick_extracted as QuickExtractedData | undefined,
     created_at: row.created_at as string,
     updated_at: row.updated_at as string | undefined,
+    errorMessage: row.error_message as string | undefined,
   };
 }

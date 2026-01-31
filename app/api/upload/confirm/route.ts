@@ -193,6 +193,7 @@ export async function POST(request: NextRequest) {
         console.log("[Upload Confirm] Calling Worker /parse-only:", {
             url: `${WORKER_URL}/parse-only`,
             jobId,
+            storagePath,
             fileName,
         });
 

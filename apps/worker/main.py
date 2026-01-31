@@ -581,6 +581,596 @@ async def parse_file(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─────────────────────────────────────────────────
+# Parse-Only Endpoint (Option C 하이브리드: 동기 파싱)
+# ─────────────────────────────────────────────────
+
+class ParseOnlyRequest(BaseModel):
+    """파싱 전용 요청 모델 (Storage 경로 기반)"""
+    file_url: str  # Supabase Storage 경로
+    file_name: str
+    user_id: str
+    job_id: str
+    candidate_id: Optional[str] = None
+
+
+class QuickExtractedData(BaseModel):
+    """빠른 추출 데이터 (파싱 직후)"""
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+class ParseOnlyResponse(BaseModel):
+    """파싱 전용 응답 모델"""
+    success: bool
+    # 파싱 결과
+    text: Optional[str] = None
+    text_length: int = 0
+    file_type: Optional[str] = None
+    parse_method: Optional[str] = None
+    page_count: int = 0
+    # 빠른 추출 데이터 (Progressive Loading용)
+    quick_extracted: Optional[QuickExtractedData] = None
+    # 에러 정보
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    is_encrypted: bool = False
+    warnings: list[str] = []
+    # 메타
+    duration_ms: int = 0
+
+
+def _extract_quick_data(text: str) -> QuickExtractedData:
+    """
+    텍스트에서 기본 정보 빠르게 추출 (정규식 기반)
+
+    AI 분석 없이 정규식만으로 이름, 전화번호, 이메일을 추출합니다.
+    Progressive Loading을 위해 파싱 직후 사용자에게 빠르게 표시할 데이터입니다.
+    """
+    import re
+
+    quick_data = QuickExtractedData()
+
+    # 이메일 추출
+    email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
+    if email_match:
+        quick_data.email = email_match.group()
+
+    # 전화번호 추출 (한국 휴대폰)
+    phone_match = re.search(r'01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}', text)
+    if phone_match:
+        quick_data.phone = phone_match.group()
+
+    # 이름 추출 시도 (첫 번째 줄에서 한글 이름 패턴)
+    # 이력서 상단에 이름이 있는 경우가 많음
+    lines = text.strip().split('\n')[:10]  # 상위 10줄만 검색
+    for line in lines:
+        line = line.strip()
+        # 한글 이름 패턴 (2-4글자)
+        name_match = re.match(r'^([가-힣]{2,4})(?:\s|$|[^\w가-힣])', line)
+        if name_match:
+            potential_name = name_match.group(1)
+            # 일반적인 단어가 아닌 경우만 이름으로 인식
+            common_words = {'이력서', '경력', '학력', '자기소개', '기술', '스킬', '연락처', '주소'}
+            if potential_name not in common_words:
+                quick_data.name = potential_name
+                break
+
+    return quick_data
+
+
+@app.post("/parse-only", response_model=ParseOnlyResponse)
+async def parse_only_endpoint(
+    request: ParseOnlyRequest,
+    _: bool = Depends(verify_api_key),
+):
+    """
+    파싱 전용 엔드포인트 (동기, Option C 하이브리드)
+
+    Storage에서 파일을 다운로드하여 텍스트를 추출하고 즉시 응답합니다.
+    AI 분석 없이 파싱만 수행하므로 빠른 응답이 가능합니다.
+
+    성공 시:
+    - 추출된 텍스트
+    - 빠른 추출 데이터 (이름, 전화, 이메일)
+    - candidate 상태를 'parsed'로 업데이트
+
+    실패 시:
+    - 구체적인 에러 코드와 메시지
+    - 사용자에게 즉시 피드백 가능
+
+    Returns:
+        ParseOnlyResponse with parsed text and quick_extracted data
+    """
+    import time
+    start_time = time.time()
+
+    db_service = get_database_service()
+
+    logger.info(f"[ParseOnly] Starting for job {request.job_id}, file: {request.file_name}")
+
+    try:
+        # Step 1: Job 상태 업데이트 (processing)
+        db_service.update_job_status(request.job_id, "processing")
+
+        # Step 2: Supabase Storage에서 파일 다운로드
+        logger.info(f"[ParseOnly] Downloading file from storage: {request.file_url}")
+
+        if not db_service.client:
+            return ParseOnlyResponse(
+                success=False,
+                error_code="STORAGE_ERROR",
+                error_message="Supabase client not initialized",
+                duration_ms=int((time.time() - start_time) * 1000)
+            )
+
+        try:
+            file_response = db_service.client.storage.from_("resumes").download(request.file_url)
+            if not file_response:
+                return ParseOnlyResponse(
+                    success=False,
+                    error_code="STORAGE_ERROR",
+                    error_message="파일을 다운로드할 수 없습니다. 파일이 존재하는지 확인해주세요.",
+                    duration_ms=int((time.time() - start_time) * 1000)
+                )
+            file_bytes = file_response
+        except Exception as download_error:
+            logger.error(f"[ParseOnly] Download failed: {download_error}")
+            return ParseOnlyResponse(
+                success=False,
+                error_code="STORAGE_ERROR",
+                error_message="파일 다운로드 중 오류가 발생했습니다.",
+                duration_ms=int((time.time() - start_time) * 1000)
+            )
+
+        logger.info(f"[ParseOnly] Downloaded {len(file_bytes)} bytes")
+
+        # Step 3: Router Agent로 파일 타입 감지
+        router_result = router_agent.analyze(file_bytes, request.file_name)
+
+        if router_result.is_rejected:
+            logger.warning(f"[ParseOnly] File rejected: {router_result.reject_reason}")
+            return ParseOnlyResponse(
+                success=False,
+                error_code="PARSE_FAILED",
+                error_message=router_result.reject_reason or "지원하지 않는 파일 형식입니다.",
+                is_encrypted=router_result.is_encrypted,
+                warnings=router_result.warnings,
+                duration_ms=int((time.time() - start_time) * 1000)
+            )
+
+        # Step 4: 파일 타입에 따른 파싱
+        text = ""
+        parse_method = "unknown"
+        page_count = 0
+        is_encrypted = False
+        warnings = router_result.warnings.copy()
+
+        if router_result.file_type in [FileType.HWP, FileType.HWPX]:
+            result = hwp_parser.parse(file_bytes, request.file_name)
+            text = result.text
+            parse_method = result.method.value
+            page_count = result.page_count
+            is_encrypted = result.is_encrypted
+
+            if result.method == ParseMethod.FAILED:
+                error_msg = result.error_message or "HWP 파일을 파싱할 수 없습니다."
+                if is_encrypted:
+                    error_msg = "비밀번호로 보호된 파일입니다. 비밀번호를 해제한 후 다시 업로드해주세요."
+                return ParseOnlyResponse(
+                    success=False,
+                    error_code="ENCRYPTED" if is_encrypted else "PARSE_FAILED",
+                    error_message=error_msg,
+                    is_encrypted=is_encrypted,
+                    file_type=router_result.file_type.value,
+                    warnings=warnings,
+                    duration_ms=int((time.time() - start_time) * 1000)
+                )
+
+        elif router_result.file_type == FileType.PDF:
+            result = pdf_parser.parse(file_bytes)
+            text = result.text
+            parse_method = result.method
+            page_count = result.page_count
+            is_encrypted = result.is_encrypted
+
+            if not result.success:
+                error_msg = result.error_message or "PDF 파일을 파싱할 수 없습니다."
+                if is_encrypted:
+                    error_msg = "비밀번호로 보호된 PDF입니다. 비밀번호를 해제한 후 다시 업로드해주세요."
+                return ParseOnlyResponse(
+                    success=False,
+                    error_code="ENCRYPTED" if is_encrypted else "PARSE_FAILED",
+                    error_message=error_msg,
+                    is_encrypted=is_encrypted,
+                    file_type=router_result.file_type.value,
+                    warnings=warnings,
+                    duration_ms=int((time.time() - start_time) * 1000)
+                )
+
+        elif router_result.file_type in [FileType.DOC, FileType.DOCX]:
+            result = docx_parser.parse(file_bytes, request.file_name)
+            text = result.text
+            parse_method = result.method
+            page_count = result.page_count
+
+            if not result.success:
+                return ParseOnlyResponse(
+                    success=False,
+                    error_code="PARSE_FAILED",
+                    error_message=result.error_message or "DOC/DOCX 파일을 파싱할 수 없습니다.",
+                    file_type=router_result.file_type.value,
+                    warnings=warnings,
+                    duration_ms=int((time.time() - start_time) * 1000)
+                )
+
+        else:
+            return ParseOnlyResponse(
+                success=False,
+                error_code="PARSE_FAILED",
+                error_message=f"지원하지 않는 파일 형식입니다: {router_result.file_type}",
+                warnings=warnings,
+                duration_ms=int((time.time() - start_time) * 1000)
+            )
+
+        # Step 5: 텍스트 길이 체크
+        text_length = len(text.strip())
+        if text_length < settings.MIN_TEXT_LENGTH:
+            return ParseOnlyResponse(
+                success=False,
+                error_code="TEXT_TOO_SHORT",
+                error_message=f"추출된 텍스트가 너무 짧습니다 ({text_length}자). 스캔 이미지일 수 있습니다.",
+                text_length=text_length,
+                file_type=router_result.file_type.value,
+                parse_method=parse_method,
+                page_count=page_count,
+                warnings=warnings,
+                duration_ms=int((time.time() - start_time) * 1000)
+            )
+
+        # Step 6: 빠른 데이터 추출 (Progressive Loading)
+        quick_extracted = _extract_quick_data(text)
+
+        # Step 7: Candidate 상태 업데이트 (parsed)
+        if request.candidate_id:
+            quick_data_dict = {
+                "name": quick_extracted.name,
+                "phone": quick_extracted.phone,
+                "email": quick_extracted.email,
+            }
+            # None 값 제거
+            quick_data_dict = {k: v for k, v in quick_data_dict.items() if v}
+
+            db_service.update_candidate_status(
+                candidate_id=request.candidate_id,
+                status="parsed",
+                quick_extracted=quick_data_dict if quick_data_dict else None
+            )
+            logger.info(f"[ParseOnly] Candidate {request.candidate_id} status updated to 'parsed'")
+
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        logger.info(
+            f"[ParseOnly] Success: {text_length} chars, {page_count} pages, "
+            f"method={parse_method}, duration={duration_ms}ms"
+        )
+
+        return ParseOnlyResponse(
+            success=True,
+            text=text,
+            text_length=text_length,
+            file_type=router_result.file_type.value,
+            parse_method=parse_method,
+            page_count=page_count,
+            quick_extracted=quick_extracted,
+            is_encrypted=is_encrypted,
+            warnings=warnings,
+            duration_ms=duration_ms
+        )
+
+    except Exception as e:
+        logger.error(f"[ParseOnly] Error: {e}", exc_info=True)
+
+        # 실패 시 job 상태 업데이트
+        db_service.update_job_status(
+            job_id=request.job_id,
+            status="failed",
+            error_message=str(e)[:500],
+        )
+
+        # candidate 상태도 업데이트
+        if request.candidate_id:
+            db_service.update_candidate_status(
+                candidate_id=request.candidate_id,
+                status="failed",
+            )
+
+        return ParseOnlyResponse(
+            success=False,
+            error_code="PARSE_FAILED",
+            error_message=f"파싱 중 오류가 발생했습니다: {str(e)[:200]}",
+            duration_ms=int((time.time() - start_time) * 1000)
+        )
+
+
+# ─────────────────────────────────────────────────
+# Analyze-Only Endpoint (Option C 하이브리드: 비동기 분석)
+# ─────────────────────────────────────────────────
+
+class AnalyzeOnlyRequest(BaseModel):
+    """분석 전용 요청 모델 (파싱된 텍스트 기반)"""
+    text: str  # 파싱된 이력서 텍스트
+    file_url: str  # 원본 파일 Storage 경로 (PDF 변환용)
+    file_name: str
+    file_type: str  # hwp, pdf, docx 등
+    user_id: str
+    job_id: str
+    candidate_id: str
+    mode: Optional[str] = "phase_1"
+    skip_credit_deduction: bool = False
+
+
+class AnalyzeOnlyResponse(BaseModel):
+    """분석 전용 응답 모델"""
+    success: bool
+    message: str
+    job_id: str
+
+
+@app.post("/analyze-only", response_model=AnalyzeOnlyResponse)
+async def analyze_only_endpoint(
+    request: AnalyzeOnlyRequest,
+    _: bool = Depends(verify_api_key),
+):
+    """
+    분석 전용 엔드포인트 (비동기, Option C 하이브리드)
+
+    파싱된 텍스트를 받아 AI 분석을 수행합니다.
+    이 엔드포인트는 즉시 응답하고 백그라운드에서 분석을 진행합니다.
+
+    처리 단계:
+    1. AI 분석 (GPT-4o + Gemini Cross-Check)
+    2. PII 마스킹 + 암호화
+    3. 임베딩 생성
+    4. DB 저장
+    5. 크레딧 차감
+    6. 기존 JD와 자동 매칭
+
+    Returns:
+        AnalyzeOnlyResponse (즉시 반환, 분석은 백그라운드)
+    """
+    logger.info(f"[AnalyzeOnly] Starting for job {request.job_id}, candidate: {request.candidate_id}")
+
+    # 백그라운드에서 분석 실행
+    import asyncio
+    asyncio.create_task(_run_analyze_only_pipeline(request))
+
+    return AnalyzeOnlyResponse(
+        success=True,
+        message="분석이 시작되었습니다. 백그라운드에서 처리 중입니다.",
+        job_id=request.job_id
+    )
+
+
+async def _run_analyze_only_pipeline(request: AnalyzeOnlyRequest):
+    """
+    분석 전용 파이프라인 (백그라운드 실행)
+
+    /parse-only에서 파싱된 텍스트를 받아 분석, PII 처리, 임베딩, DB 저장을 수행합니다.
+    """
+    import time
+    start_time = time.time()
+
+    db_service = get_database_service()
+
+    try:
+        # Step 1: AI 분석
+        logger.info(f"[AnalyzeOnly] Analyzing resume...")
+
+        analysis_mode = AnalysisMode.PHASE_2 if request.mode == "phase_2" else AnalysisMode.PHASE_1
+        analyst = get_analyst_agent()
+        analysis_result = await analyst.analyze(
+            resume_text=request.text,
+            mode=analysis_mode,
+            filename=request.file_name
+        )
+
+        if not analysis_result.success or not analysis_result.data:
+            raise Exception(f"Analysis failed: {analysis_result.error}")
+
+        logger.info(f"[AnalyzeOnly] Analysis complete: confidence={analysis_result.confidence_score:.2f}")
+
+        # Progressive Loading: AI 분석 완료 상태 업데이트 (80%)
+        quick_data = {
+            "name": analysis_result.data.get("name"),
+            "phone": analysis_result.data.get("phone"),
+            "email": analysis_result.data.get("email"),
+            "last_company": analysis_result.data.get("last_company"),
+            "last_position": analysis_result.data.get("last_position"),
+        }
+        db_service.update_candidate_status(
+            candidate_id=request.candidate_id,
+            status="analyzed",
+            quick_extracted={k: v for k, v in quick_data.items() if v}
+        )
+        logger.info(f"[AnalyzeOnly] Candidate status updated to 'analyzed'")
+
+        # 원본 데이터 보관
+        original_data = analysis_result.data.copy()
+        analyzed_data = analysis_result.data
+
+        # Step 2: PII 마스킹 + 암호화
+        logger.info(f"[AnalyzeOnly] Processing PII...")
+
+        privacy_agent = get_privacy_agent()
+        privacy_result = privacy_agent.process(analyzed_data)
+
+        encrypted_store = {}
+        hash_store = {}
+        pii_count = 0
+
+        if privacy_result.success:
+            analyzed_data = privacy_result.masked_data
+            pii_count = len(privacy_result.pii_found)
+            encrypted_store = privacy_result.encrypted_store
+
+            if original_data.get("phone"):
+                hash_store["phone"] = privacy_agent.hash_for_dedup(original_data["phone"])
+            if original_data.get("email"):
+                hash_store["email"] = privacy_agent.hash_for_dedup(original_data["email"])
+
+        logger.info(f"[AnalyzeOnly] PII processed: {pii_count} items found")
+
+        # Step 2.5: PDF 변환 (원본이 PDF가 아닌 경우)
+        pdf_storage_path: Optional[str] = None
+        if request.file_type.lower() not in ["pdf"]:
+            logger.info(f"[AnalyzeOnly] Converting {request.file_type} to PDF...")
+            try:
+                # 파일 다시 다운로드 (PDF 변환용)
+                file_response = db_service.client.storage.from_("resumes").download(request.file_url)
+                if file_response:
+                    pdf_converter = get_pdf_converter()
+                    conversion_result = pdf_converter.convert_to_pdf(file_response, request.file_name)
+
+                    if conversion_result.success and conversion_result.pdf_bytes:
+                        pdf_storage_path = db_service.upload_converted_pdf(
+                            pdf_bytes=conversion_result.pdf_bytes,
+                            user_id=request.user_id,
+                            job_id=request.job_id,
+                        )
+                        if pdf_storage_path:
+                            logger.info(f"[AnalyzeOnly] PDF converted and uploaded: {pdf_storage_path}")
+            except Exception as pdf_error:
+                logger.warning(f"[AnalyzeOnly] PDF conversion failed (continuing): {pdf_error}")
+
+        # Step 3: 임베딩 생성
+        logger.info(f"[AnalyzeOnly] Generating embeddings...")
+
+        embedding_result = None
+        chunk_count = 0
+        try:
+            embedding_service = get_embedding_service()
+            embedding_result = await embedding_service.process_candidate(
+                data=analyzed_data,
+                generate_embeddings=True,
+                raw_text=request.text
+            )
+            chunk_count = len(embedding_result.chunks) if embedding_result and embedding_result.success else 0
+            logger.info(f"[AnalyzeOnly] Embeddings generated: {chunk_count} chunks")
+        except Exception as embed_error:
+            logger.warning(f"[AnalyzeOnly] Embedding generation failed (continuing): {embed_error}")
+
+        # Step 4: DB 저장
+        logger.info(f"[AnalyzeOnly] Saving to database...")
+
+        save_result = db_service.save_candidate(
+            user_id=request.user_id,
+            job_id=request.job_id,
+            analyzed_data=analyzed_data,
+            confidence_score=analysis_result.confidence_score,
+            field_confidence=analysis_result.field_confidence,
+            warnings=[w.to_dict() for w in analysis_result.warnings],
+            encrypted_store=encrypted_store,
+            hash_store=hash_store,
+            source_file=request.file_url,
+            file_type=request.file_type,
+            analysis_mode=analysis_mode.value,
+            candidate_id=request.candidate_id,
+        )
+
+        if not save_result.success:
+            raise Exception(f"Failed to save candidate: {save_result.error}")
+
+        candidate_id = save_result.candidate_id
+        logger.info(f"[AnalyzeOnly] Saved candidate: {candidate_id}")
+
+        # Step 4.5: PDF URL 업데이트
+        if pdf_storage_path and candidate_id:
+            db_service.update_candidate_pdf_url(
+                candidate_id=candidate_id,
+                pdf_url=pdf_storage_path
+            )
+
+        # 청크 저장
+        chunks_saved = 0
+        if embedding_result and embedding_result.success and embedding_result.chunks:
+            try:
+                if save_result.is_update:
+                    db_service.delete_candidate_chunks(candidate_id)
+
+                chunks_saved = db_service.save_chunks_with_embeddings(
+                    candidate_id=candidate_id,
+                    chunks=embedding_result.chunks
+                )
+                logger.info(f"[AnalyzeOnly] Saved {chunks_saved} chunks")
+            except Exception as chunk_error:
+                logger.warning(f"[AnalyzeOnly] Chunk saving failed: {chunk_error}")
+
+        # Step 5: Job 상태 업데이트
+        db_service.update_job_status(
+            job_id=request.job_id,
+            status="completed",
+            candidate_id=candidate_id,
+            confidence_score=analysis_result.confidence_score,
+            chunk_count=chunks_saved,
+            pii_count=pii_count,
+        )
+
+        # Step 6: 크레딧 차감
+        if request.skip_credit_deduction:
+            logger.info(f"[AnalyzeOnly] Skipping credit deduction")
+        elif save_result.is_update:
+            logger.info(f"[AnalyzeOnly] Duplicate update, skipping credit deduction")
+        else:
+            logger.info(f"[AnalyzeOnly] Deducting credit for user {request.user_id}...")
+            credit_deducted = db_service.deduct_credit(
+                user_id=request.user_id,
+                candidate_id=candidate_id,
+            )
+            if credit_deducted:
+                logger.info(f"[AnalyzeOnly] Credit deducted successfully")
+            else:
+                logger.warning(f"[AnalyzeOnly] Failed to deduct credit")
+
+        # Step 7: 기존 JD와 자동 매칭
+        if chunks_saved > 0:
+            logger.info(f"[AnalyzeOnly] Running auto-match with existing positions...")
+            match_result = db_service.match_candidate_to_existing_positions(
+                candidate_id=candidate_id,
+                user_id=request.user_id,
+                min_score=0.3
+            )
+            if match_result["success"]:
+                logger.info(
+                    f"[AnalyzeOnly] Auto-match complete: "
+                    f"{match_result['matched_positions']}/{match_result['total_positions']} positions"
+                )
+
+        processing_time = int((time.time() - start_time) * 1000)
+        logger.info(
+            f"[AnalyzeOnly] Complete! candidate={candidate_id}, "
+            f"confidence={analysis_result.confidence_score:.2f}, "
+            f"chunks={chunks_saved}, time={processing_time}ms"
+        )
+
+    except Exception as e:
+        logger.error(f"[AnalyzeOnly] Failed: {e}", exc_info=True)
+
+        # 실패 시 job 상태 업데이트
+        db_service.update_job_status(
+            job_id=request.job_id,
+            status="failed",
+            error_message=str(e)[:500],
+        )
+
+        # candidate 상태도 업데이트
+        db_service.update_candidate_status(
+            candidate_id=request.candidate_id,
+            status="failed",
+        )
+
+
 class AnalyzeRequest(BaseModel):
     """분석 요청 모델"""
     text: str

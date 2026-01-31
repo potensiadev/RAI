@@ -716,11 +716,11 @@ async def parse_only_endpoint(
                 )
             file_bytes = file_response
         except Exception as download_error:
-            logger.error(f"[ParseOnly] Download failed: {download_error}")
+            logger.error(f"[ParseOnly] Download failed: {download_error}, file_url: {request.file_url}")
             return ParseOnlyResponse(
                 success=False,
                 error_code="STORAGE_ERROR",
-                error_message="파일 다운로드 중 오류가 발생했습니다.",
+                error_message=f"파일 다운로드 중 오류가 발생했습니다. ({type(download_error).__name__}: {str(download_error)[:100]})",
                 duration_ms=int((time.time() - start_time) * 1000)
             )
 
